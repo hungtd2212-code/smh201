@@ -36,7 +36,8 @@ Mở http://localhost:3000. Ứng dụng cần kết nối Supabase (mục 1 bê
    [`004_delete_permission.sql`](supabase/004_delete_permission.sql), [`005_marketing_catalog.sql`](supabase/005_marketing_catalog.sql),
    [`006_ad_daily_reports.sql`](supabase/006_ad_daily_reports.sql), [`007_ad_account_setup.sql`](supabase/007_ad_account_setup.sql),
    [`008_staff_accounts.sql`](supabase/008_staff_accounts.sql), [`009_admin_account.sql`](supabase/009_admin_account.sql),
-   rồi [`010_ads_daily_data.sql`](supabase/010_ads_daily_data.sql) (010 không phụ thuộc 009).
+   [`010_ads_daily_data.sql`](supabase/010_ads_daily_data.sql), rồi [`011_sync_ads_staff_name.sql`](supabase/011_sync_ads_staff_name.sql)
+   (010, 011 không phụ thuộc 009).
 5. (Tuỳ chọn) Chạy [`supabase/seeds/005_marketing_sample.sql`](supabase/seeds/005_marketing_sample.sql) để có sẵn 7 nhân viên Ads,
    2 TKQC và 1 chiến dịch + 1 bài post mẫu (có chữ “(mẫu)”). Chạy lại nhiều lần không sinh dòng trùng.
 
@@ -164,11 +165,12 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 | `supabase/005_marketing_catalog.sql` | Phân hệ Marketing giai đoạn 1: vai trò mới, quyền “Xuất file”, nhân viên Ads, TKQC + phân công theo ngày, bài post, tách ID bài từ link |
 | `supabase/006_ad_daily_reports.sql` | Báo cáo ads hằng ngày (`ad_daily_reports`): mỗi (ngày, TK ADS) một báo cáo, nhân viên sửa trong 24 giờ, không ai xoá |
 | `supabase/008_staff_accounts.sql` | Danh sách cơ sở, thêm người dùng ngay trong ứng dụng (tạo luôn tài khoản đăng nhập), vị trí, phân quyền xem từng trang, khoá = cấm đăng nhập |
+| `supabase/011_sync_ads_staff_name.sql` | Tên nhân viên Ads luôn theo tên tài khoản (sửa tên ở Tài khoản & Phân quyền thì Cài đặt TKQC, Nhập liệu, Tổng quan đổi theo) |
 | `supabase/010_ads_daily_data.sql` | “Data xin được” ghi chung một dòng cho mỗi (ngày, nhân viên Ads) thay vì theo từng TKQC |
 | `supabase/009_admin_account.sql` | Quản trị cấp cao: tên đăng nhập mặc định `admin`, tự sửa tên / tên đăng nhập; xoá cơ sở chưa có nhân sự |
 | `supabase/007_ad_account_setup.sql` | Nhân viên tự cài đặt TKQC: loại tài khoản, thanh toán, `add_ad_account` / `remove_ad_account`; tài khoản vai trò Nhân viên Ads tự có dòng nhân viên Ads |
 | `supabase/seeds/` | Dữ liệu mẫu (không bắt buộc) |
-| `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`): `data-safety` (schema → 004), `marketing-catalog` (schema → 005), `ad-reports` (schema → 006), `ad-account-setup` (schema → 007), `staff-accounts` (schema → 009), `ads-daily-data` (schema → 010). `npm test` chạy thêm `tests/number-input.test.mjs` (ô nhập số) |
+| `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`): `data-safety` (schema → 004), `marketing-catalog` (schema → 005), `ad-reports` (schema → 006), `ad-account-setup` (schema → 007), `staff-accounts` (schema → 009, 011), `ads-daily-data` (schema → 010). `npm test` chạy thêm `tests/number-input.test.mjs` (ô nhập số) |
 | `src/lib/safety/`, `src/components/safety/` | Tài khoản & Phân quyền, Thùng rác, Nhật ký hệ thống, Sao lưu & Khôi phục, tab Lịch sử của lead |
 
 ### Cách tính các chỉ số

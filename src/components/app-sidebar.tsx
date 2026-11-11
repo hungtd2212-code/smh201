@@ -47,6 +47,14 @@ export function AppSidebar() {
   // Phân hệ chứa trang đang xem thì tự mở; các lần người dùng tự bấm mở/đóng được nhớ ở đây.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
 
+  /** Mở một phân hệ ở gần cuối menu thì cuộn menu lên cho thấy hết các trang con vừa sổ ra. */
+  function reveal(title: string) {
+    window.setTimeout(() => {
+      const item = document.querySelector<HTMLElement>(`[data-nav-module="${CSS.escape(title)}"]`);
+      item?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, 60);
+  }
+
   return (
     <Sidebar>
       <SidebarHeader>
@@ -74,12 +82,13 @@ export function AppSidebar() {
                       key={mod.title}
                       asChild
                       open={open}
-                      onOpenChange={(next) =>
-                        setToggled((prev) => ({ ...prev, [mod.title]: next }))
-                      }
+                      onOpenChange={(next) => {
+                        setToggled((prev) => ({ ...prev, [mod.title]: next }));
+                        if (next) reveal(mod.title);
+                      }}
                       className="group/collapsible"
                     >
-                      <SidebarMenuItem>
+                      <SidebarMenuItem data-nav-module={mod.title} className="scroll-mb-2">
                         <CollapsibleTrigger asChild>
                           {/* Khi đang đóng mà chứa trang hiện tại thì tô sáng để biết mình đang ở đâu. */}
                           <SidebarMenuButton isActive={hasCurrentPage && !open}>

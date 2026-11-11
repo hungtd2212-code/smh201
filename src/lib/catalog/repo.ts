@@ -89,7 +89,8 @@ const AD_ACCOUNT_COLUMNS = "id, name, account_id, channel_id, is_active, note, d
 async function fetchAdAccounts(): Promise<{ result: QueryResult<AdAccount[]>; setupReady: boolean }> {
   const supabase = getSupabaseBrowserClient();
   const query = (columns: string) =>
-    supabase.from("ad_accounts").select(columns).is("deleted_at", null).order("name");
+    // Theo thứ tự thêm vào: TKQC thêm sau nằm dưới, số thứ tự TK ADS 1, 2… không nhảy lung tung.
+    supabase.from("ad_accounts").select(columns).is("deleted_at", null).order("created_at").order("name");
   const full = await query(`${AD_ACCOUNT_COLUMNS}, account_kind, payment_kind`);
   if (full.error?.code !== MISSING_COLUMN) {
     return { result: full as unknown as QueryResult<AdAccount[]>, setupReady: !full.error };

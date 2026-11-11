@@ -222,4 +222,23 @@ ok((await one(`select action from public.audit_log where table_name = 'branches'
 e = await errOf(U.owner, DEL, [hq]);
 ok(/còn \d+ nhân sự/.test(e ?? ""), "cơ sở còn nhân sự → không xoá được", e);
 
+// ---------------------------------------------------------------------------
+section("011: tên nhân viên Ads luôn theo tên tài khoản");
+// Tình trạng trước 011: đã sửa tên tài khoản nhưng tên nhân viên Ads vẫn là tên lúc tạo.
+await as(U.adm, UPDATE, [linh, "Nguyễn Văn An", null, hq]);
+ok((await one(`select full_name from public.ads_staff where user_id = $1`, [linh])).full_name === "Đinh Thị Diệu Linh", "(trước 011) tên nhân viên Ads vẫn là tên lúc tạo");
+const freeName = (await as(U.mm, `insert into public.ads_staff (full_name) values ('Lê Thảo') returning id`))[0].id;
+await db.exec(read("011_sync_ads_staff_name.sql"));
+ok(true, "011 chạy không lỗi");
+await db.exec(read("011_sync_ads_staff_name.sql"));
+ok(true, "chạy lại 011 lần hai không lỗi");
+ok((await one(`select full_name from public.ads_staff where user_id = $1`, [linh])).full_name === "Nguyễn Văn An", "dòng đang lệch tên được sửa theo tên tài khoản");
+const syncLog = await one(`select note, old_data, new_data from public.audit_log where table_name = 'ads_staff' and note like 'Đồng bộ tên%' order by id desc limit 1`);
+ok(syncLog?.old_data.full_name === "Đinh Thị Diệu Linh" && syncLog.new_data.full_name === "Nguyễn Văn An", "… và ghi nhật ký tên cũ → tên mới", syncLog);
+await as(U.adm, UPDATE, [linh, "Nguyễn Văn An B", null, hq]);
+ok((await one(`select full_name from public.ads_staff where user_id = $1`, [linh])).full_name === "Nguyễn Văn An B", "từ nay sửa tên tài khoản → tên nhân viên Ads đổi theo ngay");
+await as(U.adm, UPDATE, [linh, "lê thảo", null, hq]);
+ok((await one(`select full_name from public.ads_staff where user_id = $1`, [linh])).full_name === "lê thảo (2)", "trùng tên một nhân viên Ads khác → thêm (2) cho khỏi trùng");
+ok((await one(`select full_name from public.ads_staff where id = $1`, [freeName])).full_name === "Lê Thảo", "… nhân viên Ads kia giữ nguyên tên");
+
 finish();
