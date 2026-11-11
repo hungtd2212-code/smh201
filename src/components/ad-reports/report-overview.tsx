@@ -35,7 +35,8 @@ import { cn } from "@/lib/utils";
 import { RangeFilter, type DayRange } from "./date-filters";
 import { useAdReports, useNow } from "./hooks";
 import { ReportFields, allFilled, fieldKey, toNumbers, type FieldItem } from "./report-fields";
-import { ManagerLinks, NotReady, StatsError } from "./shared";
+import { useAccountOwner } from "./account-setup";
+import { NotReady, StatsError } from "./shared";
 
 const ALL = "__all";
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -72,6 +73,8 @@ function OverviewBody() {
   const focusDay = ISO_DAY.test(params.get("ngay") ?? "") ? params.get("ngay") : null;
   const [picked, setPicked] = useState<DayRange | null>(focusDay ? { from: focusDay, to: focusDay } : null);
   const [staffFilter, setStaffFilter] = useState(params.get("nv") ?? ALL);
+  const [accountFilter, setAccountFilter] = useState(ALL);
+  const ownerOf = useAccountOwner();
 
   const range = picked ?? { from: today, to: today };
   const { state, reload } = useAdReports(range.from, range.to);
@@ -85,6 +88,11 @@ function OverviewBody() {
     : me
       ? [me]
       : [];
+
+  // Ô "Tài khoản quảng cáo": TKQC của nhân viên đang lọc (nhân viên Ads: chỉ của mình).
+  const accountChoices = catalogs.adAccounts.filter((a) =>
+    scope.managesMarketing ? staffFilter === ALL || ownerOf(a.id) === staffFilter : me !== undefined && ownerOf(a.id) === me.id,
+  );
 
   if (!catalogs.marketingReady) return <MarketingNotReady what="Màn Tổng quan" />;
   if (staff.status === "loading") return <Skeleton className="h-64 w-full rounded-xl" />;
@@ -101,22 +109,46 @@ function OverviewBody() {
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <RangeFilter value={range} today={today} onChange={setPicked} />
-        {scope.managesMarketing && (
-          <Select value={staffFilter} onValueChange={setStaffFilter}>
-            <SelectTrigger className="w-52" aria-label="Lọc theo nhân viên">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Tất cả nhân viên</SelectItem>
-              {catalogs.adsStaff.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.full_name}
-                  {!p.is_active && " (đã nghỉ)"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {scope.managesMarketing && (
+            <Select
+              value={staffFilter}
+              onValueChange={(value) => {
+                setStaffFilter(value);
+                setAccountFilter(ALL);
+              }}
+            >
+              <SelectTrigger className="w-56" aria-label="Lọc theo nhân viên quảng cáo">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Tất cả nhân viên quảng cáo</SelectItem>
+                {catalogs.adsStaff.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.full_name}
+                    {!p.is_active && " (đã nghỉ)"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {accountChoices.length > 0 && (
+            <Select value={accountFilter} onValueChange={setAccountFilter}>
+              <SelectTrigger className="w-52" aria-label="Lọc theo tài khoản quảng cáo">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Tất cả TKQC ({accountChoices.length})</SelectItem>
+                {accountChoices.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                    {!a.is_active && " (ngừng dùng)"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
       {scope.isAdsStaff && !me ? (
@@ -133,7 +165,9 @@ function OverviewBody() {
           today={today}
           reports={state.reports}
           accounts={catalogs.adAccounts}
-          assignments={catalogs.assignments}
+          assignments={
+            accountFilter === ALL ? catalogs.assignments : catalogs.assignments.filter((x) => x.ad_account_id === accountFilter)
+          }
           canAlwaysEdit={scope.managesMarketing}
           showNames={scope.managesMarketing}
           focusDay={focusDay}
@@ -143,7 +177,6 @@ function OverviewBody() {
         <Skeleton className="h-64 w-full rounded-xl" />
       )}
 
-      {scope.managesMarketing && <ManagerLinks />}
     </>
   );
 }

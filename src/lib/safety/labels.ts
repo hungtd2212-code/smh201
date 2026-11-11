@@ -2,7 +2,16 @@ import { format } from "date-fns";
 import type { CatalogNames } from "@/components/catalog-provider";
 import { ROLE_LABELS, type StaffRole } from "@/hooks/use-current-staff";
 import { APP } from "@/lib/config";
-import { OBJECTIVE_LABELS, POST_STATUS_LABELS, type AdPostStatus, type CampaignObjective } from "@/lib/catalog/types";
+import {
+  ACCOUNT_KIND_LABELS,
+  OBJECTIVE_LABELS,
+  PAYMENT_KIND_LABELS,
+  POST_STATUS_LABELS,
+  type AdAccountKind,
+  type AdPaymentKind,
+  type AdPostStatus,
+  type CampaignObjective,
+} from "@/lib/catalog/types";
 import { getLeadStatus } from "@/lib/leads/status";
 import type { AuditAction, AuditEntry } from "./types";
 
@@ -94,6 +103,8 @@ const FIELD_LABELS: Record<string, string> = {
   user_id: "Nhân viên",
   work_date: "Ngày làm",
   report_date: "Ngày báo cáo",
+  account_kind: "Loại tài khoản",
+  payment_kind: "Thanh toán",
   spend: "Chi tiêu",
   messages: "Số lượng tin nhắn",
   data_count: "Data xin được",
@@ -171,6 +182,10 @@ function formatValue(table: string, key: string, value: unknown, names: CatalogN
       return `${Number(value).toLocaleString("vi-VN")} ₫`;
     case "branch":
       return text === APP.branch.code ? APP.branch.name : text;
+    case "account_kind":
+      return ACCOUNT_KIND_LABELS[text as AdAccountKind] ?? text;
+    case "payment_kind":
+      return PAYMENT_KIND_LABELS[text as AdPaymentKind] ?? text;
     case "messages":
     case "data_count":
       return Number(value).toLocaleString("vi-VN");

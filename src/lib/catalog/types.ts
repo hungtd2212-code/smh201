@@ -52,6 +52,17 @@ export type AdsStaff = {
   deleted_at: string | null;
 };
 
+/** Loại TKQC: thuê hay tự build. */
+export type AdAccountKind = "rented" | "self_built";
+export const ACCOUNT_KIND_LABELS: Record<AdAccountKind, string> = { rented: "TK thuê", self_built: "Tự build" };
+
+/** TKQC trả tiền bằng gì: tài khoản cá nhân hay thẻ công ty. */
+export type AdPaymentKind = "personal" | "company_card";
+export const PAYMENT_KIND_LABELS: Record<AdPaymentKind, string> = {
+  personal: "Tài khoản cá nhân",
+  company_card: "Thẻ công ty",
+};
+
 /** Tài khoản quảng cáo (TKQC). */
 export type AdAccount = {
   id: string;
@@ -59,6 +70,10 @@ export type AdAccount = {
   /** ID tài khoản trên nền tảng quảng cáo. */
   account_id: string | null;
   channel_id: string;
+  /** null = TKQC tạo trước khi có mục này (file 007). */
+  account_kind: AdAccountKind | null;
+  payment_kind: AdPaymentKind | null;
+  /** false = Ngừng dùng (vd nhân viên đã bấm xoá một TKQC có báo cáo cũ). */
   is_active: boolean;
   note: string | null;
   deleted_at: string | null;
@@ -171,6 +186,8 @@ export type Catalogs = CatalogRows & {
    * Khi đó các phần cũ vẫn chạy bình thường; các trang Marketing mới báo là chưa dùng được.
    */
   marketingReady: boolean;
+  /** false = chưa chạy supabase/007_ad_account_setup.sql (chưa có màn Cài đặt TKQC). */
+  adAccountSetupReady: boolean;
 };
 
 export const EMPTY_CATALOGS: Catalogs = {
@@ -185,4 +202,5 @@ export const EMPTY_CATALOGS: Catalogs = {
   assignments: [],
   adPosts: [],
   marketingReady: false,
+  adAccountSetupReady: false,
 };

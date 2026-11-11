@@ -22,6 +22,8 @@ type Props = {
   title: string;
   description: React.ReactNode;
   confirmLabel: string;
+  /** Chữ trên nút không đồng ý (mặc định "Huỷ"). */
+  cancelLabel?: string;
   /** Nút xác nhận màu đỏ (xoá, hoàn tác). */
   destructive?: boolean;
   /** Hỏi mật khẩu ngay từ đầu (xoá quá 20 bản ghi, xoá vĩnh viễn). */
@@ -49,6 +51,7 @@ function Body({
   title,
   description,
   confirmLabel,
+  cancelLabel = "Huỷ",
   destructive,
   needsPassword = false,
   onConfirm,
@@ -117,7 +120,7 @@ function Body({
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-          Huỷ
+          {cancelLabel}
         </Button>
         <Button type="submit" variant={destructive ? "destructive" : "default"} disabled={busy}>
           {busy ? "Đang xử lý…" : confirmLabel}

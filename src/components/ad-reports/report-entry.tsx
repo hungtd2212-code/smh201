@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, ClipboardPenLine, Send } from "lucide-react";
+import { ArrowRight, ClipboardPenLine, Send, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -22,14 +22,18 @@ import { formatClock, formatDay } from "@/lib/ad-reports/dates";
 import { submitReports } from "@/lib/ad-reports/repo";
 import { EMPTY_VALUES, type AdDailyReport, type ReportField, type ReportValues } from "@/lib/ad-reports/types";
 import type { AdAccount, AdsStaff } from "@/lib/catalog/types";
+import { cn } from "@/lib/utils";
+import { AccountSetup } from "./account-setup";
 import { SingleDayFilter } from "./date-filters";
 import { useAdReports } from "./hooks";
 import { ReportFields, allFilled, fieldKey, toNumbers, type FieldItem } from "./report-fields";
-import { NotReady, ManagerLinks, StatsError } from "./shared";
+import { NotReady, StatsError } from "./shared";
 
 /**
- * Marketing → Nhập liệu: mỗi ngày, nhân viên Ads gửi chi tiêu, số lượng tin nhắn, data xin được của
- * từng TK ADS mình phụ trách. Mỗi (ngày, TK ADS) gửi một lần; muốn sửa thì vào Tổng quan (trong 24 giờ).
+ * Marketing → Nhập liệu, gồm hai phần:
+ *   • Nhập số liệu: mỗi ngày nhân viên Ads gửi chi tiêu, số lượng tin nhắn, data xin được của từng TKQC
+ *     mình đang cầm. Mỗi (ngày, TKQC) gửi một lần; muốn sửa thì vào Tổng quan (trong 24 giờ).
+ *   • Cài đặt TKQC: nhân viên tự khai báo các TKQC của mình (nút "+ Thêm TKQC").
  */
 export function ReportEntry() {
   return (
@@ -37,7 +41,7 @@ export function ReportEntry() {
       <PageHeader
         icon={ClipboardPenLine}
         title="Nhập liệu"
-        description="Báo cáo chi tiêu, số lượng tin nhắn và data xin được của từng TK ADS mỗi ngày."
+        description="Báo cáo chi tiêu, số lượng tin nhắn và data xin được của từng TKQC mỗi ngày."
       />
       <CatalogGate>
         <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
@@ -49,11 +53,24 @@ export function ReportEntry() {
 }
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const ALL = "__all";
+type Tab = "entry" | "setup";
 
-/** Ngày nằm trong địa chỉ trang (?ngay=yyyy-mm-dd), vd khi bấm "Nhập" từ Tổng quan. */
-function useDayParam() {
-  const value = useSearchParams().get("ngay");
-  return value && ISO_DAY.test(value) ? value : null;
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+        active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
 }
 
 function EntryBody() {
@@ -62,26 +79,32 @@ function EntryBody() {
   const scope = useAdsScope();
   const today = useTodayVn();
   const params = useSearchParams();
-  const dayParam = useDayParam();
-  const [picked, setPicked] = useState<string | null>(dayParam);
+  const dayParam = params.get("ngay");
+  const [tab, setTab] = useState<Tab>(params.get("tab") === "cai-dat" ? "setup" : "entry");
+  const [picked, setPicked] = useState<string | null>(dayParam && ISO_DAY.test(dayParam) ? dayParam : null);
   const [pickedStaff, setPickedStaff] = useState<string | null>(params.get("nv"));
+  const [pickedAccount, setPickedAccount] = useState(ALL);
 
   // Không cho ngày chưa tới, kể cả khi gõ thẳng vào địa chỉ trang.
   const day = picked && today && picked <= today ? picked : today;
   const { state, reload } = useAdReports(day, day);
+  const reportsOfDay = state.status === "ready" ? state.reports : [];
 
   // Nhân viên Ads chỉ đọc được dòng ads_staff của chính mình.
   const me =
     scope.isAdsStaff && staff.status === "ok"
       ? catalogs.adsStaff.find((a) => a.user_id === staff.userId)
       : undefined;
+  /** TKQC người này cầm vào ngày đang chọn (TKQC đã "xoá" mà ngày đó đã có báo cáo thì vẫn hiện). */
   const accountsOf = (person: AdsStaff) =>
-    catalogs.adAccounts.filter((account) =>
-      catalogs.assignments.some(
-        (x) => x.ad_account_id === account.id && x.ads_staff_id === person.id && coversDay(x, day),
-      ),
+    catalogs.adAccounts.filter(
+      (account) =>
+        catalogs.assignments.some(
+          (x) => x.ad_account_id === account.id && x.ads_staff_id === person.id && coversDay(x, day),
+        ) &&
+        (account.is_active || reportsOfDay.some((r) => r.ad_account_id === account.id)),
     );
-  // Quản trị / Trưởng Marketing không phụ trách TK ADS nào → chọn nhân viên để nhập thay.
+  // Quản trị / Trưởng Marketing không cầm TKQC nào → chọn nhân viên để nhập thay.
   const people = scope.managesMarketing ? catalogs.adsStaff : me ? [me] : [];
   const person = scope.managesMarketing
     ? (people.find((p) => p.id === pickedStaff) ??
@@ -94,66 +117,122 @@ function EntryBody() {
   if (!scope.managesMarketing && !scope.isAdsStaff) {
     return (
       <ReadOnlyNote>
-        Màn này dành cho Nhân viên Ads (gửi báo cáo TK ADS mình phụ trách), Trưởng Marketing và Quản trị.
+        Màn này dành cho nhân viên chạy quảng cáo (gửi báo cáo TKQC của mình), Trưởng Marketing và Quản trị.
       </ReadOnlyNote>
     );
   }
-  if (state.status === "not-migrated") return <NotReady />;
 
   const accounts = person ? accountsOf(person) : [];
+  const shown = accounts.filter((a) => pickedAccount === ALL || a.id === pickedAccount);
+  const numbers = new Map(accounts.map((a, i) => [a.id, i + 1]));
 
   return (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <SingleDayFilter value={day} today={today} onChange={setPicked} />
-        {scope.managesMarketing && people.length > 0 && person && (
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            Nhập thay cho
-            <Select value={person.id} onValueChange={setPickedStaff}>
-              <SelectTrigger className="w-48" aria-label="Nhân viên Ads">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {people.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.full_name}
-                    {!p.is_active && " (đã nghỉ)"}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-        )}
+      <div role="tablist" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
+        <TabButton active={tab === "entry"} onClick={() => setTab("entry")}>
+          <ClipboardPenLine className="size-4" />
+          Nhập số liệu
+        </TabButton>
+        <TabButton active={tab === "setup"} onClick={() => setTab("setup")}>
+          <Settings2 className="size-4" />
+          Cài đặt TKQC
+        </TabButton>
       </div>
 
-      {!person ? (
-        <ReadOnlyNote>
-          {scope.isAdsStaff
-            ? "Tài khoản của bạn chưa được gắn với một Nhân viên Ads nên chưa gửi được báo cáo. Nhờ Trưởng Marketing hoặc Quản trị gắn tài khoản ở trang Nhân viên Ads."
-            : "Chưa có nhân viên Ads nào."}
-        </ReadOnlyNote>
-      ) : accounts.length === 0 ? (
-        <ReadOnlyNote>
-          Ngày {formatDay(day)} {scope.managesMarketing ? person.full_name : "bạn"} không phụ trách TK ADS nào nên không
-          có gì để báo cáo.
-        </ReadOnlyNote>
-      ) : state.status === "error" ? (
-        <StatsError message={state.message} />
-      ) : state.status === "ready" ? (
-        <EntryForm
-          key={`${day}:${person.id}`}
-          day={day}
-          today={today}
-          accounts={accounts}
-          reports={state.reports}
-          overviewHref={`/marketing/tong-quan?ngay=${day}${scope.managesMarketing ? `&nv=${person.id}` : ""}`}
-          onSubmitted={reload}
-        />
+      {tab === "setup" ? (
+        <AccountSetup isManager={scope.managesMarketing} me={me} />
+      ) : state.status === "not-migrated" ? (
+        <NotReady />
       ) : (
-        <Skeleton className="h-40 w-full rounded-xl" />
-      )}
+        <>
+          <SingleDayFilter value={day} today={today} onChange={setPicked} />
 
-      {scope.managesMarketing && <ManagerLinks />}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {scope.managesMarketing && person && (
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                Nhập thay cho
+                <Select
+                  value={person.id}
+                  onValueChange={(value) => {
+                    setPickedStaff(value);
+                    setPickedAccount(ALL);
+                  }}
+                >
+                  <SelectTrigger className="w-52" aria-label="Nhân viên quảng cáo">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {people.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.full_name}
+                        {!p.is_active && " (đã nghỉ)"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+            )}
+            {accounts.length > 0 && (
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                Tài khoản quảng cáo
+                <Select value={shown.length > 0 ? pickedAccount : ALL} onValueChange={setPickedAccount}>
+                  <SelectTrigger className="w-56" aria-label="Tài khoản quảng cáo">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL}>Tất cả TKQC ({accounts.length})</SelectItem>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+            )}
+          </div>
+
+          {!person ? (
+            <ReadOnlyNote>
+              {scope.isAdsStaff ? (
+                <>
+                  Bạn chưa có TKQC nào.{" "}
+                  <button type="button" className="font-medium text-foreground underline underline-offset-2" onClick={() => setTab("setup")}>
+                    Vào Cài đặt TKQC
+                  </button>{" "}
+                  để khai báo các TKQC bạn đang chạy.
+                </>
+              ) : (
+                "Chưa có nhân viên quảng cáo nào."
+              )}
+            </ReadOnlyNote>
+          ) : accounts.length === 0 ? (
+            <ReadOnlyNote>
+              Ngày {formatDay(day)} {scope.managesMarketing ? `${person.full_name} không` : "bạn không"} có TKQC nào để
+              báo cáo.{" "}
+              <button type="button" className="font-medium text-foreground underline underline-offset-2" onClick={() => setTab("setup")}>
+                Vào Cài đặt TKQC
+              </button>{" "}
+              để thêm TKQC.
+            </ReadOnlyNote>
+          ) : state.status === "error" ? (
+            <StatsError message={state.message} />
+          ) : state.status === "ready" ? (
+            <EntryForm
+              key={`${day}:${person.id}`}
+              day={day}
+              today={today}
+              accounts={shown.length > 0 ? shown : accounts}
+              numbers={numbers}
+              reports={state.reports}
+              overviewHref={`/marketing/tong-quan?ngay=${day}${scope.managesMarketing ? `&nv=${person.id}` : ""}`}
+              onSubmitted={reload}
+            />
+          ) : (
+            <Skeleton className="h-40 w-full rounded-xl" />
+          )}
+        </>
+      )}
     </>
   );
 }
@@ -162,6 +241,7 @@ function EntryForm({
   day,
   today,
   accounts,
+  numbers,
   reports,
   overviewHref,
   onSubmitted,
@@ -169,6 +249,8 @@ function EntryForm({
   day: string;
   today: string;
   accounts: AdAccount[];
+  /** Số thứ tự TK ADS 1, 2… trong danh sách đầy đủ của người này. */
+  numbers: Map<string, number>;
   reports: AdDailyReport[];
   overviewHref: string;
   onSubmitted: () => Promise<void>;
@@ -183,7 +265,7 @@ function EntryForm({
     const sent = sentOf(account.id);
     return {
       account,
-      index: i + 1,
+      index: numbers.get(account.id) ?? i + 1,
       shown: sent,
       note: sent ? `Đã gửi lúc ${formatClock(sent.submitted_at, today)}` : undefined,
     };

@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 /** Lời báo khi cơ sở dữ liệu chưa có bảng báo cáo ads hằng ngày. */
 export function NotReady() {
   return (
@@ -16,26 +14,5 @@ export function StatsError({ message }: { message: string }) {
       <p className="font-medium text-destructive">Không tải được báo cáo</p>
       <p className="mt-1 text-muted-foreground">{message}</p>
     </div>
-  );
-}
-
-/**
- * Đường tới các trang danh mục (tạm ẩn khỏi menu Marketing) cho Quản trị / Trưởng Marketing:
- * giao TK ADS cho nhân viên, gắn tài khoản đăng nhập cho nhân viên Ads.
- */
-export function ManagerLinks() {
-  const link = "font-medium text-foreground underline underline-offset-2 hover:text-primary";
-  return (
-    <p className="text-sm text-muted-foreground">
-      Dành cho quản lý: giao TK ADS cho từng nhân viên ở trang{" "}
-      <Link href="/marketing/tkqc-page" className={link}>
-        TKQC &amp; Page
-      </Link>
-      ; gắn tài khoản đăng nhập cho nhân viên ở trang{" "}
-      <Link href="/marketing/nhan-vien-ads" className={link}>
-        Nhân viên Ads
-      </Link>
-      .
-    </p>
   );
 }

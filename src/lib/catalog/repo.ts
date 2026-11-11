@@ -2,6 +2,8 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { MISSING_COLUMN, isNotMigrated } from "@/lib/supabase/errors";
 import type {
   AdAccount,
+  AdAccountKind,
+  AdPaymentKind,
   AdAccountAssignment,
   AdPost,
   AdsStaff,
@@ -63,6 +65,36 @@ const CAMPAIGN_COLUMNS =
   "id, name, channel_id, page_id, service_id, branch, start_date, end_date, budget, owner_id, ads_id, is_active, deleted_at";
 const PAGE_COLUMNS = "id, name, channel_id, branch, is_active, deleted_at";
 
+const AD_ACCOUNT_COLUMNS = "id, name, account_id, channel_id, is_active, note, deleted_at";
+
+/**
+ * TKQC đang dùng. Hai cột "loại tài khoản", "thanh toán" do file 007 thêm vào; chưa chạy file đó thì
+ * đọc không kèm hai cột này (để trống) và báo setupReady = false.
+ */
+async function fetchAdAccounts(): Promise<{ result: QueryResult<AdAccount[]>; setupReady: boolean }> {
+  const supabase = getSupabaseBrowserClient();
+  const query = (columns: string) =>
+    supabase.from("ad_accounts").select(columns).is("deleted_at", null).order("name");
+  const full = await query(`${AD_ACCOUNT_COLUMNS}, account_kind, payment_kind`);
+  if (full.error?.code !== MISSING_COLUMN) {
+    return { result: full as unknown as QueryResult<AdAccount[]>, setupReady: !full.error };
+  }
+  const basic = await query(AD_ACCOUNT_COLUMNS);
+  return {
+    result: {
+      data: basic.data
+        ? (basic.data as unknown as Omit<AdAccount, "account_kind" | "payment_kind">[]).map((row) => ({
+            ...row,
+            account_kind: null,
+            payment_kind: null,
+          }))
+        : null,
+      error: basic.error,
+    },
+    setupReady: false,
+  };
+}
+
 type MarketingRows = {
   pages: Page[];
   campaigns: Campaign[];
@@ -70,12 +102,14 @@ type MarketingRows = {
   adAccounts: AdAccount[];
   assignments: AdAccountAssignment[];
   adPosts: AdPost[];
+  adAccountSetupReady: boolean;
 };
 
 /** Danh mục Marketing theo cấu trúc của file 005. Trả về null nếu cơ sở dữ liệu chưa chạy file đó. */
 async function fetchMarketing(): Promise<MarketingRows | null> {
   const supabase = getSupabaseBrowserClient();
-  const results = await Promise.all([
+  const [accounts, ...results] = await Promise.all([
+    fetchAdAccounts(),
     supabase.from("pages").select(`${PAGE_COLUMNS}, url, page_staff_ids`).order("name"),
     supabase
       .from("campaigns")
@@ -86,11 +120,6 @@ async function fetchMarketing(): Promise<MarketingRows | null> {
       .select("id, full_name, staff_code, user_id, is_active, note, deleted_at")
       .is("deleted_at", null)
       .order("full_name"),
-    supabase
-      .from("ad_accounts")
-      .select("id, name, account_id, channel_id, is_active, note, deleted_at")
-      .is("deleted_at", null)
-      .order("name"),
     supabase
       .from("ad_account_assignments")
       .select("id, ad_account_id, ads_staff_id, from_date, to_date, note, deleted_at")
@@ -103,8 +132,9 @@ async function fetchMarketing(): Promise<MarketingRows | null> {
       .order("created_at", { ascending: false }),
   ] as const);
 
-  if (results.some((result) => isNotMigrated(result.error))) return null;
-  const [pages, campaigns, adsStaff, adAccounts, assignments, adPosts] = results;
+  if ([...results, accounts.result].some((result) => isNotMigrated(result.error))) return null;
+  const [pages, campaigns, adsStaff, assignments, adPosts] = results;
+  const adAccounts = accounts.result;
   return {
     pages: unwrap(pages) as Page[],
     campaigns: unwrap(campaigns) as Campaign[],
@@ -112,6 +142,7 @@ async function fetchMarketing(): Promise<MarketingRows | null> {
     adAccounts: unwrap(adAccounts) as AdAccount[],
     assignments: unwrap(assignments) as AdAccountAssignment[],
     adPosts: unwrap(adPosts) as AdPost[],
+    adAccountSetupReady: accounts.setupReady,
   };
 }
 
@@ -163,6 +194,7 @@ export async function fetchCatalogs(): Promise<Catalogs> {
     assignments: marketing?.assignments ?? [],
     adPosts: marketing?.adPosts ?? [],
     marketingReady: marketing !== null,
+    adAccountSetupReady: marketing?.adAccountSetupReady ?? false,
   };
 }
 
@@ -235,6 +267,45 @@ export async function assignAdAccount(
   });
   if (error) throw saveError(error, error.message);
   return (data as { closed: number }).closed > 0;
+}
+
+/** Lỗi của hai hàm Cài đặt TKQC: câu báo của cơ sở dữ liệu đã là tiếng Việt, giữ nguyên. */
+function setupError(error: QueryError): Error {
+  if (isNotMigrated(error)) {
+    return new Error("Cơ sở dữ liệu chưa được cập nhật cho chức năng này (file supabase/007_ad_account_setup.sql chưa chạy).");
+  }
+  return new Error(error.message);
+}
+
+/**
+ * Thêm một TKQC (màn Nhập liệu → Cài đặt TKQC). Nhân viên Ads thêm cho chính mình (`adsStaffId` = null);
+ * quản lý thêm cho nhân viên được chọn.
+ */
+export async function addAdAccount(values: {
+  name: string;
+  accountId: string;
+  accountKind: AdAccountKind;
+  paymentKind: AdPaymentKind;
+  adsStaffId: string | null;
+}): Promise<void> {
+  const { error } = await getSupabaseBrowserClient().rpc("add_ad_account", {
+    p_name: values.name,
+    p_account_id: values.accountId,
+    p_account_kind: values.accountKind,
+    p_payment_kind: values.paymentKind,
+    p_ads_staff_id: values.adsStaffId,
+  });
+  if (error) throw setupError(error);
+}
+
+/**
+ * Nút thùng rác ở Cài đặt TKQC. Trả về "trashed" (đã chuyển vào Thùng rác) hoặc "deactivated"
+ * (TKQC đã có báo cáo → chỉ chuyển sang Ngừng dùng để giữ số liệu cũ).
+ */
+export async function removeAdAccount(id: string): Promise<"trashed" | "deactivated"> {
+  const { data, error } = await getSupabaseBrowserClient().rpc("remove_ad_account", { p_id: id });
+  if (error) throw setupError(error);
+  return data as "trashed" | "deactivated";
 }
 
 /** Bật / tắt nhận lead cho một nhân viên. */
