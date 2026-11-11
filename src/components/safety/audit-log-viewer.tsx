@@ -29,9 +29,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ROLE_LABELS } from "@/hooks/use-current-staff";
 import type { StaffMember } from "@/lib/catalog/types";
-import { ACTION_LABELS, TABLE_LABELS, describeChanges, recordLabel } from "@/lib/safety/labels";
+import { ACTION_LABELS, TABLE_LABELS, describeChanges, recordLabel, type AdsStatRef } from "@/lib/safety/labels";
 import {
   fetchAuditLog,
+  fetchAdsStatRefs,
   fetchLeadLabels,
   fetchOpenAlerts,
   resolveAlert,
@@ -88,6 +89,7 @@ function AuditContent() {
     rows: AuditEntry[];
     total: number;
     leadLabels: Map<string, string>;
+    adsStatRefs: Map<string, AdsStatRef>;
   } | null>(null);
   const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
@@ -111,7 +113,8 @@ function AuditContent() {
       const leadLabels = await fetchLeadLabels(
         result.rows.filter((row) => row.table_name === "leads").map((row) => row.record_id),
       );
-      if (!cancelled) setLoaded({ key: requestKey, ...result, leadLabels });
+      const adsStatRefs = await fetchAdsStatRefs(result.rows);
+      if (!cancelled) setLoaded({ key: requestKey, ...result, leadLabels, adsStatRefs });
     })().catch((error: unknown) => {
       if (!cancelled) setFailure({ key: requestKey, message: errorText(error) });
     });
@@ -353,6 +356,7 @@ function AuditContent() {
                           entry={entry}
                           names={names}
                           leadLabels={loaded?.leadLabels}
+                          adsStatRefs={loaded?.adsStatRefs}
                         />
                       ));
                     }
@@ -444,10 +448,12 @@ function EntryRow({
   entry,
   names,
   leadLabels,
+  adsStatRefs,
 }: {
   entry: AuditEntry;
   names: CatalogNames;
   leadLabels?: Map<string, string>;
+  adsStatRefs?: Map<string, AdsStatRef>;
 }) {
   const changes = describeChanges(entry, names);
   return (
@@ -463,7 +469,7 @@ function EntryRow({
         <div className="text-xs text-muted-foreground">
           {TABLE_LABELS[entry.table_name] ?? entry.table_name}
         </div>
-        <div className="font-medium">{recordLabel(entry, names, leadLabels)}</div>
+        <div className="font-medium">{recordLabel(entry, names, leadLabels, adsStatRefs)}</div>
       </TableCell>
       <TableCell className="max-w-96 align-top whitespace-normal">
         {entry.note && <p className="text-xs text-muted-foreground">{entry.note}</p>}

@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# số liệu thật của phòng khám chép từ Google Sheet để nạp một lần — không đưa lên GitHub
+/supabase/import/

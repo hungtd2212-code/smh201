@@ -1,5 +1,6 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isNotMigrated } from "@/lib/supabase/errors";
+import type { AdsStatRef } from "./labels";
 import {
   DEFAULT_SAFETY_SETTINGS,
   type AuditAction,
@@ -194,6 +195,28 @@ export async function fetchLeadLabels(ids: string[]): Promise<Map<string, string
     labels.set(row.id, `${row.full_name} · ${row.phone}`);
   }
   return labels;
+}
+
+/**
+ * Các dòng số liệu ads (chi tiêu / kết quả theo ngày) theo id: ngày nào, của TKQC hay nhân viên nào —
+ * để nhật ký hiện "THE DUONG 01 · 05/10/2026" thay cho một mã khó đọc.
+ */
+export async function fetchAdsStatRefs(
+  rows: { table_name: string; record_id: string }[],
+): Promise<Map<string, AdsStatRef>> {
+  const refs = new Map<string, AdsStatRef>();
+  const supabase = getSupabaseBrowserClient();
+  for (const [table, column] of [
+    ["ad_daily_spend", "ad_account_id"],
+    ["ads_daily_results", "ads_staff_id"],
+  ] as const) {
+    const ids = [...new Set(rows.filter((row) => row.table_name === table).map((row) => row.record_id))];
+    if (ids.length === 0) continue;
+    const { data, error } = await supabase.from(table).select(`id, stat_date, ${column}`).in("id", ids);
+    if (error) continue; // không đọc được thì nhật ký vẫn hiện, chỉ thiếu tên dễ đọc
+    for (const row of data as unknown as ({ id: string } & AdsStatRef)[]) refs.set(row.id, row);
+  }
+  return refs;
 }
 
 /** Các cảnh báo bất thường chưa xử lý, mới nhất trước. */

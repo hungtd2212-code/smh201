@@ -39,6 +39,9 @@ export type NavPage = {
 /** Người quản lý phân hệ Marketing. */
 const MARKETING_MANAGERS: StaffRole[] = ["super_admin", "admin", "marketing_manager"];
 
+/** Người nhập và xem số liệu ads hằng ngày: quản lý Marketing và Nhân viên Ads. */
+const ADS_PEOPLE: StaffRole[] = [...MARKETING_MANAGERS, "ads_staff"];
+
 export type NavModule = {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -77,16 +80,8 @@ export const NAV_SECTIONS: NavSection[] = [
             href: "/marketing/tong-quan",
             hint: "Thẻ số liệu, biểu đồ theo ngày, phễu Mess → Data → Lịch hẹn → Đơn (giai đoạn 4)",
           },
-          {
-            title: "Nhập số liệu ngày",
-            href: "/marketing/nhap-so-lieu",
-            hint: "Chi tiêu và số mess mỗi ngày của từng TKQC, nhập tay hoặc từ file Ads Manager (giai đoạn 3)",
-          },
-          {
-            title: "Báo cáo hiệu suất",
-            href: "/marketing/bao-cao",
-            hint: "Theo nhân viên, TKQC, camp, bài post, theo ngày, chất lượng data (giai đoạn 4)",
-          },
+          { title: "Nhập số liệu ngày", href: "/marketing/nhap-so-lieu", roles: ADS_PEOPLE },
+          { title: "Báo cáo hiệu suất", href: "/marketing/bao-cao", roles: ADS_PEOPLE },
           { title: "Chiến dịch & Bài post", href: "/marketing/chien-dich" },
           { title: "TKQC & Page", href: "/marketing/tkqc-page" },
           {
