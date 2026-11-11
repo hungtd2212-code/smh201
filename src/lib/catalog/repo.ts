@@ -1,4 +1,5 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { MISSING_COLUMN } from "@/lib/supabase/errors";
 import type {
   Campaign,
   Catalogs,
@@ -25,6 +26,25 @@ function split<T extends { deleted_at: string | null }>(rows: T[]) {
   };
 }
 
+/**
+ * Danh sách nhân viên. Cột can_delete do supabase/004_delete_permission.sql thêm vào; cơ sở dữ
+ * liệu chưa chạy file đó thì đọc không kèm cột này và coi như chưa ai được tick.
+ */
+async function fetchStaff(): Promise<StaffMember[]> {
+  const supabase = getSupabaseBrowserClient();
+  const full = await supabase
+    .from("staff")
+    .select("user_id, full_name, role, branch, accepts_leads, last_assigned_at, locked_at, can_delete")
+    .order("full_name");
+  if (full.error?.code !== MISSING_COLUMN) return unwrap(full) as StaffMember[];
+
+  const basic = await supabase
+    .from("staff")
+    .select("user_id, full_name, role, branch, accepts_leads, last_assigned_at, locked_at")
+    .order("full_name");
+  return (unwrap(basic) as Omit<StaffMember, "can_delete">[]).map((row) => ({ ...row, can_delete: false }));
+}
+
 export async function fetchCatalogs(): Promise<Catalogs> {
   const supabase = getSupabaseBrowserClient();
   const [channels, services, pages, campaigns, staff] = await Promise.all([
@@ -35,10 +55,7 @@ export async function fetchCatalogs(): Promise<Catalogs> {
       .from("campaigns")
       .select("id, name, channel_id, page_id, service_id, branch, start_date, end_date, budget, owner_id, ads_id, is_active, deleted_at")
       .order("created_at", { ascending: false }),
-    supabase
-      .from("staff")
-      .select("user_id, full_name, role, branch, accepts_leads, last_assigned_at, locked_at, can_delete")
-      .order("full_name"),
+    fetchStaff(),
   ]);
 
   const c = split(unwrap(channels) as Channel[]);
@@ -51,7 +68,7 @@ export async function fetchCatalogs(): Promise<Catalogs> {
     services: s.live,
     pages: p.live,
     campaigns: g.live,
-    staff: unwrap(staff) as StaffMember[],
+    staff,
     trashed: { channels: c.trashed, services: s.trashed, pages: p.trashed, campaigns: g.trashed },
   };
 }

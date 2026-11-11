@@ -34,7 +34,7 @@ export function AccountsManager() {
 
 function AccountsTable() {
   const { catalogs, reload } = useCatalogs();
-  const { userId, isSuperAdmin } = useRole();
+  const { userId, isSuperAdmin, permissionsReady } = useRole();
   const [saving, setSaving] = useState<string | null>(null);
 
   async function toggle(member: StaffMember) {
@@ -56,7 +56,14 @@ function AccountsTable() {
 
   return (
     <>
-      {!isSuperAdmin && (
+      {!permissionsReady && (
+        <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+          Ô tick chưa dùng được: cơ sở dữ liệu chưa được cập nhật cho chức năng này (file{" "}
+          <code>supabase/004_delete_permission.sql</code> chưa chạy). Cho tới lúc đó, nút “Chuyển vào thùng
+          rác” chỉ hiện với Quản trị cấp cao.
+        </p>
+      )}
+      {permissionsReady && !isSuperAdmin && (
         <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
           Bạn đang xem ở chế độ chỉ đọc: chỉ Quản trị cấp cao tick hoặc bỏ tick được.
         </p>
@@ -95,7 +102,7 @@ function AccountsTable() {
                         className="size-4 accent-primary"
                         aria-label={`Quyền xoá dữ liệu: ${member.full_name}`}
                         checked={always || member.can_delete}
-                        disabled={always || !isSuperAdmin || saving === member.user_id}
+                        disabled={always || !isSuperAdmin || !permissionsReady || saving === member.user_id}
                         onChange={() => toggle(member)}
                       />
                       <span className="text-muted-foreground">

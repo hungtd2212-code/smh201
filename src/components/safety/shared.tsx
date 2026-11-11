@@ -17,6 +17,8 @@ export function useRole() {
     isManager: role !== null && isManagerRole(role),
     /** Được tick quyền "Xoá dữ liệu" (hoặc là Quản trị cấp cao): thấy nút Chuyển vào thùng rác. */
     canDelete: staff.status === "ok" && staff.canDelete,
+    /** false = cơ sở dữ liệu chưa có ô tick quyền (chưa chạy file 004). */
+    permissionsReady: staff.status !== "ok" || staff.permissionsReady,
     /** Quản trị cấp cao, Quản trị: Thùng rác, Nhật ký, khoá tài khoản. */
     isAdmin: role !== null && isAdminRole(role),
     /** Quản trị cấp cao: xoá vĩnh viễn, đổi ngưỡng an toàn. */

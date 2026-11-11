@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { MISSING_COLUMN } from "@/lib/supabase/errors";
 
 export type StaffRole = "super_admin" | "admin" | "lead" | "sale" | "page";
 
@@ -37,12 +38,47 @@ export type CurrentStaff =
        * tick ở Cài đặt → Tài khoản & Phân quyền. Nút "Chuyển vào thùng rác" chỉ hiện khi true.
        */
       canDelete: boolean;
+      /**
+       * false = cơ sở dữ liệu chưa có ô tick quyền (chưa chạy supabase/004_delete_permission.sql).
+       * Khi đó mọi thứ vẫn chạy bình thường, chỉ riêng trang tick quyền báo là chưa dùng được.
+       */
+      permissionsReady: boolean;
     }
   /** Đã đăng nhập nhưng chưa được thêm vào bảng `staff` → chưa có quyền xem dữ liệu. */
   | { status: "no-access"; email: string }
   /** Tài khoản đang bị khoá (quản trị khoá, hoặc hệ thống tự khoá vì thao tác bất thường). */
   | { status: "locked"; email: string; reason: string | null }
   | { status: "error"; message: string };
+
+type OwnStaffRow = {
+  full_name: string;
+  role: StaffRole;
+  locked_at: string | null;
+  locked_reason: string | null;
+  can_delete?: boolean;
+};
+
+/**
+ * Dòng staff của chính người đang đăng nhập. Cột can_delete do file 004 thêm vào; cơ sở dữ liệu
+ * chưa chạy file đó thì đọc lại không kèm cột này, để việc đăng nhập không bị hỏng theo.
+ */
+async function fetchOwnStaffRow(userId: string) {
+  const supabase = getSupabaseBrowserClient();
+  const full = await supabase
+    .from("staff")
+    .select("full_name, role, locked_at, locked_reason, can_delete")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (full.error?.code !== MISSING_COLUMN) {
+    return { row: full.data as OwnStaffRow | null, error: full.error, permissionsReady: true };
+  }
+  const basic = await supabase
+    .from("staff")
+    .select("full_name, role, locked_at, locked_reason")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return { row: basic.data as OwnStaffRow | null, error: basic.error, permissionsReady: false };
+}
 
 async function loadCurrentStaff(): Promise<CurrentStaff> {
   const supabase = getSupabaseBrowserClient();
@@ -54,24 +90,21 @@ async function loadCurrentStaff(): Promise<CurrentStaff> {
   const email = auth.user.email ?? "";
 
   // RLS luôn cho mỗi người thấy dòng staff của chính mình (kể cả khi đang bị khoá).
-  const { data, error } = await supabase
-    .from("staff")
-    .select("full_name, role, locked_at, locked_reason, can_delete")
-    .eq("user_id", auth.user.id)
-    .maybeSingle();
+  const { row: data, error, permissionsReady } = await fetchOwnStaffRow(auth.user.id);
 
   if (error) return { status: "error", message: error.message };
   if (!data) return { status: "no-access", email };
   if (data.locked_at) {
-    return { status: "locked", email, reason: (data.locked_reason as string | null) ?? null };
+    return { status: "locked", email, reason: data.locked_reason ?? null };
   }
   return {
     status: "ok",
     userId: auth.user.id,
     email,
-    fullName: data.full_name as string,
-    role: data.role as StaffRole,
+    fullName: data.full_name,
+    role: data.role,
     canDelete: data.role === "super_admin" || data.can_delete === true,
+    permissionsReady,
   };
 }
 
