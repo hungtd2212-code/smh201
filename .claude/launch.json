@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "smh-erp",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-lc", "npm run dev"],
+      "port": 3000
+    }
+  ]
+}
