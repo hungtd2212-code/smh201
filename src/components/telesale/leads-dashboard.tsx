@@ -114,7 +114,9 @@ export function LeadsDashboard() {
     <div className="grid gap-5">
       <div className="grid gap-1">
         <h1 className="flex items-center gap-2.5 text-2xl font-semibold">
-          <Phone className="size-5" />
+          <span className="flex size-8 items-center justify-center rounded-lg bg-linear-to-br from-brand-teal to-brand-blue text-white">
+            <Phone className="size-4" />
+          </span>
           Telesale
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -173,7 +175,8 @@ export function LeadsDashboard() {
             <StatCards stats={stats} />
           )}
 
-          <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-[21rem_minmax(0,1.15fr)_minmax(0,1fr)]">
+          {/* ≥1280px: 3 cột (lịch | cột | vành khuyên). Hẹp hơn: lịch + vành khuyên, biểu đồ cột xuống dưới. */}
+          <div className="grid gap-4 md:grid-cols-[19rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1.2fr)_minmax(0,1fr)]">
             <Card>
               <CardContent>
                 <LeadCalendar
@@ -184,7 +187,7 @@ export function LeadsDashboard() {
               </CardContent>
             </Card>
 
-            <Card className="lg:order-last lg:col-span-2 2xl:order-none 2xl:col-span-1">
+            <Card className="md:order-last md:col-span-2 xl:order-none xl:col-span-1">
               <CardHeader>
                 <CardTitle>
                   Biểu đồ trạng thái — {APP.branch.name} ({formatRange(range)})

@@ -42,8 +42,8 @@ export function LeadCalendar({
       }
       modifiers={{ hasLeads: daysWithLeads }}
       modifiersClassNames={{ hasLeads: "day-has-leads" }}
-      className="w-full [--cell-size:--spacing(9)]"
-      classNames={{ root: "w-full" }}
+      className="mx-auto w-full max-w-80 [--cell-size:--spacing(9)]"
+      classNames={{ root: "mx-auto w-full max-w-80" }}
     />
   );
 }

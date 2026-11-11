@@ -1,4 +1,4 @@
-# SMH ERP — Phòng khám nha khoa (cơ sở Hà Nội)
+# Smile Hub ERP — Phòng khám nha khoa (cơ sở Hà Nội)
 
 Hệ thống quản lý nội bộ. Hiện có màn hình **Telesale → Leads**; các mục khác trong menu là trang giữ chỗ.
 
@@ -102,6 +102,8 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 | Đường dẫn | Nội dung |
 |---|---|
 | `src/lib/config.ts` | Tên ứng dụng, tên cơ sở |
+| `src/assets/brand/`, `src/app/icon.png` | Logo Smile Hub (nền trong suốt) và biểu tượng tab trình duyệt |
+| `src/app/globals.css` | Bảng màu giao diện (lấy từ hai màu xanh của logo) |
 | `src/lib/nav.ts` | Các mục trong menu trái |
 | `src/lib/leads/status.ts` | 13 trạng thái lead (nhãn, màu) và công thức “số thực nhận” |
 | `src/lib/leads/repo.ts` | Đọc / ghi lead (Supabase, hoặc dữ liệu mẫu khi chưa kết nối) |

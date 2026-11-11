@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { NAV_PAGES } from "@/lib/nav";
 
 /**
- * Trang giữ chỗ cho các phân hệ có trong menu nhưng chưa xây.
- * Khi làm một phân hệ, tạo thư mục riêng cho nó, ví dụ src/app/(app)/lich-hen/page.tsx
+ * Trang giữ chỗ cho các mục có trong menu nhưng chưa xây.
+ * Khi làm một trang, tạo thư mục riêng cho nó, ví dụ src/app/(app)/lich-hen/check-in/page.tsx
  * — Next.js sẽ ưu tiên trang đó thay cho trang giữ chỗ này.
  */
 
@@ -27,7 +27,7 @@ export async function generateMetadata({
   params,
 }: PageProps<"/[...slug]">): Promise<Metadata> {
   const page = findPage((await params).slug);
-  return { title: page?.title };
+  return { title: page ? `${page.module} — ${page.title}` : undefined };
 }
 
 export default async function PlaceholderPage({
@@ -38,14 +38,20 @@ export default async function PlaceholderPage({
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
-      <span className="flex size-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+      <span className="flex size-12 items-center justify-center rounded-xl bg-accent text-accent-foreground">
         <Construction className="size-6" />
       </span>
-      <h1 className="text-xl font-semibold">
-        {page.group ? `${page.group} — ${page.title}` : page.title}
-      </h1>
+      <p className="text-sm text-muted-foreground">
+        {[page.section, page.module].filter(Boolean).join(" › ")}
+      </p>
+      <h1 className="text-xl font-semibold">{page.title}</h1>
+      {page.hint && (
+        <p className="max-w-md text-sm text-muted-foreground">
+          Dự kiến gồm: {page.hint}
+        </p>
+      )}
       <p className="max-w-sm text-sm text-muted-foreground">
-        Phân hệ này chưa được xây dựng. Hiện mới có màn hình Telesale → Leads.
+        Trang này chưa được xây dựng. Hiện mới có Telesale → Leads.
       </p>
       <Button asChild variant="outline">
         <Link href="/telesale/leads">Về trang Leads</Link>
