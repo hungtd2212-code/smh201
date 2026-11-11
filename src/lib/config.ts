@@ -3,7 +3,7 @@
  */
 export const APP = {
   name: "Smile Hub",
-  tagline: "Nha khoa · Hà Nội",
+  tagline: "Nha khoa · 201 Trường Chinh",
   /** Hiện tại chỉ có 1 cơ sở. Khi mở thêm cơ sở, thêm vào bảng `leads.branch`. */
-  branch: { code: "HN", name: "Hà Nội" },
+  branch: { code: "HN", name: "201 Trường Chinh" },
 } as const;

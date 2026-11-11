@@ -1,4 +1,4 @@
-# Smile Hub ERP — Phòng khám nha khoa (cơ sở Hà Nội)
+# Smile Hub ERP — Phòng khám nha khoa (cơ sở 201 Trường Chinh)
 
 Hệ thống quản lý nội bộ. Các màn hình đã có:
 
