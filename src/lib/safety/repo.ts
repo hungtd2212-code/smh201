@@ -223,6 +223,15 @@ export async function setStaffLock(userId: string, locked: boolean, reason?: str
   if (error) fail(error);
 }
 
+/** Tick / bỏ tick quyền "Xoá dữ liệu" (chuyển vào Thùng rác) cho một tài khoản. Chỉ Quản trị cấp cao. */
+export async function setStaffCanDelete(userId: string, allowed: boolean): Promise<void> {
+  const { error } = await getSupabaseBrowserClient().rpc("set_staff_can_delete", {
+    p_user_id: userId,
+    p_allowed: allowed,
+  });
+  if (error) fail(error);
+}
+
 const SETTING_KEYS = Object.keys(DEFAULT_SAFETY_SETTINGS) as (keyof SafetySettings)[];
 
 export async function fetchSafetySettings(): Promise<SafetySettings> {

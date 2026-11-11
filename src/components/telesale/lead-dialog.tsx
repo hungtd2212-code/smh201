@@ -104,7 +104,7 @@ function LeadPanel({
   onDeleted,
   onClose,
 }: Omit<Props, "open" | "onOpenChange" | "lead"> & { lead: Lead; onClose: () => void }) {
-  const { isManager } = useRole();
+  const { isManager, canDelete } = useRole();
   const [tab, setTab] = useState<Tab>("form");
   /** Tăng lên sau mỗi lần hoàn tác để form nạp lại giá trị mới của lead. */
   const [revision, setRevision] = useState(0);
@@ -168,7 +168,7 @@ function LeadPanel({
           lead={lead}
           onSaved={onSaved}
           onCancel={onClose}
-          onDelete={isManager ? () => setConfirmingDelete(true) : undefined}
+          onDelete={canDelete ? () => setConfirmingDelete(true) : undefined}
         />
       </div>
       {tab === "history" && (
@@ -208,7 +208,7 @@ function LeadForm({
   lead: Lead;
   onSaved: Props["onSaved"];
   onCancel: () => void;
-  /** Có giá trị = người dùng được chuyển lead vào Thùng rác (Quản trị, Lead). */
+  /** Có giá trị = người dùng được tick quyền Xoá dữ liệu, nên thấy nút Chuyển vào thùng rác. */
   onDelete?: () => void;
 }) {
   const { catalogs } = useCatalogs();

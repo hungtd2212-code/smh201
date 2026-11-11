@@ -65,6 +65,7 @@ const FIELD_LABELS: Record<string, string> = {
   owner_id: "Người phụ trách",
   role: "Vai trò",
   accepts_leads: "Nhận lead",
+  can_delete: "Quyền xoá dữ liệu",
   locked_at: "Khoá tài khoản",
   locked_reason: "Lý do khoá",
   value: "Giá trị",

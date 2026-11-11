@@ -81,6 +81,7 @@ export function CatalogGate({ children }: { children: React.ReactNode }) {
 
 /**
  * Nút chuyển một dòng danh mục vào Thùng rác, có hỏi lại trước khi chuyển.
+ * Chỉ hiện với tài khoản được tick quyền "Xoá dữ liệu".
  * `what` là tên gọi kèm loại, ví dụ "kênh Zalo".
  */
 export function DeleteRowButton({
@@ -93,7 +94,10 @@ export function DeleteRowButton({
   what: string;
 }) {
   const { reload } = useCatalogs();
+  const staff = useCurrentStaff();
   const [open, setOpen] = useState(false);
+
+  if (staff.status !== "ok" || !staff.canDelete) return null;
 
   async function remove() {
     await softDeleteRecords(table, [id]);

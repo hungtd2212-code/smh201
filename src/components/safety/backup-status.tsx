@@ -183,7 +183,8 @@ function BackupContent() {
           status="Đang hoạt động"
         >
           <p>
-            Nhân viên chỉ chuyển được vào thùng rác; chỉ Quản trị cấp cao xoá vĩnh viễn. Hiện có{" "}
+            Chỉ tài khoản được tick quyền mới chuyển được vào thùng rác; chỉ Quản trị cấp cao xoá vĩnh
+            viễn. Hiện có{" "}
             <strong>{counts.trash.toLocaleString("vi-VN")}</strong> mục trong thùng rác, được giữ tối
             thiểu {settings.trash_min_days} ngày.
           </p>

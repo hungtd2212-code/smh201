@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ROLE_LABELS, isManagerRole, useCurrentStaff } from "@/hooks/use-current-staff";
+import { ROLE_LABELS, useCurrentStaff } from "@/hooks/use-current-staff";
 import { APP } from "@/lib/config";
 import { exportLeadsToExcel } from "@/lib/leads/export";
 import { fetchLead, fetchLeads } from "@/lib/leads/repo";
@@ -233,7 +233,7 @@ export function LeadsDashboard() {
             onAdd={() => setIntakeOpen(true)}
             onEdit={(lead) => setEditing({ open: true, lead })}
             onLeadUpdated={mergeLead}
-            canDelete={staff.status === "ok" && isManagerRole(staff.role)}
+            canDelete={staff.status === "ok" && staff.canDelete}
             onLeadsDeleted={removeLeads}
           />
         </>

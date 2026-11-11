@@ -56,6 +56,8 @@ export type StaffMember = {
   last_assigned_at: string | null;
   /** Khác null = tài khoản đang bị khoá. */
   locked_at: string | null;
+  /** Được tick quyền "Xoá dữ liệu" (chuyển vào Thùng rác). Quản trị cấp cao luôn có, không cần tick. */
+  can_delete: boolean;
 };
 
 type CatalogRows = {

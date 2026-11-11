@@ -13,8 +13,10 @@ export function useRole() {
   return {
     staff,
     userId: staff.status === "ok" ? staff.userId : null,
-    /** Quản trị cấp cao, Quản trị, Lead: được chuyển lead vào Thùng rác và hoàn tác lead. */
+    /** Quản trị cấp cao, Quản trị, Lead: được hoàn tác lead về phiên bản cũ. */
     isManager: role !== null && isManagerRole(role),
+    /** Được tick quyền "Xoá dữ liệu" (hoặc là Quản trị cấp cao): thấy nút Chuyển vào thùng rác. */
+    canDelete: staff.status === "ok" && staff.canDelete,
     /** Quản trị cấp cao, Quản trị: Thùng rác, Nhật ký, khoá tài khoản. */
     isAdmin: role !== null && isAdminRole(role),
     /** Quản trị cấp cao: xoá vĩnh viễn, đổi ngưỡng an toàn. */

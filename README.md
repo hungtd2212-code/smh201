@@ -5,7 +5,7 @@ Hệ thống quản lý nội bộ. Các màn hình đã có:
 - **Telesale → Leads**: bảng điều khiển lead, form Thêm lead (dán đoạn chat, kiểm tra trùng số, chia telesale), form telesale xử lý lead.
 - **Telesale → Chia lead / Chia ca**: bật / tắt nhận lead, thứ tự xoay vòng (xếp ca làm: đợt 2).
 - **Marketing → Chiến dịch**, **Marketing → Nguồn lead & Trang**, **Cài đặt → Dịch vụ & Bảng giá**: các danh mục.
-- **Cài đặt → Thùng rác**, **Nhật ký hệ thống**, **Sao lưu & Khôi phục**: an toàn dữ liệu (xem mục “An toàn dữ liệu” bên dưới).
+- **Cài đặt → Tài khoản & Phân quyền**, **Thùng rác**, **Nhật ký hệ thống**, **Sao lưu & Khôi phục**: an toàn dữ liệu (xem mục “An toàn dữ liệu” bên dưới).
 
 Các mục khác trong menu là trang giữ chỗ.
 
@@ -31,15 +31,16 @@ Mở http://localhost:3000. Ứng dụng cần kết nối Supabase (mục 1 bê
 2. Menu trái → **SQL Editor** → **New query**.
 3. Mở file [`supabase/schema.sql`](supabase/schema.sql), sao chép toàn bộ, dán vào và bấm **Run**.
 4. Làm tương tự, lần lượt theo số thứ tự, với các file còn lại trong thư mục `supabase/`:
-   [`002_marketing_lead.sql`](supabase/002_marketing_lead.sql) rồi [`003_data_safety.sql`](supabase/003_data_safety.sql).
+   [`002_marketing_lead.sql`](supabase/002_marketing_lead.sql), [`003_data_safety.sql`](supabase/003_data_safety.sql),
+   rồi [`004_delete_permission.sql`](supabase/004_delete_permission.sql).
 
 `schema.sql` tạo 2 bảng `leads` và `staff`, kèm phân quyền: chỉ tài khoản có tên trong bảng `staff` mới xem/sửa được lead.
 
-> **Lưu ý thứ tự.** Chạy lại *cùng một file* thì không sao. Nhưng khi đã chạy `003_data_safety.sql`
-> thì **không chạy lại `schema.sql` hay `002_marketing_lead.sql` nữa** — hai file cũ sẽ ghi đè
-> các quy tắc an toàn mà file 003 vừa đặt.
+> **Lưu ý thứ tự.** Chạy lại *cùng một file* thì không sao. Nhưng **đã chạy file số lớn hơn thì
+> không chạy lại file số nhỏ hơn nữa** (ví dụ đã chạy 004 thì không chạy lại `schema.sql`, 002, 003) —
+> file cũ sẽ ghi đè quy tắc mà file mới vừa đặt.
 >
-> Trước khi đem một file SQL mới lên Supabase, chạy `npm run test:db`: lệnh này chạy cả ba file
+> Trước khi đem một file SQL mới lên Supabase, chạy `npm run test:db`: lệnh này chạy tất cả các file
 > trên một cơ sở dữ liệu giả lập ngay trong máy và kiểm tra hơn 100 tình huống, không đụng tới dữ liệu thật.
 
 ### Bước 2 — Tạo tài khoản đăng nhập cho bạn
@@ -60,11 +61,13 @@ Thêm nhân viên khác: làm lại 2 việc trên, `role` là một trong:
 |---|---|---|
 | `super_admin` | Quản trị cấp cao | Mọi thứ, kể cả xoá vĩnh viễn và đổi ngưỡng an toàn |
 | `admin` | Quản trị | Thùng rác, khôi phục, nhật ký hệ thống, hoàn tác theo lô, khoá tài khoản |
-| `lead` | Lead (trưởng nhóm) | Chuyển lead / danh mục vào thùng rác, hoàn tác một lead về phiên bản cũ |
-| `sale` | Telesale | Xử lý lead được giao; **không** chuyển được lead vào thùng rác |
-| `page` | Trực page | Dán lead; **không** chuyển được lead vào thùng rác |
+| `lead` | Lead (trưởng nhóm) | Sửa danh mục, hoàn tác một lead về phiên bản cũ |
+| `sale` | Telesale | Xử lý lead được giao |
+| `page` | Trực page | Dán lead |
 
 Khi chạy `003_data_safety.sql`, tài khoản `admin` được tạo sớm nhất tự động trở thành `super_admin`.
+
+Quyền **chuyển dữ liệu vào thùng rác** không theo vai trò mà theo ô tick riêng của từng tài khoản — xem mục “An toàn dữ liệu”.
 
 3. Nên tắt tự đăng ký: **Authentication → Sign In / Providers** → tắt **Allow new users to sign up**.
 
@@ -141,8 +144,9 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 | `supabase/schema.sql` | Bảng `leads`, `staff` và phân quyền ban đầu |
 | `supabase/002_marketing_lead.sql` | Phân hệ Marketing → Lead: danh mục, lần tiếp cận, quy tắc trùng số, chia telesale |
 | `supabase/003_data_safety.sql` | An toàn dữ liệu: không ai xoá được, thùng rác, khoá số điện thoại, nhật ký thay đổi, hoàn tác, cảnh báo bất thường, khoá tài khoản |
+| `supabase/004_delete_permission.sql` | Quyền “Xoá dữ liệu” tick theo từng tài khoản |
 | `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`) |
-| `src/lib/safety/`, `src/components/safety/` | Thùng rác, Nhật ký hệ thống, Sao lưu & Khôi phục, tab Lịch sử của lead |
+| `src/lib/safety/`, `src/components/safety/` | Tài khoản & Phân quyền, Thùng rác, Nhật ký hệ thống, Sao lưu & Khôi phục, tab Lịch sử của lead |
 
 ### Cách tính các chỉ số
 
@@ -166,7 +170,7 @@ Muốn đổi công thức: sửa `NOT_RECEIVED_STATUSES` trong `src/lib/leads/s
 
 **Lớp 1 — Không ai xoá được.** Số điện thoại đã thêm vào thì không ai xoá được. Ứng dụng không có nút “Xoá”, chỉ có **Chuyển vào thùng rác** (ẩn đi, khôi phục lại được) — áp dụng cho lead, kênh, page, chiến dịch, dịch vụ.
 
-- **Chuyển vào thùng rác**: Lead (trưởng nhóm) trở lên. Telesale và trực page không làm được — chỉ đổi trạng thái (Fail, Số huỷ…).
+- **Chuyển vào thùng rác**: chỉ tài khoản được Quản trị cấp cao **tick quyền “Xoá dữ liệu”** ở **Cài đặt → Tài khoản & Phân quyền** — chỉ những tài khoản đó mới thấy nút. Mặc định không ai được tick; Quản trị cấp cao luôn có quyền. Người không được tick chỉ đổi trạng thái (Fail, Số huỷ…). Với danh mục, ngoài ô tick còn phải là Quản trị hoặc Lead.
 - **Khôi phục** (Cài đặt → Thùng rác): Quản trị trở lên.
 - **Xoá vĩnh viễn**: chỉ Quản trị cấp cao (chủ phòng khám), phải nhập lại mật khẩu, và chỉ với bản ghi đã nằm trong thùng rác đủ 90 ngày. Không có gì tự bị xoá vĩnh viễn.
 - **Số điện thoại của một lead không sửa hay gỡ được** (trừ Quản trị cấp cao). Số sai thì đánh dấu “Số sai”.

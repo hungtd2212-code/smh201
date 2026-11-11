@@ -37,7 +37,7 @@ export async function fetchCatalogs(): Promise<Catalogs> {
       .order("created_at", { ascending: false }),
     supabase
       .from("staff")
-      .select("user_id, full_name, role, branch, accepts_leads, last_assigned_at, locked_at")
+      .select("user_id, full_name, role, branch, accepts_leads, last_assigned_at, locked_at, can_delete")
       .order("full_name"),
   ]);
 

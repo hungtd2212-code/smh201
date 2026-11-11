@@ -62,7 +62,7 @@ type Props = {
   onAdd: () => void;
   onEdit: (lead: Lead) => void;
   onLeadUpdated: (lead: Lead) => void;
-  /** Quản trị và Lead được chọn nhiều lead để chuyển vào Thùng rác. */
+  /** Người được tick quyền Xoá dữ liệu mới thấy ô chọn và nút Chuyển vào thùng rác. */
   canDelete: boolean;
   onLeadsDeleted: (ids: string[]) => void;
 };

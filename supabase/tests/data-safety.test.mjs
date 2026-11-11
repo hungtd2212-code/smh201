@@ -51,7 +51,7 @@ for (const name of ["owner", "adm", "lead1", "sale1", "sale2", "page1"]) {
   U[name] = (await db.query(`insert into auth.users (email) values ($1) returning id`, [`${name}@test`])).rows[0].id;
 }
 
-section("Chạy schema.sql, 002, 003");
+section("Chạy schema.sql, 002, 003, 004");
 await db.exec(read("schema.sql"));
 await db.exec(`
   insert into public.staff (user_id, full_name, role, created_at) values
@@ -67,6 +67,9 @@ await db.exec(read("003_data_safety.sql"));
 ok(true, "ba file chạy không lỗi");
 await db.exec(read("003_data_safety.sql"));
 ok(true, "chạy lại 003 lần hai không lỗi");
+await db.exec(read("004_delete_permission.sql"));
+await db.exec(read("004_delete_permission.sql"));
+ok(true, "004 chạy hai lần không lỗi");
 
 const one = async (sql, params) => (await db.query(sql, params)).rows[0];
 const all = async (sql, params) => (await db.query(sql, params)).rows;
@@ -153,13 +156,57 @@ await as(U.sale1, `update public.leads set note = 'hẹn thứ 7' where id = $1`
 ok((await one(`select count(*)::int n from public.audit_log where record_id = $1`, [l1.lead_id])).n === 2, "sửa mà không đổi gì → không ghi thêm");
 ok((await one(`select count(*)::int n from public.audit_log where table_name = 'staff'`)).n === 0, "lượt xoay vòng (last_assigned_at) không bị ghi");
 
+section("Quyền xoá dữ liệu theo ô tick");
+// Gọi với danh sách rỗng: hàm kiểm tra quyền trước, rồi trả về 0 mà không đụng bản ghi nào.
+const mayTrash = (uid, table = "leads") => errOf(uid, `select public.soft_delete_records('${table}', '{}'::uuid[])`);
+const ticked = async (uid) => (await one(`select can_delete from public.staff where user_id = $1`, [uid])).can_delete;
+ok((await all(`select 1 from public.staff where can_delete`)).length === 0, "mặc định không tài khoản nào được tick");
+for (const [who, uid] of [["telesale", U.sale1], ["trực page", U.page1], ["Lead", U.lead1], ["Quản trị", U.adm]]) {
+  const err = await mayTrash(uid);
+  ok(/chưa được cấp quyền xoá dữ liệu/.test(err ?? ""), `${who} chưa được tick → không chuyển được vào thùng rác`, err);
+}
+ok((await mayTrash(U.owner)) === null, "Quản trị cấp cao luôn có quyền, không cần tick");
+
+// Ai được tick
+let perm = await errOf(U.sale1, `select public.set_staff_can_delete($1, true)`, [U.sale1]);
+ok(/Chỉ Quản trị cấp cao/.test(perm ?? ""), "telesale tự tick cho mình → bị từ chối", perm);
+perm = await errOf(U.adm, `select public.set_staff_can_delete($1, true)`, [U.lead1]);
+ok(/Chỉ Quản trị cấp cao/.test(perm ?? ""), "Quản trị thường tick cho người khác → bị từ chối", perm);
+perm = await errOf(U.sale1, `update public.staff set can_delete = true where user_id = $1`, [U.sale1]);
+ok(/permission denied/.test(perm ?? ""), "telesale sửa thẳng bảng staff → bị từ chối", perm);
+ok((await ticked(U.sale1)) === false, "… ô tick của telesale vẫn trống");
+perm = await errOf(U.owner, `select public.set_staff_can_delete($1, false)`, [U.owner]);
+ok(/luôn có quyền này/.test(perm ?? ""), "không bỏ tick được của Quản trị cấp cao", perm);
+
+// Tick cho telesale: chuyển được lead, không đụng được danh mục; bỏ tick thì mất quyền ngay.
+await as(U.owner, `select public.set_staff_can_delete($1, true)`, [U.sale1]);
+ok((await mayTrash(U.sale1)) === null, "telesale được tick → chuyển được lead vào thùng rác");
+perm = await mayTrash(U.sale1, "channels");
+ok(/Chỉ Quản trị hoặc Lead/.test(perm ?? ""), "telesale được tick vẫn không chuyển được danh mục", perm);
+let permLog = await all(`select actor_id, old_data, new_data from public.audit_log where table_name = 'staff' and record_id = $1 order by id desc limit 1`, [U.sale1]);
+ok(permLog[0]?.actor_id === U.owner && permLog[0].old_data.can_delete === false && permLog[0].new_data.can_delete === true, "lần tick được ghi vào nhật ký", permLog[0]);
+await as(U.owner, `select public.set_staff_can_delete($1, false)`, [U.sale1]);
+perm = await mayTrash(U.sale1);
+ok(/chưa được cấp quyền xoá dữ liệu/.test(perm ?? ""), "bỏ tick → mất quyền ngay", perm);
+
+// Tài khoản được tick nhưng đang bị khoá thì không làm được gì.
+await as(U.owner, `select public.set_staff_can_delete($1, true)`, [U.sale2]);
+await db.query(`update public.staff set locked_at = now() where user_id = $1`, [U.sale2]);
+perm = await mayTrash(U.sale2);
+ok(/chưa được cấp quyền xoá dữ liệu/.test(perm ?? ""), "được tick nhưng đang bị khoá → không chuyển được", perm);
+await db.query(`update public.staff set locked_at = null, can_delete = false where user_id = $1`, [U.sale2]);
+
+// Các phép thử phía dưới dùng Lead (trưởng nhóm) đã được tick.
+await as(U.owner, `select public.set_staff_can_delete($1, true)`, [U.lead1]);
+ok((await mayTrash(U.lead1)) === null && (await mayTrash(U.lead1, "channels")) === null, "Lead được tick → chuyển được cả lead lẫn danh mục");
+
 section("Quyền xoá");
 let e = await errOf(U.sale1, `update public.leads set deleted_at = now() where id = $1`, [l1.lead_id]);
 ok(/Chuyển vào thùng rác \/ khôi phục/.test(e ?? ""), "telesale tự sửa deleted_at → bị chặn", e);
 e = await errOf(U.sale1, `select public.soft_delete_records('leads', $1::uuid[])`, [arr([l1.lead_id])]);
-ok(/không có quyền chuyển vào thùng rác/.test(e ?? ""), "telesale gọi hàm xoá → bị từ chối", e);
+ok(/chưa được cấp quyền xoá dữ liệu/.test(e ?? ""), "telesale (không được tick) gọi hàm chuyển vào thùng rác → bị từ chối", e);
 e = await errOf(U.page1, `select public.soft_delete_records('leads', $1::uuid[])`, [arr([l1.lead_id])]);
-ok(/không có quyền chuyển vào thùng rác/.test(e ?? ""), "trực page gọi hàm xoá → bị từ chối", e);
+ok(/chưa được cấp quyền xoá dữ liệu/.test(e ?? ""), "trực page (không được tick) gọi hàm chuyển vào thùng rác → bị từ chối", e);
 // Không tài khoản nào — kể cả Quản trị cấp cao — xoá thẳng được một lead.
 for (const [who, uid] of [["telesale", U.sale1], ["trực page", U.page1], ["Lead", U.lead1], ["Quản trị", U.adm], ["Quản trị cấp cao", U.owner]]) {
   e = await errOf(uid, `delete from public.leads where id = $1`, [l1.lead_id]);
@@ -190,7 +237,7 @@ ok(/không có thùng rác/.test(e ?? ""), "bảng không có thùng rác → t�
 
 section("Xoá mềm, thùng rác, khôi phục");
 let r = (await as(U.lead1, `select public.soft_delete_records('leads', $1::uuid[]) as r`, [arr([l1.lead_id])]))[0].r;
-ok(r.deleted === 1, "Lead (trưởng nhóm) xoá được 1 lead", r);
+ok(r.deleted === 1, "Lead (trưởng nhóm) đã được tick chuyển được 1 lead vào thùng rác", r);
 ok((await as(U.sale1, `select id from public.leads where id = $1`, [l1.lead_id])).length === 0, "telesale không còn thấy lead đã xoá");
 ok((await as(U.adm, `select id from public.leads where id = $1`, [l1.lead_id])).length === 1, "quản trị vẫn thấy");
 ok((await as(U.adm, `select * from public.trash_items`)).length === 1, "thùng rác (quản trị) có 1 dòng");
@@ -313,14 +360,14 @@ ok((await one(`select deleted_at from public.leads where id = $1`, [created])).d
 log = await all(`select distinct note from public.audit_log where note like 'Hoàn tác theo lô%'`);
 ok(log.length === 1, "ghi chú hoàn tác theo lô", log);
 
-// sale2 xoá (qua quyền Lead tạm) rồi hoàn tác → được khôi phục
-await db.query(`update public.staff set role = 'lead' where user_id = $1`, [U.sale2]);
+// sale2 (tạm được tick) chuyển lead vào thùng rác rồi bị hoàn tác → lead được khôi phục
+await db.query(`update public.staff set can_delete = true where user_id = $1`, [U.sale2]);
 const from2 = await dbNow();
 await as(U.sale2, `select public.soft_delete_records('leads', $1::uuid[])`, [arr([b[3]])], { pwAgo: 10 });
 const to2 = await dbNow();
 r = (await as(U.adm, `select public.undo_changes($1, $2, $3, true) as r`, [U.sale2, from2, to2]))[0].r;
 ok((await one(`select deleted_at from public.leads where id = $1`, [b[3]])).deleted_at === null, "hoàn tác theo lô khôi phục lead bị xoá", r);
-await db.query(`update public.staff set role = 'sale' where user_id = $1`, [U.sale2]);
+await db.query(`update public.staff set can_delete = false where user_id = $1`, [U.sale2]);
 
 section("Cảnh báo bất thường và khoá tài khoản");
 await db.exec(`update public.app_settings set value = '5' where key = 'anomaly_max_changes_per_hour'`);
@@ -341,7 +388,8 @@ await as(U.sale1, `update public.leads set note = 'c' where id = $1`, [many[6]])
 ok((await one(`select note from public.leads where id = $1`, [many[6]])).note === null, "… và không sửa được gì");
 e = await errOf(U.sale1, `select public.intake_lead('0955999999', 'x', $1)`, [fb]);
 ok(/chưa được cấp quyền/.test(e ?? ""), "… không dán được lead", e);
-log = await all(`select note from public.audit_log where table_name = 'staff' and record_id = $1`, [U.sale1]);
+// (sale1 còn có 2 dòng nhật ký tick / bỏ tick quyền xoá ở trên — chỉ xét dòng khoá tài khoản)
+log = await all(`select note from public.audit_log where table_name = 'staff' and record_id = $1 and new_data ? 'locked_at'`, [U.sale1]);
 ok(log.length === 1 && /tự khoá/.test(log[0].note), "việc tự khoá được ghi nhật ký", log);
 e = await errOf(U.lead1, `select public.resolve_security_alert($1, true)`, [alerts[0].id]);
 ok(/Chỉ Quản trị/.test(e ?? ""), "Lead không xử lý được cảnh báo", e);

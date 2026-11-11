@@ -14,7 +14,7 @@ export const ROLE_LABELS: Record<StaffRole, string> = {
   page: "Trực page",
 };
 
-/** Quản trị cấp cao, Quản trị và Lead: sửa danh mục, chuyển lead vào Thùng rác, bật/tắt nhận lead của người khác. */
+/** Quản trị cấp cao, Quản trị và Lead: sửa danh mục, hoàn tác lead, bật/tắt nhận lead của người khác. */
 export const isManagerRole = (role: StaffRole) =>
   role === "super_admin" || role === "admin" || role === "lead";
 
@@ -26,7 +26,18 @@ export type CurrentStaff =
   | { status: "demo" }
   | { status: "loading" }
   /** Đã đăng nhập và có tên trong bảng `staff`. */
-  | { status: "ok"; userId: string; email: string; fullName: string; role: StaffRole }
+  | {
+      status: "ok";
+      userId: string;
+      email: string;
+      fullName: string;
+      role: StaffRole;
+      /**
+       * Được chuyển dữ liệu vào Thùng rác: Quản trị cấp cao luôn có; người khác chỉ khi được
+       * tick ở Cài đặt → Tài khoản & Phân quyền. Nút "Chuyển vào thùng rác" chỉ hiện khi true.
+       */
+      canDelete: boolean;
+    }
   /** Đã đăng nhập nhưng chưa được thêm vào bảng `staff` → chưa có quyền xem dữ liệu. */
   | { status: "no-access"; email: string }
   /** Tài khoản đang bị khoá (quản trị khoá, hoặc hệ thống tự khoá vì thao tác bất thường). */
@@ -45,7 +56,7 @@ async function loadCurrentStaff(): Promise<CurrentStaff> {
   // RLS luôn cho mỗi người thấy dòng staff của chính mình (kể cả khi đang bị khoá).
   const { data, error } = await supabase
     .from("staff")
-    .select("full_name, role, locked_at, locked_reason")
+    .select("full_name, role, locked_at, locked_reason, can_delete")
     .eq("user_id", auth.user.id)
     .maybeSingle();
 
@@ -60,6 +71,7 @@ async function loadCurrentStaff(): Promise<CurrentStaff> {
     email,
     fullName: data.full_name as string,
     role: data.role as StaffRole,
+    canDelete: data.role === "super_admin" || data.can_delete === true,
   };
 }
 

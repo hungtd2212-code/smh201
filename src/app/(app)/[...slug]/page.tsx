@@ -18,6 +18,7 @@ const BUILT_PAGES = new Set([
   "/marketing/chien-dich",
   "/marketing/nguon-lead",
   "/cai-dat/dich-vu",
+  "/cai-dat/tai-khoan",
   "/cai-dat/nhat-ky",
   "/cai-dat/thung-rac",
   "/cai-dat/sao-luu",
