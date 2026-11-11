@@ -159,10 +159,22 @@ export type StaffMember = {
   last_assigned_at: string | null;
   /** Khác null = tài khoản đang bị khoá. */
   locked_at: string | null;
+  /** Lý do khoá (vd "Quản trị khoá", "Đã xoá khỏi danh sách nhân sự"). */
+  locked_reason: string | null;
   /** Được tick quyền "Xoá dữ liệu" (chuyển vào Thùng rác). Quản trị cấp cao luôn có, không cần tick. */
   can_delete: boolean;
   /** Được tick quyền "Xuất file". Quản trị luôn có, không cần tick. */
   can_export: boolean;
+  /** Tên đăng nhập (null = tài khoản cũ đăng nhập bằng email). Các cột dưới do file 008 thêm vào. */
+  username: string | null;
+  /** Vị trí: coo | lead_ads | ads_staff | page; null = tài khoản tạo trước khi có vị trí. */
+  position: "coo" | "lead_ads" | "ads_staff" | "page" | null;
+  /** Nơi làm việc (branches.id). */
+  branch_id: string | null;
+  /** Trang được xem; null = menu theo vai trò như trước. */
+  page_access: string[] | null;
+  /** Khác null = đã xoá khỏi danh sách nhân sự (vẫn giữ tên trong dữ liệu cũ). */
+  deleted_at: string | null;
 };
 
 type CatalogRows = {

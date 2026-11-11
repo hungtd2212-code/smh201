@@ -34,7 +34,8 @@ Mở http://localhost:3000. Ứng dụng cần kết nối Supabase (mục 1 bê
 4. Làm tương tự, lần lượt theo số thứ tự, với các file còn lại trong thư mục `supabase/`:
    [`002_marketing_lead.sql`](supabase/002_marketing_lead.sql), [`003_data_safety.sql`](supabase/003_data_safety.sql),
    [`004_delete_permission.sql`](supabase/004_delete_permission.sql), [`005_marketing_catalog.sql`](supabase/005_marketing_catalog.sql),
-   [`006_ad_daily_reports.sql`](supabase/006_ad_daily_reports.sql), rồi [`007_ad_account_setup.sql`](supabase/007_ad_account_setup.sql).
+   [`006_ad_daily_reports.sql`](supabase/006_ad_daily_reports.sql), [`007_ad_account_setup.sql`](supabase/007_ad_account_setup.sql),
+   rồi [`008_staff_accounts.sql`](supabase/008_staff_accounts.sql).
 5. (Tuỳ chọn) Chạy [`supabase/seeds/005_marketing_sample.sql`](supabase/seeds/005_marketing_sample.sql) để có sẵn 7 nhân viên Ads,
    2 TKQC và 1 chiến dịch + 1 bài post mẫu (có chữ “(mẫu)”). Chạy lại nhiều lần không sinh dòng trùng.
 
@@ -161,9 +162,10 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 | `supabase/004_delete_permission.sql` | Quyền “Xoá dữ liệu” tick theo từng tài khoản |
 | `supabase/005_marketing_catalog.sql` | Phân hệ Marketing giai đoạn 1: vai trò mới, quyền “Xuất file”, nhân viên Ads, TKQC + phân công theo ngày, bài post, tách ID bài từ link |
 | `supabase/006_ad_daily_reports.sql` | Báo cáo ads hằng ngày (`ad_daily_reports`): mỗi (ngày, TK ADS) một báo cáo, nhân viên sửa trong 24 giờ, không ai xoá |
+| `supabase/008_staff_accounts.sql` | Danh sách cơ sở, thêm người dùng ngay trong ứng dụng (tạo luôn tài khoản đăng nhập), vị trí, phân quyền xem từng trang, khoá = cấm đăng nhập |
 | `supabase/007_ad_account_setup.sql` | Nhân viên tự cài đặt TKQC: loại tài khoản, thanh toán, `add_ad_account` / `remove_ad_account`; tài khoản vai trò Nhân viên Ads tự có dòng nhân viên Ads |
 | `supabase/seeds/` | Dữ liệu mẫu (không bắt buộc) |
-| `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`): `data-safety` (schema → 004), `marketing-catalog` (schema → 005), `ad-reports` (schema → 006), `ad-account-setup` (schema → 007). `npm test` chạy thêm `tests/number-input.test.mjs` (ô nhập số) |
+| `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`): `data-safety` (schema → 004), `marketing-catalog` (schema → 005), `ad-reports` (schema → 006), `ad-account-setup` (schema → 007), `staff-accounts` (schema → 008). `npm test` chạy thêm `tests/number-input.test.mjs` (ô nhập số) |
 | `src/lib/safety/`, `src/components/safety/` | Tài khoản & Phân quyền, Thùng rác, Nhật ký hệ thống, Sao lưu & Khôi phục, tab Lịch sử của lead |
 
 ### Cách tính các chỉ số
@@ -207,6 +209,15 @@ Báo cáo ads hằng ngày (file `006_ad_daily_reports.sql`, bản đơn giản 
 - Các trang Chiến dịch & Bài post, TKQC & Page, Nhân viên Ads tạm ẩn khỏi menu nhưng vẫn mở được; quản lý có đường vào từ thẻ Cài đặt TKQC (vd để chuyển một TKQC sang người khác).
 
 Các giai đoạn sau (chưa làm): 2 — Nhập lead (dán link bài, tự điền Bài → Camp → TKQC → Nhân viên Ads, “Số tôi đã dán”); 3 — nhập file CSV từ Ads Manager; 4 — báo cáo tới mức chiến dịch / bài post; 5 — Mục tiêu & Ngân sách, công trực page, khoá sổ tháng; 6 — Nhập dữ liệu T9–T10/2026.
+
+### Tài khoản, vị trí và phân quyền (file `008_staff_accounts.sql`)
+
+- **Thêm người** ở Cài đặt → Tài khoản & Phân quyền: Tên đăng nhập, Mật khẩu (điền sẵn `123456789@`), Tên nhân viên, Vị trí, Nơi làm việc. Tài khoản đăng nhập được tạo luôn — không phải vào Supabase nữa. Nhân viên đăng nhập bằng **tên đăng nhập** (hệ thống tự đổi thành `<tên>@smilehub.local`); tài khoản cũ vẫn đăng nhập bằng email.
+- **Vị trí** quyết định được đọc / sửa dữ liệu gì: COO → Quản trị, Lead Ads → Trưởng Marketing, Nhân viên quảng cáo → Nhân viên Ads, Trực page → Trực page. Chỉ Quản trị cấp cao thêm / sửa người ở vị trí COO.
+- **Phân quyền**: tick trang nào thì trang đó hiện ở menu trái của người đó (và mở được); người mới thêm chưa có trang nào. Tài khoản cũ chưa phân quyền vẫn thấy menu theo vai trò. Quản trị cấp cao luôn thấy mọi trang. Trong hộp Phân quyền còn có hai quyền riêng: Xoá dữ liệu, Xuất file.
+- Mỗi dòng nhân sự: bút = sửa (kể cả đặt lại mật khẩu), thùng rác = xoá (ẩn khỏi danh sách + cấm đăng nhập, dữ liệu cũ giữ nguyên; cần tick “Xoá dữ liệu”), khoá đóng = cấm đăng nhập / khoá mở = hoạt động.
+- **Danh sách cơ sở** (Cài đặt → Danh sách cơ sở): tên, địa chỉ; là danh sách “Nơi làm việc” khi thêm người.
+- Bấm “⋮” cạnh tên ở cuối menu trái: xem tên đăng nhập, vị trí; **Đổi mật khẩu**, **Đăng xuất**.
 
 ### An toàn dữ liệu
 

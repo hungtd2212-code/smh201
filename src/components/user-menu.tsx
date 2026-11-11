@@ -1,6 +1,7 @@
 "use client";
 
-import { EllipsisVertical, LogOut } from "lucide-react";
+import { EllipsisVertical, KeyRound, LogOut } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -16,7 +17,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { ROLE_LABELS, useCurrentStaff } from "@/hooks/use-current-staff";
+import { ChangePasswordDialog } from "@/components/staff/change-password-dialog";
+import { useCurrentStaff } from "@/hooks/use-current-staff";
+import { loginName, positionLabel } from "@/lib/staff/positions";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /** Lấy 2 chữ cái đầu để làm ảnh đại diện: "Thu Hà" → "TH". */
@@ -29,9 +32,10 @@ const initials = (name: string) =>
     .join("")
     .toUpperCase() || "?";
 
-/** Ô người dùng ở cuối menu trái: tên, vai trò và nút đăng xuất. */
+/** Ô người dùng ở cuối menu trái: tên, tên đăng nhập, vị trí; bấm "⋮" để đổi mật khẩu / đăng xuất. */
 export function UserMenu() {
   const staff = useCurrentStaff();
+  const [changingPassword, setChangingPassword] = useState(false);
 
   if (staff.status === "demo") {
     return (
@@ -64,9 +68,12 @@ export function UserMenu() {
       : staff.status === "no-access" || staff.status === "locked"
         ? staff.email.split("@")[0]
         : "…";
+  const login =
+    staff.status === "ok" ? (staff.username ?? loginName(staff.email)) : null;
+  const position = staff.status === "ok" ? positionLabel(staff.position, staff.role) : null;
   const detail =
     staff.status === "ok"
-      ? ROLE_LABELS[staff.role]
+      ? `${login} · ${position}`
       : staff.status === "no-access"
         ? "Chưa được cấp quyền"
         : staff.status === "locked"
@@ -74,10 +81,6 @@ export function UserMenu() {
           : staff.status === "error"
             ? "Lỗi tải tài khoản"
             : "Đang tải…";
-  const email =
-    staff.status === "ok" || staff.status === "no-access" || staff.status === "locked"
-      ? staff.email
-      : null;
 
   return (
     <SidebarMenu>
@@ -95,11 +98,19 @@ export function UserMenu() {
               <EllipsisVertical className="ml-auto" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="end" className="min-w-52">
-            {email && (
+          <DropdownMenuContent side="top" align="end" className="min-w-56">
+            {staff.status === "ok" && (
               <>
-                <DropdownMenuLabel className="truncate">{email}</DropdownMenuLabel>
+                <DropdownMenuLabel className="grid gap-0.5 font-normal">
+                  <span className="truncate font-medium">{name}</span>
+                  <span className="truncate text-xs text-muted-foreground">Tên đăng nhập: {login}</span>
+                  <span className="truncate text-xs text-muted-foreground">Vị trí: {position}</span>
+                </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setChangingPassword(true)}>
+                  <KeyRound />
+                  Đổi mật khẩu
+                </DropdownMenuItem>
               </>
             )}
             <DropdownMenuItem onSelect={signOut}>
@@ -108,6 +119,7 @@ export function UserMenu() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <ChangePasswordDialog open={changingPassword} onOpenChange={setChangingPassword} />
       </SidebarMenuItem>
     </SidebarMenu>
   );

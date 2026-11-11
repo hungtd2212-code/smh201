@@ -21,6 +21,7 @@ const BUILT_PAGES = new Set([
   "/marketing/tkqc-page",
   "/marketing/nhan-vien-ads",
   "/cai-dat/dich-vu",
+  "/cai-dat/co-so",
   "/cai-dat/tai-khoan",
   "/cai-dat/nhat-ky",
   "/cai-dat/thung-rac",

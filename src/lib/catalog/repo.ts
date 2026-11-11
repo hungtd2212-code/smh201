@@ -44,19 +44,34 @@ function split<T extends { deleted_at: string | null }>(rows: T[]) {
 }
 
 /**
- * Danh sách nhân viên. Cột can_delete do file 004 thêm vào, can_export do file 005; cơ sở dữ liệu
- * chưa chạy file nào thì đọc không kèm cột đó và coi như chưa ai được tick.
+ * Danh sách nhân viên. Cột can_delete do file 004 thêm vào, can_export do file 005, tên đăng nhập /
+ * vị trí / nơi làm việc / trang được xem do file 008; cơ sở dữ liệu chưa chạy file nào thì đọc không
+ * kèm cột đó (coi như để trống).
  */
 async function fetchStaff(): Promise<StaffMember[]> {
   const supabase = getSupabaseBrowserClient();
-  const base = "user_id, full_name, role, branch, accepts_leads, last_assigned_at, locked_at";
-  const attempts = [`${base}, can_delete, can_export`, `${base}, can_delete`, base];
+  const base = "user_id, full_name, role, branch, accepts_leads, last_assigned_at, locked_at, locked_reason";
+  const attempts = [
+    `${base}, can_delete, can_export, username, position, branch_id, page_access, deleted_at`,
+    `${base}, can_delete, can_export`,
+    `${base}, can_delete`,
+    base,
+  ];
 
   for (const [index, columns] of attempts.entries()) {
     const result = await supabase.from("staff").select(columns).order("full_name");
     if (result.error?.code === MISSING_COLUMN && index < attempts.length - 1) continue;
     const rows = unwrap(result as QueryResult<Partial<StaffMember>[]>);
-    return rows.map((row) => ({ can_delete: false, can_export: false, ...row })) as StaffMember[];
+    return rows.map((row) => ({
+      can_delete: false,
+      can_export: false,
+      username: null,
+      position: null,
+      branch_id: null,
+      page_access: null,
+      deleted_at: null,
+      ...row,
+    })) as StaffMember[];
   }
   return [];
 }

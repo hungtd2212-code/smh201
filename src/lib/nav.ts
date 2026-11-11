@@ -242,7 +242,7 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Settings,
         pages: [
           { title: "Tài khoản & Phân quyền", href: "/cai-dat/tai-khoan" },
-          { title: "Cơ sở / Phòng / Ghế", href: "/cai-dat/co-so" },
+          { title: "Danh sách cơ sở", href: "/cai-dat/co-so" },
           { title: "Dịch vụ & Bảng giá", href: "/cai-dat/dich-vu" },
           { title: "Danh mục chung", href: "/cai-dat/danh-muc", hint: "Nguồn, trạng thái lead, lý do huỷ…" },
           { title: "Mẫu tin nhắn / Zalo / SMS", href: "/cai-dat/mau-tin-nhan" },
@@ -260,24 +260,43 @@ const ROLE_MODULES: Partial<Record<StaffRole, string[]>> = {
   ads_staff: ["Marketing"],
 };
 
-/**
- * Menu dành cho một vai trò. `null` (chưa biết vai trò: đang tải, hoặc đang xem dữ liệu mẫu) thì
- * hiện đủ. Đây chỉ là việc ẩn / hiện menu; quyền xem dữ liệu do Supabase kiểm soát.
- */
-export function navSectionsFor(role: StaffRole | null): NavSection[] {
-  if (!role) return NAV_SECTIONS;
-  const onlyModules = ROLE_MODULES[role];
+/** Bỏ các trang không thoả `keep`, rồi bỏ phân hệ / nhóm không còn trang nào. */
+function filterNav(keep: (page: NavPage, module: NavModule) => boolean): NavSection[] {
   return NAV_SECTIONS.map((section) => ({
     ...section,
     modules: section.modules
-      .filter((mod) => !onlyModules || onlyModules.includes(mod.title))
-      .map((mod) => ({
-        ...mod,
-        pages: mod.pages.filter((page) => !page.roles || page.roles.includes(role)),
-      }))
+      .map((mod) => ({ ...mod, pages: mod.pages.filter((page) => keep(page, mod)) }))
       .filter((mod) => mod.pages.length > 0),
   })).filter((section) => section.modules.length > 0);
 }
+
+/** Menu theo vai trò (tài khoản chưa được phân quyền từng trang). */
+function roleNav(role: StaffRole): NavSection[] {
+  const onlyModules = ROLE_MODULES[role];
+  return filterNav(
+    (page, mod) => (!onlyModules || onlyModules.includes(mod.title)) && (!page.roles || page.roles.includes(role)),
+  );
+}
+
+/**
+ * Menu dành cho một tài khoản. `role` null (chưa biết: đang tải) thì hiện đủ.
+ *   • Quản trị cấp cao: mọi trang.
+ *   • Đã được phân quyền trang (`pageAccess` khác null): đúng các trang đã tick.
+ *   • Tài khoản cũ chưa phân quyền: theo vai trò như trước.
+ * Đây chỉ là việc ẩn / hiện menu; quyền đọc / ghi dữ liệu do Supabase kiểm soát theo vai trò.
+ */
+export function navSectionsFor(role: StaffRole | null, pageAccess: string[] | null = null): NavSection[] {
+  if (!role || role === "super_admin") return NAV_SECTIONS;
+  if (pageAccess) {
+    const allowed = new Set(pageAccess);
+    return filterNav((page) => allowed.has(page.href));
+  }
+  return roleNav(role);
+}
+
+/** Các trang (href) một tài khoản thấy trên menu, theo đúng thứ tự menu. */
+export const visiblePages = (role: StaffRole, pageAccess: string[] | null) =>
+  navSectionsFor(role, pageAccess).flatMap((section) => section.modules.flatMap((mod) => mod.pages.map((p) => p.href)));
 
 /** Danh sách phẳng mọi trang, kèm tên phân hệ và nhóm chứa nó. */
 export const NAV_PAGES = NAV_SECTIONS.flatMap((section) =>

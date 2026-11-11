@@ -1,6 +1,7 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { CatalogProvider } from "@/components/catalog-provider";
 import { SecurityAlertBell } from "@/components/safety/security-alert-bell";
+import { PageAccessGate } from "@/components/staff/page-access-gate";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -29,7 +30,9 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
           </div>
         </header>
         <main className="flex-1 p-4 md:p-6">
-          <CatalogProvider>{children}</CatalogProvider>
+          <CatalogProvider>
+            <PageAccessGate>{children}</PageAccessGate>
+          </CatalogProvider>
         </main>
       </SidebarInset>
     </SidebarProvider>

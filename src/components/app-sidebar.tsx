@@ -38,8 +38,11 @@ import { navSectionsFor } from "@/lib/nav";
 export function AppSidebar() {
   const pathname = usePathname();
   const staff = useCurrentStaff();
-  // Mỗi vai trò chỉ thấy các mục dành cho mình (vd Nhân viên Ads chỉ thấy phân hệ Marketing).
-  const sections = navSectionsFor(staff.status === "ok" ? staff.role : null);
+  // Mỗi tài khoản chỉ thấy các trang được phân quyền (tài khoản cũ: theo vai trò).
+  const sections = navSectionsFor(
+    staff.status === "ok" ? staff.role : null,
+    staff.status === "ok" ? staff.pageAccess : null,
+  );
 
   // Phân hệ chứa trang đang xem thì tự mở; các lần người dùng tự bấm mở/đóng được nhớ ở đây.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});

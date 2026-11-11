@@ -76,6 +76,15 @@ export type CurrentStaff =
        * Khi đó mọi thứ vẫn chạy bình thường, chỉ riêng trang tick quyền báo là chưa dùng được.
        */
       permissionsReady: boolean;
+      /** Tên đăng nhập (null = tài khoản cũ đăng nhập bằng email). */
+      username: string | null;
+      /** Vị trí công việc (COO, Lead Ads…); null = tài khoản tạo trước khi có vị trí. */
+      position: "coo" | "lead_ads" | "ads_staff" | "page" | null;
+      /**
+       * Các trang được xem (hiện ở menu trái). null = tài khoản cũ: menu theo vai trò như trước.
+       * Quản trị cấp cao luôn thấy mọi trang.
+       */
+      pageAccess: string[] | null;
     }
   /** Đã đăng nhập nhưng chưa được thêm vào bảng `staff` → chưa có quyền xem dữ liệu. */
   | { status: "no-access"; email: string }
@@ -90,6 +99,9 @@ type OwnStaffRow = {
   locked_reason: string | null;
   can_delete?: boolean;
   can_export?: boolean;
+  username?: string | null;
+  position?: "coo" | "lead_ads" | "ads_staff" | "page" | null;
+  page_access?: string[] | null;
 };
 
 /**
@@ -100,6 +112,7 @@ type OwnStaffRow = {
 async function fetchOwnStaffRow(userId: string) {
   const supabase = getSupabaseBrowserClient();
   const attempts = [
+    "full_name, role, locked_at, locked_reason, can_delete, can_export, username, position, page_access",
     "full_name, role, locked_at, locked_reason, can_delete, can_export",
     "full_name, role, locked_at, locked_reason, can_delete",
     "full_name, role, locked_at, locked_reason",
@@ -143,6 +156,9 @@ async function loadCurrentStaff(): Promise<CurrentStaff> {
     canDelete: data.role === "super_admin" || data.can_delete === true,
     canExport: isAdminRole(data.role) || data.can_export === true,
     permissionsReady,
+    username: data.username ?? null,
+    position: data.position ?? null,
+    pageAccess: data.page_access ?? null,
   };
 }
 
