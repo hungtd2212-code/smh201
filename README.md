@@ -35,7 +35,7 @@ Mở http://localhost:3000. Ứng dụng cần kết nối Supabase (mục 1 bê
    [`002_marketing_lead.sql`](supabase/002_marketing_lead.sql), [`003_data_safety.sql`](supabase/003_data_safety.sql),
    [`004_delete_permission.sql`](supabase/004_delete_permission.sql), [`005_marketing_catalog.sql`](supabase/005_marketing_catalog.sql),
    [`006_ad_daily_reports.sql`](supabase/006_ad_daily_reports.sql), [`007_ad_account_setup.sql`](supabase/007_ad_account_setup.sql),
-   rồi [`008_staff_accounts.sql`](supabase/008_staff_accounts.sql).
+   [`008_staff_accounts.sql`](supabase/008_staff_accounts.sql), rồi [`009_admin_account.sql`](supabase/009_admin_account.sql).
 5. (Tuỳ chọn) Chạy [`supabase/seeds/005_marketing_sample.sql`](supabase/seeds/005_marketing_sample.sql) để có sẵn 7 nhân viên Ads,
    2 TKQC và 1 chiến dịch + 1 bài post mẫu (có chữ “(mẫu)”). Chạy lại nhiều lần không sinh dòng trùng.
 
@@ -163,6 +163,7 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 | `supabase/005_marketing_catalog.sql` | Phân hệ Marketing giai đoạn 1: vai trò mới, quyền “Xuất file”, nhân viên Ads, TKQC + phân công theo ngày, bài post, tách ID bài từ link |
 | `supabase/006_ad_daily_reports.sql` | Báo cáo ads hằng ngày (`ad_daily_reports`): mỗi (ngày, TK ADS) một báo cáo, nhân viên sửa trong 24 giờ, không ai xoá |
 | `supabase/008_staff_accounts.sql` | Danh sách cơ sở, thêm người dùng ngay trong ứng dụng (tạo luôn tài khoản đăng nhập), vị trí, phân quyền xem từng trang, khoá = cấm đăng nhập |
+| `supabase/009_admin_account.sql` | Quản trị cấp cao: tên đăng nhập mặc định `admin`, tự sửa tên / tên đăng nhập; xoá cơ sở chưa có nhân sự |
 | `supabase/007_ad_account_setup.sql` | Nhân viên tự cài đặt TKQC: loại tài khoản, thanh toán, `add_ad_account` / `remove_ad_account`; tài khoản vai trò Nhân viên Ads tự có dòng nhân viên Ads |
 | `supabase/seeds/` | Dữ liệu mẫu (không bắt buộc) |
 | `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`): `data-safety` (schema → 004), `marketing-catalog` (schema → 005), `ad-reports` (schema → 006), `ad-account-setup` (schema → 007), `staff-accounts` (schema → 008). `npm test` chạy thêm `tests/number-input.test.mjs` (ô nhập số) |
@@ -218,6 +219,8 @@ Các giai đoạn sau (chưa làm): 2 — Nhập lead (dán link bài, tự đi�
 - Mỗi dòng nhân sự: bút = sửa (kể cả đặt lại mật khẩu), thùng rác = xoá (ẩn khỏi danh sách + cấm đăng nhập, dữ liệu cũ giữ nguyên; cần tick “Xoá dữ liệu”), khoá đóng = cấm đăng nhập / khoá mở = hoạt động.
 - **Danh sách cơ sở** (Cài đặt → Danh sách cơ sở): tên, địa chỉ; là danh sách “Nơi làm việc” khi thêm người.
 - Bấm “⋮” cạnh tên ở cuối menu trái: xem tên đăng nhập, vị trí; **Đổi mật khẩu**, **Đăng xuất**.
+- Quản trị cấp cao (file `009_admin_account.sql`): tên đăng nhập mặc định **admin**; nút bút ở dòng của mình để sửa tên, tên đăng nhập, đặt mật khẩu mới. Chỉ Quản trị cấp cao thấy nút xoá ở Danh sách cơ sở (chỉ xoá được cơ sở chưa có nhân sự).
+- Mọi thông báo góc phải trên có dấu ✕ để tắt.
 
 ### An toàn dữ liệu
 

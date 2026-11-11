@@ -44,6 +44,8 @@ import {
   fetchStaffLogins,
   removeStaffAccount,
   resetStaffPassword,
+  setOwnPassword,
+  updateOwnAccount,
   updateStaffAccount,
   type Branch,
 } from "@/lib/staff/repo";
@@ -105,6 +107,7 @@ function AccountsBody() {
   const [branchFilter, setBranchFilter] = useState(ALL);
   const [statusFilter, setStatusFilter] = useState(ALL);
   const [editing, setEditing] = useState<StaffMember | null>(null);
+  const [editingSelf, setEditingSelf] = useState<StaffMember | null>(null);
   const [permissionFor, setPermissionFor] = useState<string | null>(null);
   const [locking, setLocking] = useState<StaffMember | null>(null);
   const [removing, setRemoving] = useState<StaffMember | null>(null);
@@ -255,7 +258,22 @@ function AccountsBody() {
                     </td>
                     <td className="px-2 py-1">
                       {member.role === "super_admin" ? (
-                        <p className="px-1 text-right text-xs text-muted-foreground">Toàn quyền</p>
+                        member.user_id === userId ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <span className="text-xs text-muted-foreground">Toàn quyền</span>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label="Sửa thông tin của bạn"
+                              title="Sửa tên, tên đăng nhập, mật khẩu"
+                              onClick={() => setEditingSelf(member)}
+                            >
+                              <Pencil />
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="px-1 text-right text-xs text-muted-foreground">Toàn quyền</p>
+                        )
                       ) : (
                         <div className="flex items-center justify-end gap-0.5">
                           <Button
@@ -343,6 +361,9 @@ function AccountsBody() {
           onClose={() => setEditing(null)}
           onSaved={refresh}
         />
+      )}
+      {editingSelf && (
+        <OwnAccountDialog member={editingSelf} login={loginOf(editingSelf)} onClose={() => setEditingSelf(null)} />
       )}
       {permissionMember && (
         <PermissionDialog
@@ -676,6 +697,111 @@ function EditPersonDialog({
             </Button>
             <Button type="submit" disabled={saving || !fullName.trim()}>
               {saving ? "Đang lưu…" : "Lưu thay đổi"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Nút bút ở dòng của Quản trị cấp cao (chính mình): sửa tên, tên đăng nhập, đặt mật khẩu mới. */
+function OwnAccountDialog({ member, login, onClose }: { member: StaffMember; login: string; onClose: () => void }) {
+  const [fullName, setFullName] = useState(member.full_name);
+  const [username, setUsername] = useState(member.username ?? "admin");
+  const [password, setPassword] = useState("");
+  const [again, setAgain] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const usernameChanged = username !== (member.username ?? "");
+  const badUsername = !USERNAME.test(username);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (badUsername) return setError("Tên đăng nhập 3–30 ký tự: chữ thường không dấu, số, dấu chấm, gạch dưới.");
+    if (password && password.length < 8) return setError("Mật khẩu mới tối thiểu 8 ký tự.");
+    if (password !== again) return setError("Hai lần nhập mật khẩu mới không khớp.");
+    setSaving(true);
+    setError(null);
+    try {
+      if (fullName.trim() !== member.full_name || usernameChanged) await updateOwnAccount(fullName.trim(), username);
+      if (password) await setOwnPassword(password);
+      toast.success("Đã lưu thông tin của bạn", {
+        description: usernameChanged ? `Lần sau đăng nhập bằng tên “${username}”.` : undefined,
+      });
+      // Tải lại để tên ở menu trái cập nhật.
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (caught) {
+      setError(errorText(caught));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <form onSubmit={save} className="grid gap-4" noValidate>
+          <DialogHeader>
+            <DialogTitle>Thông tin của bạn</DialogTitle>
+            <DialogDescription>Đang đăng nhập bằng: {login}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-1.5">
+            <Label htmlFor="own-fullname">Tên</Label>
+            <Input id="own-fullname" maxLength={120} value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="own-username">Tên đăng nhập</Label>
+            <Input
+              id="own-username"
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              maxLength={30}
+              value={username}
+              aria-invalid={badUsername || undefined}
+              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ""))}
+            />
+            <p className="text-xs text-muted-foreground">
+              {usernameChanged
+                ? `Sau khi lưu, đăng nhập bằng “${username || "…"}” thay cho “${login}” (mật khẩu không đổi trừ khi bạn đặt mới).`
+                : "3–30 ký tự: chữ thường không dấu, số, dấu chấm, gạch dưới."}
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="own-password">Mật khẩu mới</Label>
+              <Input
+                id="own-password"
+                type="password"
+                autoComplete="new-password"
+                placeholder="Để trống = giữ nguyên"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="own-password-again">Nhập lại mật khẩu mới</Label>
+              <Input
+                id="own-password-again"
+                type="password"
+                autoComplete="new-password"
+                value={again}
+                onChange={(e) => setAgain(e.target.value)}
+              />
+            </div>
+          </div>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              Huỷ
+            </Button>
+            <Button type="submit" disabled={saving || !fullName.trim()}>
+              {saving ? "Đang lưu…" : "Lưu"}
             </Button>
           </DialogFooter>
         </form>

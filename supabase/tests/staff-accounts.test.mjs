@@ -181,4 +181,45 @@ ok(/chính mình/.test(e ?? ""), "không tự xoá mình", e);
 e = await errOf(U.owner, UPDATE, [page1, "Sửa người đã xoá", null, hq]);
 ok(/Không tìm thấy tài khoản/.test(e ?? ""), "người đã xoá không sửa được nữa", e);
 
+// ---------------------------------------------------------------------------
+section("009: tài khoản Quản trị cấp cao mặc định là admin");
+await db.query(`insert into auth.identities (user_id, provider_id, provider, identity_data) values ($1::uuid, $2, 'email', $3::jsonb)`,
+  [U.owner, U.owner, JSON.stringify({ sub: U.owner, email: "owner@test" })]);
+await db.exec(`update public.staff set full_name = 'Tên của bạn' where user_id = '${U.owner}'`);
+await db.exec(read("009_admin_account.sql"));
+ok(true, "009 chạy không lỗi");
+let owner = await one(`select s.full_name, s.username, u.email, i.identity_data ->> 'email' as identity_email
+  from public.staff s join auth.users u on u.id = s.user_id left join auth.identities i on i.user_id = s.user_id
+  where s.user_id = $1`, [U.owner]);
+ok(owner.full_name === "Admin" && owner.username === "admin" && owner.email === "admin@smilehub.local" && owner.identity_email === "admin@smilehub.local",
+  "Quản trị cấp cao: tên Admin, tên đăng nhập admin (đăng nhập bằng “admin”)", owner);
+ok((await one(`select count(*)::int n from public.staff where username is null and role = 'admin'`)).n >= 1, "… tài khoản Quản trị khác không bị đổi");
+await db.exec(read("009_admin_account.sql"));
+ok((await one(`select username from public.staff where user_id = $1`, [U.owner])).username === "admin", "chạy lại 009 lần hai không đổi gì thêm");
+
+const OWN = `select public.update_own_account($1, $2)`;
+await as(U.owner, OWN, ["Trịnh Duy Hưng", "Admin"]);
+owner = await one(`select s.full_name, s.username, u.email from public.staff s join auth.users u on u.id = s.user_id where s.user_id = $1`, [U.owner]);
+ok(owner.full_name === "Trịnh Duy Hưng" && owner.username === "admin" && owner.email === "admin@smilehub.local", "tự sửa tên được; tên đăng nhập giữ nguyên (không phân biệt hoa thường)", owner);
+await as(U.owner, OWN, ["Trịnh Duy Hưng", "hung.admin"]);
+owner = await one(`select s.username, u.email from public.staff s join auth.users u on u.id = s.user_id where s.user_id = $1`, [U.owner]);
+ok(owner.username === "hung.admin" && owner.email === "hung.admin@smilehub.local", "tự đổi tên đăng nhập → đăng nhập bằng tên mới", owner);
+e = await errOf(U.owner, OWN, ["X", "dieu.linh"]);
+ok(/đã có người dùng/.test(e ?? ""), "đổi sang tên đăng nhập của người khác → bị từ chối", e);
+e = await errOf(U.owner, OWN, ["X", "a b"]);
+ok(/Tên đăng nhập 3–30/.test(e ?? ""), "tên đăng nhập sai dạng → bị từ chối", e);
+e = await errOf(U.adm, OWN, ["X", "adm.new"]);
+ok(/Chỉ Quản trị cấp cao/.test(e ?? ""), "Quản trị thường dùng hàm này → bị từ chối", e);
+
+section("009: xoá cơ sở");
+const b3 = (await as(U.adm, `insert into public.branches (name) values ('Cơ sở tạm') returning id`))[0].id;
+const DEL = `select public.delete_branch($1)`;
+e = await errOf(U.adm, DEL, [b3]);
+ok(/Chỉ Quản trị cấp cao được xoá cơ sở/.test(e ?? ""), "Quản trị thường xoá cơ sở → bị từ chối", e);
+await as(U.owner, DEL, [b3]);
+ok((await one(`select count(*)::int n from public.branches where id = $1`, [b3])).n === 0, "Quản trị cấp cao xoá được cơ sở chưa có nhân sự");
+ok((await one(`select action from public.audit_log where table_name = 'branches' and record_id = $1 order by id desc limit 1`, [b3])).action === "purge", "… việc xoá được ghi nhật ký");
+e = await errOf(U.owner, DEL, [hq]);
+ok(/còn \d+ nhân sự/.test(e ?? ""), "cơ sở còn nhân sự → không xoá được", e);
+
 finish();

@@ -9,11 +9,11 @@ import type { Position } from "./positions";
 
 type QueryError = { message: string; code?: string };
 
-const NOT_READY =
-  "Cơ sở dữ liệu chưa được cập nhật cho chức năng này (file supabase/008_staff_accounts.sql chưa chạy).";
+const notReady = (file: string) =>
+  `Cơ sở dữ liệu chưa được cập nhật cho chức năng này (file supabase/${file} chưa chạy).`;
 
-function fail(error: QueryError, duplicate?: string): never {
-  if (isNotMigrated(error)) throw new Error(NOT_READY);
+function fail(error: QueryError, duplicate?: string, file = "008_staff_accounts.sql"): never {
+  if (isNotMigrated(error)) throw new Error(notReady(file));
   if (error.code === "23505" && duplicate) throw new Error(duplicate);
   if (/row-level security|permission denied/i.test(error.message)) {
     throw new Error("Bạn không có quyền làm việc này.");
@@ -116,6 +116,35 @@ export async function fetchStaffLogins(): Promise<Map<string, string>> {
   const { data, error } = await getSupabaseBrowserClient().rpc("list_staff_logins");
   if (error) return new Map();
   return new Map((data as { user_id: string; email: string }[]).map((row) => [row.user_id, row.email]));
+}
+
+/** Quản trị cấp cao xoá một cơ sở chưa có nhân sự nào (file 009). */
+export async function deleteBranch(id: string): Promise<void> {
+  const { error } = await getSupabaseBrowserClient().rpc("delete_branch", { p_id: id });
+  if (error) fail(error, undefined, "009_admin_account.sql");
+}
+
+/** Quản trị cấp cao tự sửa tên và tên đăng nhập của mình (file 009). */
+export async function updateOwnAccount(fullName: string, username: string): Promise<void> {
+  const { error } = await getSupabaseBrowserClient().rpc("update_own_account", {
+    p_full_name: fullName,
+    p_username: username,
+  });
+  if (error) fail(error, undefined, "009_admin_account.sql");
+}
+
+/** Đặt mật khẩu mới cho chính mình (đang đăng nhập). */
+export async function setOwnPassword(next: string): Promise<void> {
+  const { error } = await getSupabaseBrowserClient().auth.updateUser({ password: next });
+  if (error) {
+    throw new Error(
+      error.code === "same_password"
+        ? "Mật khẩu mới phải khác mật khẩu hiện tại."
+        : error.code === "weak_password"
+          ? "Mật khẩu mới quá yếu — hãy dùng ít nhất 8 ký tự."
+          : error.message,
+    );
+  }
 }
 
 /** Người đang đăng nhập tự đổi mật khẩu (phải nhập đúng mật khẩu hiện tại). */

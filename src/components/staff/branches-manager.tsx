@@ -1,17 +1,18 @@
 "use client";
 
-import { Building2, Pencil, Plus, Save } from "lucide-react";
+import { Building2, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ActivePill, PageHeader } from "@/components/catalog/shared";
 import { useCatalogs } from "@/components/catalog-provider";
 import { FormDialog, toText, type FieldDef, type FormValues } from "@/components/form-dialog";
-import { AdminOnly } from "@/components/safety/shared";
+import { ConfirmActionDialog } from "@/components/safety/confirm-action-dialog";
+import { AdminOnly, useRole } from "@/components/safety/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchBranches, saveBranch, type Branch } from "@/lib/staff/repo";
+import { deleteBranch, fetchBranches, saveBranch, type Branch } from "@/lib/staff/repo";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 /** Danh sách cơ sở (null = chưa chạy file 008). `reload()` tải lại sau khi thêm / sửa. */
@@ -77,8 +78,10 @@ export function BranchesManager() {
 function BranchesBody() {
   const { catalogs } = useCatalogs();
   const { branches, loaded, error, reload } = useBranches();
+  const { isSuperAdmin } = useRole();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Branch | null>(null);
+  const [removing, setRemoving] = useState<Branch | null>(null);
 
   if (!loaded) return <Skeleton className="h-48 w-full rounded-xl" />;
   if (branches === null) return <BranchesNotReady />;
@@ -128,7 +131,7 @@ function BranchesBody() {
               <th className="px-3 py-2 font-medium">Địa chỉ</th>
               <th className="px-3 py-2 text-right font-medium">Nhân sự</th>
               <th className="px-3 py-2 font-medium">Trạng thái</th>
-              <th className="w-14 px-3 py-2" />
+              <th className="w-20 px-3 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -148,7 +151,7 @@ function BranchesBody() {
                   <td className="px-3 py-2">
                     <ActivePill active={branch.is_active} />
                   </td>
-                  <td className="px-2 py-1 text-right">
+                  <td className="px-2 py-1 text-right whitespace-nowrap">
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -158,6 +161,17 @@ function BranchesBody() {
                     >
                       <Pencil />
                     </Button>
+                    {isSuperAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Xoá cơ sở ${branch.name}`}
+                        title="Xoá"
+                        onClick={() => setRemoving(branch)}
+                      >
+                        <Trash2 />
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))
@@ -165,6 +179,29 @@ function BranchesBody() {
           </tbody>
         </table>
       </div>
+
+      <ConfirmActionDialog
+        open={removing !== null}
+        onOpenChange={(open) => !open && setRemoving(null)}
+        title="Xác nhận xoá?"
+        description={
+          <>
+            <p>
+              Xoá cơ sở <b>{removing?.name}</b>?
+            </p>
+            <p>Chỉ xoá được cơ sở chưa có nhân sự nào. Muốn tạm ngừng thì bấm Sửa rồi bỏ tick “Đang dùng”.</p>
+          </>
+        }
+        cancelLabel="Không"
+        confirmLabel="Có, xoá"
+        destructive
+        onConfirm={async () => {
+          if (!removing) return;
+          await deleteBranch(removing.id);
+          reload();
+          toast.success(`Đã xoá cơ sở ${removing.name}`);
+        }}
+      />
 
       <FormDialog
         open={editing !== null}
