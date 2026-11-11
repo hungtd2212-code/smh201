@@ -27,8 +27,9 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { UserMenu } from "@/components/user-menu";
+import { useCurrentStaff } from "@/hooks/use-current-staff";
 import { APP } from "@/lib/config";
-import { NAV_SECTIONS } from "@/lib/nav";
+import { navSectionsFor } from "@/lib/nav";
 
 /**
  * Menu trái: Nhóm → Phân hệ (bấm để mở/đóng) → Trang.
@@ -36,6 +37,9 @@ import { NAV_SECTIONS } from "@/lib/nav";
  */
 export function AppSidebar() {
   const pathname = usePathname();
+  const staff = useCurrentStaff();
+  // Mỗi vai trò chỉ thấy các mục dành cho mình (vd Nhân viên Ads chỉ thấy phân hệ Marketing).
+  const sections = navSectionsFor(staff.status === "ok" ? staff.role : null);
 
   // Phân hệ chứa trang đang xem thì tự mở; các lần người dùng tự bấm mở/đóng được nhớ ở đây.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
@@ -49,7 +53,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="gap-0 pb-2">
-        {NAV_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <SidebarGroup key={section.label ?? "tong-quan"} className="py-1">
             {section.label && (
               <SidebarGroupLabel className="h-7 text-[0.6875rem] font-semibold tracking-wider text-sidebar-foreground/55 uppercase">

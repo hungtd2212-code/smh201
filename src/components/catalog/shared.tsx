@@ -1,7 +1,7 @@
 "use client";
 
 import { Trash2, type LucideIcon } from "lucide-react";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { AccessNotice } from "@/components/access-notice";
 import { useCatalogs } from "@/components/catalog-provider";
@@ -9,7 +9,7 @@ import { ConfirmActionDialog } from "@/components/safety/confirm-action-dialog";
 import { SetupNotice } from "@/components/setup-notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { isManagerRole, useCurrentStaff } from "@/hooks/use-current-staff";
+import { isManagerRole, managesMarketingRole, useCurrentStaff } from "@/hooks/use-current-staff";
 import { softDeleteRecords } from "@/lib/safety/repo";
 import type { SoftDeleteTable } from "@/lib/safety/types";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -17,10 +17,37 @@ import { cn } from "@/lib/utils";
 
 /** Các mảnh dùng chung cho những trang danh mục (kênh, page, chiến dịch, dịch vụ, chia lead). */
 
-/** true nếu người đang đăng nhập là Quản trị hoặc Lead (được thêm / sửa danh mục). */
+/** true nếu người đang đăng nhập là Quản trị hoặc Trưởng Telesale (sửa dịch vụ, chia lead). */
 export function useCanManage() {
   const staff = useCurrentStaff();
   return staff.status === "ok" && isManagerRole(staff.role);
+}
+
+/** true nếu người đang đăng nhập là Quản trị hoặc Trưởng Marketing (thêm / sửa danh mục Marketing). */
+export function useManagesMarketing() {
+  const staff = useCurrentStaff();
+  return staff.status === "ok" && managesMarketingRole(staff.role);
+}
+
+/**
+ * Báo "chưa dùng được" khi cơ sở dữ liệu chưa có danh mục Marketing; đã sẵn sàng thì không hiện gì.
+ */
+export function MarketingNotReady({ what }: { what: string }) {
+  const { catalogs, ready } = useCatalogs();
+  if (!ready || catalogs.marketingReady) return null;
+  return (
+    <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+      {what} chưa dùng được: cơ sở dữ liệu chưa được cập nhật cho phân hệ Marketing (file{" "}
+      <code>supabase/005_marketing_catalog.sql</code> chưa chạy). Các phần cũ vẫn chạy bình thường.
+    </p>
+  );
+}
+
+/** Dòng báo "chỉ xem" cho người không có quyền thêm / sửa ở trang đang mở. */
+export function ReadOnlyNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">{children}</p>
+  );
 }
 
 /** Tiêu đề trang: ô biểu tượng màu logo + tên + mô tả + nút hành động bên phải. */
@@ -135,7 +162,15 @@ export function DeleteRowButton({
   );
 }
 
-export function ActivePill({ active }: { active: boolean }) {
+export function ActivePill({
+  active,
+  onLabel = "Đang dùng",
+  offLabel = "Đã tắt",
+}: {
+  active: boolean;
+  onLabel?: string;
+  offLabel?: string;
+}) {
   return (
     <span
       className={cn(
@@ -146,7 +181,7 @@ export function ActivePill({ active }: { active: boolean }) {
       )}
     >
       <span className={cn("size-1.5 rounded-full", active ? "bg-emerald-500" : "bg-muted-foreground/50")} />
-      {active ? "Đang dùng" : "Đã tắt"}
+      {active ? onLabel : offLabel}
     </span>
   );
 }
@@ -154,6 +189,19 @@ export function ActivePill({ active }: { active: boolean }) {
 /** 1500000 → "1.500.000 ₫" */
 export const formatVnd = (value: number | null) =>
   value === null ? "—" : `${value.toLocaleString("vi-VN")} ₫`;
+
+/** Ngày hôm nay theo giờ Việt Nam, dạng yyyy-MM-dd. Chỉ gọi trong xử lý sự kiện; lúc vẽ màn hình dùng `useTodayVn()`. */
+export const todayVn = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date());
+
+const neverChanges = () => () => {};
+const noDay = () => "";
+
+/**
+ * Ngày hôm nay theo giờ Việt Nam (yyyy-MM-dd) để dùng lúc vẽ màn hình. Khi Next.js dựng sẵn trang
+ * trên máy chủ thì trả về "" (lúc đó chưa có dữ liệu nào để so ngày) — tránh "đóng băng" ngày dựng trang.
+ */
+export const useTodayVn = () => useSyncExternalStore(neverChanges, todayVn, noDay);
 
 /** "2026-11-11" → "11/11/2026" */
 export const formatDate = (iso: string | null) =>

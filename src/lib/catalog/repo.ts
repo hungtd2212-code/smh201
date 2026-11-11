@@ -1,19 +1,36 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { MISSING_COLUMN } from "@/lib/supabase/errors";
+import { MISSING_COLUMN, isNotMigrated } from "@/lib/supabase/errors";
 import type {
+  AdAccount,
+  AdAccountAssignment,
+  AdPost,
+  AdsStaff,
   Campaign,
   Catalogs,
   Channel,
   Page,
+  Region,
   Service,
   StaffMember,
 } from "./types";
 
-/** Đọc / ghi các bảng danh mục. Quyền ghi do Supabase kiểm soát (chỉ quản trị và lead). */
+/** Đọc / ghi các bảng danh mục. Quyền đọc và ghi do Supabase kiểm soát (xem supabase/005_marketing_catalog.sql). */
 
-type CatalogTable = "channels" | "services" | "pages" | "campaigns";
+export type CatalogTable =
+  | "channels"
+  | "services"
+  | "pages"
+  | "campaigns"
+  | "regions"
+  | "ads_staff"
+  | "ad_accounts"
+  | "ad_account_assignments"
+  | "ad_posts";
 
-function unwrap<T>(result: { data: T | null; error: { message: string } | null }): T {
+type QueryError = { message: string; code?: string };
+type QueryResult<T> = { data: T | null; error: QueryError | null };
+
+function unwrap<T>(result: QueryResult<T>): T {
   if (result.error) throw new Error(result.error.message);
   return result.data as T;
 }
@@ -27,41 +44,121 @@ function split<T extends { deleted_at: string | null }>(rows: T[]) {
 }
 
 /**
- * Danh sách nhân viên. Cột can_delete do supabase/004_delete_permission.sql thêm vào; cơ sở dữ
- * liệu chưa chạy file đó thì đọc không kèm cột này và coi như chưa ai được tick.
+ * Danh sách nhân viên. Cột can_delete do file 004 thêm vào, can_export do file 005; cơ sở dữ liệu
+ * chưa chạy file nào thì đọc không kèm cột đó và coi như chưa ai được tick.
  */
 async function fetchStaff(): Promise<StaffMember[]> {
   const supabase = getSupabaseBrowserClient();
-  const full = await supabase
-    .from("staff")
-    .select("user_id, full_name, role, branch, accepts_leads, last_assigned_at, locked_at, can_delete")
-    .order("full_name");
-  if (full.error?.code !== MISSING_COLUMN) return unwrap(full) as StaffMember[];
+  const base = "user_id, full_name, role, branch, accepts_leads, last_assigned_at, locked_at";
+  const attempts = [`${base}, can_delete, can_export`, `${base}, can_delete`, base];
 
-  const basic = await supabase
-    .from("staff")
-    .select("user_id, full_name, role, branch, accepts_leads, last_assigned_at, locked_at")
-    .order("full_name");
-  return (unwrap(basic) as Omit<StaffMember, "can_delete">[]).map((row) => ({ ...row, can_delete: false }));
+  for (const [index, columns] of attempts.entries()) {
+    const result = await supabase.from("staff").select(columns).order("full_name");
+    if (result.error?.code === MISSING_COLUMN && index < attempts.length - 1) continue;
+    const rows = unwrap(result as QueryResult<Partial<StaffMember>[]>);
+    return rows.map((row) => ({ can_delete: false, can_export: false, ...row })) as StaffMember[];
+  }
+  return [];
+}
+
+const CAMPAIGN_COLUMNS =
+  "id, name, channel_id, page_id, service_id, branch, start_date, end_date, budget, owner_id, ads_id, is_active, deleted_at";
+const PAGE_COLUMNS = "id, name, channel_id, branch, is_active, deleted_at";
+
+type MarketingRows = {
+  pages: Page[];
+  campaigns: Campaign[];
+  regions: Region[];
+  adsStaff: AdsStaff[];
+  adAccounts: AdAccount[];
+  assignments: AdAccountAssignment[];
+  adPosts: AdPost[];
+};
+
+/** Danh mục Marketing theo cấu trúc của file 005. Trả về null nếu cơ sở dữ liệu chưa chạy file đó. */
+async function fetchMarketing(): Promise<MarketingRows | null> {
+  const supabase = getSupabaseBrowserClient();
+  const results = await Promise.all([
+    supabase.from("pages").select(`${PAGE_COLUMNS}, url, page_staff_ids`).order("name"),
+    supabase
+      .from("campaigns")
+      .select(`${CAMPAIGN_COLUMNS}, ad_account_id, objective`)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("regions")
+      .select("id, code, name, sort_order, is_active, deleted_at")
+      .is("deleted_at", null)
+      .order("sort_order"),
+    supabase
+      .from("ads_staff")
+      .select("id, full_name, staff_code, user_id, branch, is_active, note, deleted_at")
+      .is("deleted_at", null)
+      .order("full_name"),
+    supabase
+      .from("ad_accounts")
+      .select("id, name, account_id, channel_id, is_active, note, deleted_at")
+      .is("deleted_at", null)
+      .order("name"),
+    supabase
+      .from("ad_account_assignments")
+      .select("id, ad_account_id, ads_staff_id, from_date, to_date, note, deleted_at")
+      .is("deleted_at", null)
+      .order("from_date", { ascending: false }),
+    supabase
+      .from("ad_posts")
+      .select("id, campaign_id, url, platform, post_id, ad_id, post_key, title, media_type, start_date, status, note, deleted_at")
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false }),
+  ] as const);
+
+  if (results.some((result) => isNotMigrated(result.error))) return null;
+  const [pages, campaigns, regions, adsStaff, adAccounts, assignments, adPosts] = results;
+  return {
+    pages: unwrap(pages) as Page[],
+    campaigns: unwrap(campaigns) as Campaign[],
+    regions: unwrap(regions) as Region[],
+    adsStaff: unwrap(adsStaff) as AdsStaff[],
+    adAccounts: unwrap(adAccounts) as AdAccount[],
+    assignments: unwrap(assignments) as AdAccountAssignment[],
+    adPosts: unwrap(adPosts) as AdPost[],
+  };
+}
+
+/** Page và chiến dịch theo cấu trúc cũ (trước file 005): các cột mới coi như để trống. */
+async function fetchLegacyPagesAndCampaigns(): Promise<Pick<MarketingRows, "pages" | "campaigns">> {
+  const supabase = getSupabaseBrowserClient();
+  const [pages, campaigns] = await Promise.all([
+    supabase.from("pages").select(PAGE_COLUMNS).order("name"),
+    supabase.from("campaigns").select(CAMPAIGN_COLUMNS).order("created_at", { ascending: false }),
+  ]);
+  return {
+    pages: (unwrap(pages) as Omit<Page, "url" | "page_staff_ids">[]).map((row) => ({
+      ...row,
+      url: null,
+      page_staff_ids: [],
+    })),
+    campaigns: (unwrap(campaigns) as Omit<Campaign, "ad_account_id" | "objective">[]).map((row) => ({
+      ...row,
+      ad_account_id: null,
+      objective: null,
+    })),
+  };
 }
 
 export async function fetchCatalogs(): Promise<Catalogs> {
   const supabase = getSupabaseBrowserClient();
-  const [channels, services, pages, campaigns, staff] = await Promise.all([
+  const [channels, services, staff, marketing] = await Promise.all([
     supabase.from("channels").select("id, name, sort_order, is_active, deleted_at").order("sort_order").order("name"),
     supabase.from("services").select("id, name, price, sort_order, is_active, deleted_at").order("sort_order").order("name"),
-    supabase.from("pages").select("id, name, channel_id, branch, is_active, deleted_at").order("name"),
-    supabase
-      .from("campaigns")
-      .select("id, name, channel_id, page_id, service_id, branch, start_date, end_date, budget, owner_id, ads_id, is_active, deleted_at")
-      .order("created_at", { ascending: false }),
     fetchStaff(),
+    fetchMarketing(),
   ]);
+  const legacy = marketing ?? (await fetchLegacyPagesAndCampaigns());
 
   const c = split(unwrap(channels) as Channel[]);
   const s = split(unwrap(services) as Service[]);
-  const p = split(unwrap(pages) as Page[]);
-  const g = split(unwrap(campaigns) as Campaign[]);
+  const p = split(legacy.pages);
+  const g = split(legacy.campaigns);
 
   return {
     channels: c.live,
@@ -70,25 +167,84 @@ export async function fetchCatalogs(): Promise<Catalogs> {
     campaigns: g.live,
     staff,
     trashed: { channels: c.trashed, services: s.trashed, pages: p.trashed, campaigns: g.trashed },
+    regions: marketing?.regions ?? [],
+    adsStaff: marketing?.adsStaff ?? [],
+    adAccounts: marketing?.adAccounts ?? [],
+    assignments: marketing?.assignments ?? [],
+    adPosts: marketing?.adPosts ?? [],
+    marketingReady: marketing !== null,
   };
 }
 
-/** Thêm mới (không có id) hoặc cập nhật (có id) một dòng danh mục. */
+/** Lời báo lỗi dễ hiểu cho các lỗi hay gặp khi lưu danh mục. */
+function saveError(error: QueryError, duplicateMessage: string): Error {
+  if (error.code === "23505") return new Error(duplicateMessage);
+  if (error.code === "42501") return new Error("Bạn không có quyền thêm hoặc sửa mục này.");
+  if (isNotMigrated(error)) {
+    return new Error("Cơ sở dữ liệu chưa được cập nhật cho chức năng này (file supabase/005_marketing_catalog.sql chưa chạy).");
+  }
+  return new Error(error.message);
+}
+
+/**
+ * Thêm mới (không có id) hoặc cập nhật (có id) một dòng danh mục.
+ * `duplicateMessage` là lời báo khi trùng tên / trùng mã.
+ */
 export async function saveCatalogRow(
   table: CatalogTable,
   id: string | null,
   values: Record<string, unknown>,
+  duplicateMessage = "Tên này đã tồn tại.",
 ): Promise<void> {
   const supabase = getSupabaseBrowserClient();
-  const { error } = id
-    ? await supabase.from(table).update(values).eq("id", id)
-    : await supabase.from(table).insert(values);
+  if (!id) {
+    const { error } = await supabase.from(table).insert(values);
+    if (error) throw saveError(error, duplicateMessage);
+    return;
+  }
+  // Sửa mà máy chủ không cho thì không báo lỗi, chỉ là "0 dòng được sửa" → phải tự kiểm tra.
+  const { data, error } = await supabase.from(table).update(values).eq("id", id).select("id");
+  if (error) throw saveError(error, duplicateMessage);
+  if (data.length === 0) {
+    throw new Error("Không lưu được: bạn không có quyền sửa mục này, hoặc mục đã nằm trong Thùng rác.");
+  }
+}
 
-  if (!error) return;
-  if (error.code === "23505") throw new Error("Tên này đã tồn tại.");
-  if (error.code === "42501")
-    throw new Error("Bạn không có quyền sửa danh mục (cần vai trò Quản trị hoặc Lead).");
-  throw new Error(error.message);
+/** Lưu một bài post và trả về dòng đã lưu (kèm ID bài, ID ads hệ thống vừa tách từ link). */
+export async function saveAdPost(id: string | null, values: Record<string, unknown>): Promise<AdPost> {
+  const supabase = getSupabaseBrowserClient();
+  const columns =
+    "id, campaign_id, url, platform, post_id, ad_id, post_key, title, media_type, start_date, status, note, deleted_at";
+  const duplicate = "Bài này đã được khai báo rồi (trùng link hoặc trùng ID bài với một bài khác).";
+
+  const { data, error } = id
+    ? await supabase.from("ad_posts").update(values).eq("id", id).select(columns)
+    : await supabase.from("ad_posts").insert(values).select(columns);
+  if (error) throw saveError(error, duplicate);
+  if (data.length === 0) {
+    throw new Error("Không lưu được: bạn không có quyền sửa bài này, hoặc bài đã nằm trong Thùng rác.");
+  }
+  return data[0] as AdPost;
+}
+
+/**
+ * Giao một TKQC cho một nhân viên Ads kể từ `fromDate` (yyyy-MM-dd). Phân công đang mở của TKQC
+ * tự kết thúc vào hôm trước. Trả về true nếu có phân công cũ vừa được kết thúc.
+ */
+export async function assignAdAccount(
+  adAccountId: string,
+  adsStaffId: string,
+  fromDate: string,
+  note: string | null,
+): Promise<boolean> {
+  const { data, error } = await getSupabaseBrowserClient().rpc("assign_ad_account", {
+    p_ad_account_id: adAccountId,
+    p_ads_staff_id: adsStaffId,
+    p_from_date: fromDate,
+    p_note: note,
+  });
+  if (error) throw saveError(error, error.message);
+  return (data as { closed: number }).closed > 0;
 }
 
 /** Bật / tắt nhận lead cho một nhân viên. */

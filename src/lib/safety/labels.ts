@@ -1,7 +1,7 @@
 import { format } from "date-fns";
 import type { CatalogNames } from "@/components/catalog-provider";
 import { ROLE_LABELS, type StaffRole } from "@/hooks/use-current-staff";
-import { APP } from "@/lib/config";
+import { OBJECTIVE_LABELS, POST_STATUS_LABELS, type AdPostStatus, type CampaignObjective } from "@/lib/catalog/types";
 import { getLeadStatus } from "@/lib/leads/status";
 import type { AuditAction, AuditEntry } from "./types";
 
@@ -10,9 +10,14 @@ import type { AuditAction, AuditEntry } from "./types";
 export const TABLE_LABELS: Record<string, string> = {
   leads: "Lead",
   channels: "Kênh",
-  pages: "Page / TKQC",
+  pages: "Page",
   campaigns: "Chiến dịch",
+  ad_posts: "Bài post",
+  ad_accounts: "TKQC",
+  ad_account_assignments: "Phân công TKQC",
+  ads_staff: "Nhân viên Ads",
   services: "Dịch vụ",
+  regions: "Miền",
   staff: "Nhân viên",
   staff_shifts: "Ca làm",
   app_settings: "Cấu hình",
@@ -44,7 +49,22 @@ const FIELD_LABELS: Record<string, string> = {
   channel_id: "Kênh",
   page_id: "Page",
   campaign_id: "Chiến dịch",
-  ads_id: "ID Ads",
+  ads_id: "ID camp",
+  ad_account_id: "TKQC",
+  ads_staff_id: "Nhân viên Ads",
+  objective: "Mục tiêu",
+  url: "Link",
+  page_staff_ids: "Trực page phụ trách",
+  account_id: "ID tài khoản",
+  staff_code: "Mã nhân viên",
+  from_date: "Từ ngày",
+  to_date: "Đến ngày",
+  post_id: "ID bài",
+  ad_id: "ID ads",
+  platform: "Nền tảng",
+  title: "Tên bài",
+  media_type: "Loại nội dung",
+  code: "Mã",
   assignee: "Telesale phụ trách",
   assignee_id: "Telesale phụ trách",
   assign_mode: "Cách chia",
@@ -54,7 +74,7 @@ const FIELD_LABELS: Record<string, string> = {
   invalid_phone: "Số sai",
   recontacted_at: "Khách nhắn lại",
   reopened_at: "Mở lại",
-  branch: "Cơ sở",
+  branch: "Miền",
   name: "Tên",
   sort_order: "Thứ tự",
   is_active: "Đang dùng",
@@ -66,6 +86,7 @@ const FIELD_LABELS: Record<string, string> = {
   role: "Vai trò",
   accepts_leads: "Nhận lead",
   can_delete: "Quyền xoá dữ liệu",
+  can_export: "Quyền xuất file",
   locked_at: "Khoá tài khoản",
   locked_reason: "Lý do khoá",
   value: "Giá trị",
@@ -86,6 +107,7 @@ const HIDDEN_FIELDS = new Set([
   "created_at",
   "created_by",
   "last_assigned_at",
+  "post_key",
 ]);
 
 /** Cột chữ là "bản chụp" của một cột id — ẩn đi khi cột id cũng đổi trong cùng lần sửa. */
@@ -95,13 +117,31 @@ const SNAPSHOT_OF: Record<string, string> = {
   assignee: "assignee_id",
 };
 
-function formatValue(key: string, value: unknown, names: CatalogNames): string {
+function formatValue(table: string, key: string, value: unknown, names: CatalogNames): string {
   if (value === null || value === undefined || value === "") return "(trống)";
+  if (Array.isArray(value) && value.length === 0) return "(trống)";
   const text = String(value);
 
   switch (key) {
     case "status":
-      return getLeadStatus(text).label;
+      return table === "ad_posts"
+        ? (POST_STATUS_LABELS[text as AdPostStatus] ?? text)
+        : getLeadStatus(text).label;
+    case "is_active":
+      if (table === "ads_staff") return value ? "Đang làm" : "Nghỉ";
+      break;
+    case "ad_account_id":
+      return names.adAccount(text) ?? "(không rõ)";
+    case "ads_staff_id":
+      return names.adsStaff(text) ?? "(không rõ)";
+    case "objective":
+      return OBJECTIVE_LABELS[text as CampaignObjective] ?? text;
+    case "media_type":
+      return value === "image" ? "Hình" : value === "video" ? "Video" : text;
+    case "page_staff_ids":
+      return Array.isArray(value)
+        ? value.map((id) => names.staff(String(id)) ?? "(không rõ)").join(", ")
+        : text;
     case "service_id":
       return names.service(text) ?? "(không rõ)";
     case "channel_id":
@@ -122,7 +162,7 @@ function formatValue(key: string, value: unknown, names: CatalogNames): string {
     case "budget":
       return `${Number(value).toLocaleString("vi-VN")} ₫`;
     case "branch":
-      return value === APP.branch.code ? APP.branch.name : text;
+      return names.region(text) ?? text;
   }
 
   if (typeof value === "boolean") return value ? "Có" : "Không";
@@ -148,8 +188,8 @@ export function describeChanges(entry: AuditEntry, names: CatalogNames): FieldCh
     .map((key) => ({
       key,
       label: FIELD_LABELS[key] ?? key,
-      from: formatValue(key, entry.old_data?.[key], names),
-      to: formatValue(key, changed[key], names),
+      from: formatValue(entry.table_name, key, entry.old_data?.[key], names),
+      to: formatValue(entry.table_name, key, changed[key], names),
     }));
 }
 
@@ -174,6 +214,16 @@ export function recordLabel(
       return names.campaign(entry.record_id) ?? (old.name ? String(old.name) : "Chiến dịch đã xoá vĩnh viễn");
     case "services":
       return names.service(entry.record_id) ?? (old.name ? String(old.name) : "Dịch vụ đã xoá vĩnh viễn");
+    case "ad_accounts":
+      return names.adAccount(entry.record_id) ?? (old.name ? String(old.name) : "TKQC");
+    case "ads_staff":
+      return names.adsStaff(entry.record_id) ?? (old.full_name ? String(old.full_name) : "Nhân viên Ads");
+    case "ad_posts":
+      return names.adPost(entry.record_id) ?? (old.title ? String(old.title) : old.url ? String(old.url) : "Bài post");
+    case "ad_account_assignments":
+      return names.assignment(entry.record_id) ?? "Phân công TKQC";
+    case "regions":
+      return names.regionById(entry.record_id) ?? (old.name ? String(old.name) : "Miền");
     case "staff":
       return names.staff(entry.record_id) ?? "Nhân viên";
     case "app_settings":

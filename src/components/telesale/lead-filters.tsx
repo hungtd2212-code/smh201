@@ -34,7 +34,8 @@ type Props = {
   onRangeChange: (range: DayRange) => void;
   loading: boolean;
   onRefresh: () => void;
-  onExport: () => void;
+  /** Bỏ trống = tài khoản không có quyền "Xuất file" → không hiện nút Tải Excel. */
+  onExport?: () => void;
   exporting: boolean;
   canExport: boolean;
 };
@@ -114,14 +115,16 @@ export function LeadFilters({
         >
           <RefreshCw className={cn(loading && "animate-spin")} />
         </Button>
-        <Button
-          variant="outline"
-          onClick={onExport}
-          disabled={!canExport || exporting}
-        >
-          <Download />
-          {exporting ? "Đang xuất…" : "Tải Excel"}
-        </Button>
+        {onExport && (
+          <Button
+            variant="outline"
+            onClick={onExport}
+            disabled={!canExport || exporting}
+          >
+            <Download />
+            {exporting ? "Đang xuất…" : "Tải Excel"}
+          </Button>
+        )}
       </div>
     </div>
   );

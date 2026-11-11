@@ -30,7 +30,18 @@ import { AdminOnly, errorText, useRole } from "./shared";
 
 const ALL = "__all";
 const DAY_MS = 24 * 3600 * 1000;
-const TRASH_TABLES: SoftDeleteTable[] = ["leads", "channels", "pages", "campaigns", "services"];
+const TRASH_TABLES: SoftDeleteTable[] = [
+  "leads",
+  "campaigns",
+  "ad_posts",
+  "ad_accounts",
+  "ad_account_assignments",
+  "ads_staff",
+  "pages",
+  "channels",
+  "services",
+  "regions",
+];
 
 const keyOf = (item: TrashItem) => `${item.table_name}:${item.id}`;
 

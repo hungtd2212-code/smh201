@@ -43,6 +43,8 @@ export type FieldDef = {
 } & (
   | { type: "text" | "number" | "date" }
   | { type: "checkbox"; text: string }
+  /** Tick nhiều lựa chọn; giá trị là các `value` nối nhau bằng dấu phẩy. */
+  | { type: "checks"; options: Option[]; emptyText?: string }
   | {
       type: "select";
       /** Danh sách lựa chọn, có thể phụ thuộc các ô khác (vd page theo kênh). */
@@ -159,6 +161,35 @@ function FormBody({
                     ))}
                   </SelectContent>
                 </Select>
+              ) : field.type === "checks" ? (
+                field.options.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{field.emptyText ?? "Chưa có lựa chọn nào."}</p>
+                ) : (
+                  <div className="grid gap-1.5 rounded-md border p-2.5 sm:grid-cols-2">
+                    {field.options.map((option) => {
+                      const picked = toIds(value);
+                      return (
+                        <label key={option.value} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="size-4 accent-primary"
+                            checked={picked.includes(option.value)}
+                            onChange={(e) =>
+                              set(
+                                field,
+                                (e.target.checked
+                                  ? [...picked, option.value]
+                                  : picked.filter((v) => v !== option.value)
+                                ).join(","),
+                              )
+                            }
+                          />
+                          {option.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )
               ) : field.type === "checkbox" ? (
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -208,3 +239,7 @@ export const toId = (v: string | boolean | undefined) =>
   typeof v === "string" && v && v !== NONE ? v : null;
 export const toNumber = (v: string | boolean | undefined) =>
   typeof v === "string" && v.trim() !== "" ? Number(v) : null;
+/** Giá trị của ô "checks" → danh sách các lựa chọn đã tick. */
+export function toIds(v: string | boolean | undefined): string[] {
+  return typeof v === "string" && v ? v.split(",").filter(Boolean) : [];
+}

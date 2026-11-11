@@ -5,6 +5,7 @@ import {
   CreditCard,
   FlaskConical,
   House,
+  Inbox,
   Landmark,
   Megaphone,
   MessageCircleHeart,
@@ -16,6 +17,7 @@ import {
   Users,
 } from "lucide-react";
 import { ToothIcon } from "@/components/icons/tooth";
+import type { StaffRole } from "@/hooks/use-current-staff";
 
 /**
  * Cấu trúc menu bên trái: Nhóm → Phân hệ → Trang.
@@ -26,7 +28,16 @@ import { ToothIcon } from "@/components/icons/tooth";
  * href "/lich-hen/check-in" → src/app/(app)/lich-hen/check-in/page.tsx
  */
 
-export type NavPage = { title: string; href: string; hint?: string };
+export type NavPage = {
+  title: string;
+  href: string;
+  hint?: string;
+  /** Chỉ các vai trò này thấy mục này trong menu; bỏ trống = ai cũng thấy. */
+  roles?: StaffRole[];
+};
+
+/** Người quản lý phân hệ Marketing. */
+const MARKETING_MANAGERS: StaffRole[] = ["super_admin", "admin", "marketing_manager"];
 
 export type NavModule = {
   title: string;
@@ -61,10 +72,45 @@ export const NAV_SECTIONS: NavSection[] = [
         title: "Marketing",
         icon: Megaphone,
         pages: [
-          { title: "Chiến dịch / Lên camp", href: "/marketing/chien-dich" },
-          { title: "Nguồn lead & Trang", href: "/marketing/nguon-lead", hint: "Nguồn lead và các trang (page)" },
-          { title: "Hiệu quả nội dung", href: "/marketing/hieu-qua-noi-dung", hint: "Hiệu quả từng bài viết" },
-          { title: "Chi phí quảng cáo & ROI", href: "/marketing/chi-phi-roi" },
+          {
+            title: "Tổng quan",
+            href: "/marketing/tong-quan",
+            hint: "Thẻ số liệu, biểu đồ theo ngày, phễu Mess → Data → Lịch hẹn → Đơn (giai đoạn 4)",
+          },
+          {
+            title: "Nhập số liệu ngày",
+            href: "/marketing/nhap-so-lieu",
+            hint: "Chi tiêu và số mess mỗi ngày của từng TKQC, nhập tay hoặc từ file Ads Manager (giai đoạn 3)",
+          },
+          {
+            title: "Báo cáo hiệu suất",
+            href: "/marketing/bao-cao",
+            hint: "Theo nhân viên, TKQC, camp, bài post, theo ngày, chất lượng data (giai đoạn 4)",
+          },
+          { title: "Chiến dịch & Bài post", href: "/marketing/chien-dich" },
+          { title: "TKQC & Page", href: "/marketing/tkqc-page" },
+          {
+            title: "Mục tiêu & Ngân sách",
+            href: "/marketing/muc-tieu",
+            hint: "Mục tiêu tháng theo tuần, phân bổ ngân sách, khoá sổ tháng (giai đoạn 5)",
+          },
+          { title: "Nhân viên Ads", href: "/marketing/nhan-vien-ads", roles: MARKETING_MANAGERS },
+        ],
+      },
+      {
+        title: "Nhập lead",
+        icon: Inbox,
+        pages: [
+          {
+            title: "Nhập lead (trực page)",
+            href: "/nhap-lead/nhap",
+            hint: "Dán số, link bài post, tự điền Bài → Camp → TKQC → Nhân viên Ads, “Số tôi đã dán” (giai đoạn 2). Hiện tại trực page vẫn dán lead ở Telesale → Leads → Thêm lead",
+          },
+          {
+            title: "Công trực page",
+            href: "/nhap-lead/cong",
+            hint: "Bảng công theo người × ngày / tháng, đơn giá theo loại số (giai đoạn 5)",
+          },
         ],
       },
       {
@@ -227,6 +273,30 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
 ];
+
+/** Vai trò chỉ làm việc trong một vài phân hệ: menu của họ chỉ hiện các phân hệ này. */
+const ROLE_MODULES: Partial<Record<StaffRole, string[]>> = {
+  ads_staff: ["Marketing"],
+};
+
+/**
+ * Menu dành cho một vai trò. `null` (chưa biết vai trò: đang tải, hoặc đang xem dữ liệu mẫu) thì
+ * hiện đủ. Đây chỉ là việc ẩn / hiện menu; quyền xem dữ liệu do Supabase kiểm soát.
+ */
+export function navSectionsFor(role: StaffRole | null): NavSection[] {
+  if (!role) return NAV_SECTIONS;
+  const onlyModules = ROLE_MODULES[role];
+  return NAV_SECTIONS.map((section) => ({
+    ...section,
+    modules: section.modules
+      .filter((mod) => !onlyModules || onlyModules.includes(mod.title))
+      .map((mod) => ({
+        ...mod,
+        pages: mod.pages.filter((page) => !page.roles || page.roles.includes(role)),
+      }))
+      .filter((mod) => mod.pages.length > 0),
+  })).filter((section) => section.modules.length > 0);
+}
 
 /** Danh sách phẳng mọi trang, kèm tên phân hệ và nhóm chứa nó. */
 export const NAV_PAGES = NAV_SECTIONS.flatMap((section) =>

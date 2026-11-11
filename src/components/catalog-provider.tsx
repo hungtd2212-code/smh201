@@ -29,7 +29,7 @@ const CatalogContext = createContext<CatalogContextValue>({
 });
 
 /**
- * Tải các danh mục dùng chung (kênh, page, chiến dịch, dịch vụ, nhân viên) một lần
+ * Tải các danh mục dùng chung (kênh, page, chiến dịch, dịch vụ, nhân viên, danh mục Marketing) một lần
  * cho mọi trang, để các form và bảng tra tên từ id mà không phải gọi lại máy chủ.
  */
 export function CatalogProvider({ children }: { children: React.ReactNode }) {
@@ -87,13 +87,31 @@ function nameIndex(live: Named[], trashed: Named[]) {
 export function useCatalogNames() {
   const { catalogs } = useCatalogs();
   return useMemo(() => {
-    const staff = new Map(catalogs.staff.map((s) => [s.user_id, s.full_name]));
+    const lookup = (entries: Iterable<[string, string]>) => {
+      const map = new Map(entries);
+      return (id: string | null | undefined) => (id ? map.get(id) : undefined);
+    };
+    const adAccount = lookup(catalogs.adAccounts.map((a) => [a.id, a.name]));
+    const adsStaff = lookup(catalogs.adsStaff.map((a) => [a.id, a.full_name]));
     return {
       channel: nameIndex(catalogs.channels, catalogs.trashed.channels),
       page: nameIndex(catalogs.pages, catalogs.trashed.pages),
       campaign: nameIndex(catalogs.campaigns, catalogs.trashed.campaigns),
       service: nameIndex(catalogs.services, catalogs.trashed.services),
-      staff: (id: string | null | undefined) => (id ? staff.get(id) : undefined),
+      staff: lookup(catalogs.staff.map((s) => [s.user_id, s.full_name])),
+      /** Tên Miền theo mã (cột branch). */
+      region: lookup(catalogs.regions.map((r) => [r.code, r.name])),
+      regionById: lookup(catalogs.regions.map((r) => [r.id, r.name])),
+      adAccount,
+      adsStaff,
+      adPost: lookup(catalogs.adPosts.map((p) => [p.id, p.title ?? p.url])),
+      /** "TKQC → Nhân viên Ads" của một dòng phân công. */
+      assignment: lookup(
+        catalogs.assignments.map((x) => [
+          x.id,
+          `${adAccount(x.ad_account_id) ?? "TKQC"} → ${adsStaff(x.ads_staff_id) ?? "…"}`,
+        ]),
+      ),
     };
   }, [catalogs]);
 }

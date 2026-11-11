@@ -1,7 +1,17 @@
 /** Kiểu dữ liệu của phần Sao lưu & Khôi phục (xem supabase/003_data_safety.sql). */
 
 /** Các bảng có Thùng rác (xoá mềm). */
-export type SoftDeleteTable = "leads" | "channels" | "services" | "pages" | "campaigns";
+export type SoftDeleteTable =
+  | "leads"
+  | "channels"
+  | "services"
+  | "pages"
+  | "campaigns"
+  | "regions"
+  | "ads_staff"
+  | "ad_accounts"
+  | "ad_account_assignments"
+  | "ad_posts";
 
 /** delete = chuyển vào thùng rác · restore = khôi phục · purge = xoá vĩnh viễn. */
 export type AuditAction = "insert" | "update" | "delete" | "restore" | "purge";

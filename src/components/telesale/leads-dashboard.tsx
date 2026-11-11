@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ROLE_LABELS, useCurrentStaff } from "@/hooks/use-current-staff";
 import { APP } from "@/lib/config";
 import { exportLeadsToExcel } from "@/lib/leads/export";
+import { logExport } from "@/lib/safety/repo";
 import { fetchLead, fetchLeads } from "@/lib/leads/repo";
 import { computeLeadStats } from "@/lib/leads/stats";
 import type { Lead, LeadIntakeResult } from "@/lib/leads/types";
@@ -130,6 +131,12 @@ export function LeadsDashboard() {
     setExporting(true);
     try {
       const name = `leads-${APP.branch.code}-${format(range.from, "yyyyMMdd")}-${format(range.to, "yyyyMMdd")}.xlsx`;
+      // Ghi sổ trước khi tạo file: tài khoản chưa được tick quyền "Xuất file" thì máy chủ từ chối ở đây.
+      await logExport("leads", leads.length, {
+        file: name,
+        from: format(range.from, "yyyy-MM-dd"),
+        to: format(range.to, "yyyy-MM-dd"),
+      });
       await exportLeadsToExcel(leads, name);
     } catch (error) {
       toast.error("Không xuất được file Excel", {
@@ -162,7 +169,7 @@ export function LeadsDashboard() {
         onRangeChange={setRange}
         loading={loading}
         onRefresh={() => setReloadCount((n) => n + 1)}
-        onExport={handleExport}
+        onExport={staff.status === "ok" && staff.canExport ? handleExport : undefined}
         exporting={exporting}
         canExport={!loading && leads.length > 0}
       />

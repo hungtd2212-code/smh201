@@ -5,19 +5,47 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { MISSING_COLUMN } from "@/lib/supabase/errors";
 
-export type StaffRole = "super_admin" | "admin" | "lead" | "sale" | "page";
+/**
+ * Vai trò của một tài khoản. Mã giữ nguyên như trong cơ sở dữ liệu:
+ * lead = Trưởng Telesale, sale = Telesale, page = Trực page.
+ */
+export type StaffRole =
+  | "super_admin"
+  | "admin"
+  | "marketing_manager"
+  | "ads_staff"
+  | "lead"
+  | "sale"
+  | "page";
 
 export const ROLE_LABELS: Record<StaffRole, string> = {
   super_admin: "Quản trị cấp cao",
   admin: "Quản trị",
-  lead: "Lead",
+  marketing_manager: "Trưởng Marketing",
+  ads_staff: "Nhân viên Ads",
+  lead: "Trưởng Telesale",
   sale: "Telesale",
   page: "Trực page",
 };
 
-/** Quản trị cấp cao, Quản trị và Lead: sửa danh mục, hoàn tác lead, bật/tắt nhận lead của người khác. */
+/** Thứ tự hiển thị các vai trò trong ô chọn. */
+export const ROLE_ORDER: StaffRole[] = [
+  "super_admin",
+  "admin",
+  "marketing_manager",
+  "ads_staff",
+  "lead",
+  "sale",
+  "page",
+];
+
+/** Quản trị cấp cao, Quản trị và Trưởng Telesale: hoàn tác lead, bật/tắt nhận lead của người khác, sửa dịch vụ. */
 export const isManagerRole = (role: StaffRole) =>
   role === "super_admin" || role === "admin" || role === "lead";
+
+/** Quản trị cấp cao, Quản trị và Trưởng Marketing: quản lý danh mục Marketing (kênh, page, TKQC, chiến dịch, bài post, nhân viên Ads). */
+export const managesMarketingRole = (role: StaffRole) =>
+  role === "super_admin" || role === "admin" || role === "marketing_manager";
 
 /** Quản trị cấp cao và Quản trị: Thùng rác, Nhật ký hệ thống, khoá tài khoản. */
 export const isAdminRole = (role: StaffRole) => role === "super_admin" || role === "admin";
@@ -39,6 +67,11 @@ export type CurrentStaff =
        */
       canDelete: boolean;
       /**
+       * Được xuất file: Quản trị luôn có; người khác chỉ khi được tick ở Cài đặt → Tài khoản &
+       * Phân quyền. Nút "Tải Excel" chỉ hiện khi true.
+       */
+      canExport: boolean;
+      /**
        * false = cơ sở dữ liệu chưa có ô tick quyền (chưa chạy supabase/004_delete_permission.sql).
        * Khi đó mọi thứ vẫn chạy bình thường, chỉ riêng trang tick quyền báo là chưa dùng được.
        */
@@ -56,28 +89,32 @@ type OwnStaffRow = {
   locked_at: string | null;
   locked_reason: string | null;
   can_delete?: boolean;
+  can_export?: boolean;
 };
 
 /**
- * Dòng staff của chính người đang đăng nhập. Cột can_delete do file 004 thêm vào; cơ sở dữ liệu
- * chưa chạy file đó thì đọc lại không kèm cột này, để việc đăng nhập không bị hỏng theo.
+ * Dòng staff của chính người đang đăng nhập. Cột can_delete do file 004 thêm vào, can_export do
+ * file 005; cơ sở dữ liệu chưa chạy file nào thì đọc lại không kèm cột đó, để việc đăng nhập
+ * không bị hỏng theo.
  */
 async function fetchOwnStaffRow(userId: string) {
   const supabase = getSupabaseBrowserClient();
-  const full = await supabase
-    .from("staff")
-    .select("full_name, role, locked_at, locked_reason, can_delete")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (full.error?.code !== MISSING_COLUMN) {
-    return { row: full.data as OwnStaffRow | null, error: full.error, permissionsReady: true };
+  const attempts = [
+    "full_name, role, locked_at, locked_reason, can_delete, can_export",
+    "full_name, role, locked_at, locked_reason, can_delete",
+    "full_name, role, locked_at, locked_reason",
+  ];
+  for (const [index, columns] of attempts.entries()) {
+    const result = await supabase.from("staff").select(columns).eq("user_id", userId).maybeSingle();
+    const isLast = index === attempts.length - 1;
+    if (result.error?.code === MISSING_COLUMN && !isLast) continue;
+    return {
+      row: result.data as OwnStaffRow | null,
+      error: result.error,
+      permissionsReady: columns.includes("can_delete"),
+    };
   }
-  const basic = await supabase
-    .from("staff")
-    .select("full_name, role, locked_at, locked_reason")
-    .eq("user_id", userId)
-    .maybeSingle();
-  return { row: basic.data as OwnStaffRow | null, error: basic.error, permissionsReady: false };
+  throw new Error("unreachable");
 }
 
 async function loadCurrentStaff(): Promise<CurrentStaff> {
@@ -104,6 +141,7 @@ async function loadCurrentStaff(): Promise<CurrentStaff> {
     fullName: data.full_name,
     role: data.role,
     canDelete: data.role === "super_admin" || data.can_delete === true,
+    canExport: isAdminRole(data.role) || data.can_export === true,
     permissionsReady,
   };
 }

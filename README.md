@@ -4,8 +4,9 @@ Hệ thống quản lý nội bộ. Các màn hình đã có:
 
 - **Telesale → Leads**: bảng điều khiển lead, form Thêm lead (dán đoạn chat, kiểm tra trùng số, chia telesale), form telesale xử lý lead.
 - **Telesale → Chia lead / Chia ca**: bật / tắt nhận lead, thứ tự xoay vòng (xếp ca làm: đợt 2).
-- **Marketing → Chiến dịch**, **Marketing → Nguồn lead & Trang**, **Cài đặt → Dịch vụ & Bảng giá**: các danh mục.
-- **Cài đặt → Tài khoản & Phân quyền**, **Thùng rác**, **Nhật ký hệ thống**, **Sao lưu & Khôi phục**: an toàn dữ liệu (xem mục “An toàn dữ liệu” bên dưới).
+- **Marketing → Nhân viên Ads**, **TKQC & Page**, **Chiến dịch & Bài post**: danh mục của phân hệ Marketing (giai đoạn 1 — xem mục “Phân hệ Marketing” bên dưới).
+- **Cài đặt → Dịch vụ & Bảng giá**: danh mục dịch vụ.
+- **Cài đặt → Tài khoản & Phân quyền**, **Thùng rác**, **Nhật ký hệ thống**, **Sao lưu & Khôi phục**: vai trò, quyền tick theo tài khoản và an toàn dữ liệu (xem mục “An toàn dữ liệu” bên dưới).
 
 Các mục khác trong menu là trang giữ chỗ.
 
@@ -32,7 +33,9 @@ Mở http://localhost:3000. Ứng dụng cần kết nối Supabase (mục 1 bê
 3. Mở file [`supabase/schema.sql`](supabase/schema.sql), sao chép toàn bộ, dán vào và bấm **Run**.
 4. Làm tương tự, lần lượt theo số thứ tự, với các file còn lại trong thư mục `supabase/`:
    [`002_marketing_lead.sql`](supabase/002_marketing_lead.sql), [`003_data_safety.sql`](supabase/003_data_safety.sql),
-   rồi [`004_delete_permission.sql`](supabase/004_delete_permission.sql).
+   [`004_delete_permission.sql`](supabase/004_delete_permission.sql), rồi [`005_marketing_catalog.sql`](supabase/005_marketing_catalog.sql).
+5. (Tuỳ chọn) Chạy [`supabase/seeds/005_marketing_sample.sql`](supabase/seeds/005_marketing_sample.sql) để có sẵn 7 nhân viên Ads,
+   2 TKQC và 1 chiến dịch + 1 bài post mẫu (có chữ “(mẫu)”). Chạy lại nhiều lần không sinh dòng trùng.
 
 `schema.sql` tạo 2 bảng `leads` và `staff`, kèm phân quyền: chỉ tài khoản có tên trong bảng `staff` mới xem/sửa được lead.
 
@@ -41,7 +44,10 @@ Mở http://localhost:3000. Ứng dụng cần kết nối Supabase (mục 1 bê
 > file cũ sẽ ghi đè quy tắc mà file mới vừa đặt.
 >
 > Trước khi đem một file SQL mới lên Supabase, chạy `npm run test:db`: lệnh này chạy tất cả các file
-> trên một cơ sở dữ liệu giả lập ngay trong máy và kiểm tra hơn 100 tình huống, không đụng tới dữ liệu thật.
+> trên một cơ sở dữ liệu giả lập ngay trong máy và kiểm tra hơn 300 tình huống, không đụng tới dữ liệu thật.
+>
+> Ứng dụng vẫn chạy được khi cơ sở dữ liệu chưa có file mới nhất: các màn hình cũ hoạt động bình thường,
+> màn hình cần file mới sẽ báo “chưa dùng được” và chỉ rõ file nào chưa chạy.
 
 ### Bước 2 — Tạo tài khoản đăng nhập cho bạn
 
@@ -55,19 +61,24 @@ from auth.users
 where email = 'email-cua-ban@example.com';
 ```
 
-Thêm nhân viên khác: làm lại 2 việc trên, `role` là một trong:
+Thêm nhân viên khác: làm lại 2 việc trên (để `role` là `'sale'`), rồi đổi vai trò ngay trong ứng dụng ở
+**Cài đặt → Tài khoản & Phân quyền** (cần đã chạy file 005). Các vai trò:
 
 | `role` | Tên trong ứng dụng | Được làm gì |
 |---|---|---|
-| `super_admin` | Quản trị cấp cao | Mọi thứ, kể cả xoá vĩnh viễn và đổi ngưỡng an toàn |
-| `admin` | Quản trị | Thùng rác, khôi phục, nhật ký hệ thống, hoàn tác theo lô, khoá tài khoản |
-| `lead` | Lead (trưởng nhóm) | Sửa danh mục, hoàn tác một lead về phiên bản cũ |
+| `super_admin` | Quản trị cấp cao | Mọi thứ, kể cả xoá vĩnh viễn, đổi ngưỡng an toàn, cấp / thu vai trò Quản trị |
+| `admin` | Quản trị | Toàn quyền nghiệp vụ; thùng rác, khôi phục, nhật ký hệ thống, hoàn tác theo lô, khoá tài khoản, đổi vai trò |
+| `marketing_manager` | Trưởng Marketing | Toàn bộ Marketing: nhân viên Ads, TKQC và phân công, page, kênh, chiến dịch, bài post |
+| `ads_staff` | Nhân viên Ads | Chỉ thấy TKQC được giao; thêm / sửa chiến dịch và bài post trong TKQC đang phụ trách. Không thấy lead |
+| `lead` | Trưởng Telesale | Sửa dịch vụ, chia lead, hoàn tác một lead về phiên bản cũ |
 | `sale` | Telesale | Xử lý lead được giao |
 | `page` | Trực page | Dán lead |
 
 Khi chạy `003_data_safety.sql`, tài khoản `admin` được tạo sớm nhất tự động trở thành `super_admin`.
 
-Quyền **chuyển dữ liệu vào thùng rác** không theo vai trò mà theo ô tick riêng của từng tài khoản — xem mục “An toàn dữ liệu”.
+Hai quyền không theo vai trò mà theo **ô tick riêng của từng tài khoản** (Cài đặt → Tài khoản & Phân quyền):
+**Xoá dữ liệu** (chuyển vào thùng rác — xem mục “An toàn dữ liệu”) và **Xuất file** (nút “Tải Excel”; Quản trị luôn có,
+người khác phải được Quản trị tick; mỗi lần xuất được ghi vào sổ `export_log`).
 
 3. Nên tắt tự đăng ký: **Authentication → Sign In / Providers** → tắt **Allow new users to sign up**.
 
@@ -137,15 +148,17 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 | `src/lib/leads/status.ts` | 13 trạng thái lead (nhãn, màu) và công thức “số thực nhận” |
 | `src/lib/leads/repo.ts` | Đọc / ghi lead, dán lead (`intake_lead`), kiểm tra trùng số |
 | `src/lib/leads/phone.ts` | Chuẩn hoá SĐT, tách SĐT và tên từ đoạn chat |
-| `src/lib/catalog/` | Danh mục: kênh, page, chiến dịch, dịch vụ, nhân viên |
-| `src/components/catalog/` | Các trang danh mục |
+| `src/lib/catalog/` | Danh mục: miền, kênh, page, TKQC và phân công, nhân viên Ads, chiến dịch, bài post, dịch vụ, tài khoản |
+| `src/components/catalog/` | Các trang danh mục (Nhân viên Ads, TKQC & Page, Chiến dịch & Bài post, Dịch vụ) |
 | `src/components/telesale/` | Màn hình Leads: bộ lọc, thẻ số liệu, lịch, biểu đồ, bảng |
 | `src/proxy.ts` | Chặn người chưa đăng nhập, chuyển về `/login` |
 | `supabase/schema.sql` | Bảng `leads`, `staff` và phân quyền ban đầu |
 | `supabase/002_marketing_lead.sql` | Phân hệ Marketing → Lead: danh mục, lần tiếp cận, quy tắc trùng số, chia telesale |
 | `supabase/003_data_safety.sql` | An toàn dữ liệu: không ai xoá được, thùng rác, khoá số điện thoại, nhật ký thay đổi, hoàn tác, cảnh báo bất thường, khoá tài khoản |
 | `supabase/004_delete_permission.sql` | Quyền “Xoá dữ liệu” tick theo từng tài khoản |
-| `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`) |
+| `supabase/005_marketing_catalog.sql` | Phân hệ Marketing giai đoạn 1: vai trò mới, quyền “Xuất file”, miền, nhân viên Ads, TKQC + phân công theo ngày, bài post, tách ID bài từ link |
+| `supabase/seeds/` | Dữ liệu mẫu (không bắt buộc) |
+| `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`): `data-safety` (schema → 004) và `marketing-catalog` (schema → 005) |
 | `src/lib/safety/`, `src/components/safety/` | Tài khoản & Phân quyền, Thùng rác, Nhật ký hệ thống, Sao lưu & Khôi phục, tab Lịch sử của lead |
 
 ### Cách tính các chỉ số
@@ -166,11 +179,26 @@ Muốn đổi công thức: sửa `NOT_RECEIVED_STATUSES` trong `src/lib/leads/s
 - **Lead đã làm dịch vụ** bị dán lại → ghi nhận là khách cũ cho CSKH, không tính là lead marketing.
 - **Chia lead**: xoay vòng trong những người đang bật nhận lead (ai lâu chưa được chia nhất thì nhận); trực page chọn tay thì vẫn tính một lượt.
 
+### Phân hệ Marketing (đang xây theo giai đoạn)
+
+Giai đoạn 1 — danh mục (file `005_marketing_catalog.sql`):
+
+- **Miền**: Miền Bắc (HN), Miền Nam (HCM). Cột `branch` của page, chiến dịch, lead, nhân viên Ads giữ mã miền.
+- **Nhân viên Ads**: tên, mã nhân viên nội bộ, miền, tài khoản đăng nhập (nếu có), Đang làm / Nghỉ. Người đã nghỉ vẫn giữ nguyên lịch sử.
+- **TKQC** và **phân công theo ngày**: mỗi TKQC tại một thời điểm chỉ có một người phụ trách; giao cho người mới thì phân công cũ tự kết thúc vào hôm trước. Số liệu của ngày nào tính cho người phụ trách ngày đó.
+- **Page**: kênh, miền, link, các tài khoản Trực page phụ trách.
+- **Chiến dịch**: thuộc một TKQC; mục tiêu (Tin nhắn / Tương tác / Chuyển đổi), dịch vụ, miền, ngày chạy, ngân sách, ID camp.
+- **Bài post**: thuộc một chiến dịch; hệ thống tự tách **ID bài** và **ID ads** từ link Facebook / TikTok. Mỗi bài chỉ thuộc một chiến dịch. Link rút gọn / link chia sẻ (fb.watch, /share/, vm.tiktok…) không chứa ID bài nên chỉ khớp khi dán đúng link đó. Bài “Chưa khai báo” là bài trực page dán mà chưa ai khai (dùng từ giai đoạn 2).
+- **Quyền** (chặn ngay trong cơ sở dữ liệu): Quản trị và Trưởng Marketing quản lý mọi danh mục Marketing; Nhân viên Ads chỉ thấy TKQC từng được giao và chỉ thêm / sửa chiến dịch, bài post trong TKQC **đang** phụ trách; Nhân viên Ads không đọc được lead.
+- Mọi bảng mới đều có thùng rác (không xoá hẳn), nhật ký thay đổi, người tạo / ngày tạo / ngày sửa.
+
+Các giai đoạn sau (chưa làm): 2 — Nhập lead (dán link bài, tự điền Bài → Camp → TKQC → Nhân viên Ads, “Số tôi đã dán”); 3 — Nhập số liệu ngày + nhập file CSV; 4 — Báo cáo hiệu suất; 5 — Mục tiêu & Ngân sách, công trực page, khoá sổ tháng; 6 — Nhập dữ liệu T9–T10/2026.
+
 ### An toàn dữ liệu
 
-**Lớp 1 — Không ai xoá được.** Số điện thoại đã thêm vào thì không ai xoá được. Ứng dụng không có nút “Xoá”, chỉ có **Chuyển vào thùng rác** (ẩn đi, khôi phục lại được) — áp dụng cho lead, kênh, page, chiến dịch, dịch vụ.
+**Lớp 1 — Không ai xoá được.** Số điện thoại đã thêm vào thì không ai xoá được. Ứng dụng không có nút “Xoá”, chỉ có **Chuyển vào thùng rác** (ẩn đi, khôi phục lại được) — áp dụng cho lead và mọi danh mục (kênh, page, TKQC, phân công TKQC, nhân viên Ads, chiến dịch, bài post, dịch vụ, miền).
 
-- **Chuyển vào thùng rác**: chỉ tài khoản được Quản trị cấp cao **tick quyền “Xoá dữ liệu”** ở **Cài đặt → Tài khoản & Phân quyền** — chỉ những tài khoản đó mới thấy nút. Mặc định không ai được tick; Quản trị cấp cao luôn có quyền. Người không được tick chỉ đổi trạng thái (Fail, Số huỷ…). Với danh mục, ngoài ô tick còn phải là Quản trị hoặc Lead.
+- **Chuyển vào thùng rác**: chỉ tài khoản được Quản trị cấp cao **tick quyền “Xoá dữ liệu”** ở **Cài đặt → Tài khoản & Phân quyền** — chỉ những tài khoản đó mới thấy nút. Mặc định không ai được tick; Quản trị cấp cao luôn có quyền. Người không được tick chỉ đổi trạng thái (Fail, Số huỷ…). Với danh mục, ngoài ô tick còn phải đúng vai trò quản lý: Quản trị hoặc Trưởng Marketing (danh mục Marketing), Quản trị hoặc Trưởng Telesale (dịch vụ).
 - **Khôi phục** (Cài đặt → Thùng rác): Quản trị trở lên.
 - **Xoá vĩnh viễn**: chỉ Quản trị cấp cao (chủ phòng khám), phải nhập lại mật khẩu, và chỉ với bản ghi đã nằm trong thùng rác đủ 90 ngày. Không có gì tự bị xoá vĩnh viễn.
 - **Số điện thoại của một lead không sửa hay gỡ được** (trừ Quản trị cấp cao). Số sai thì đánh dấu “Số sai”.
@@ -180,7 +208,7 @@ Muốn đổi công thức: sửa `NOT_RECEIVED_STATUSES` trong `src/lib/leads/s
 
 **Lớp 2 — Nhật ký thay đổi.** Mọi lần thêm / sửa / chuyển vào thùng rác / khôi phục đều được cơ sở dữ liệu tự ghi lại: bảng nào, bản ghi nào, giá trị cũ, giá trị mới, ai, lúc nào, địa chỉ IP. Ứng dụng không sửa hay xoá được nhật ký.
 
-- Mở một lead → tab **Lịch sử thay đổi** → **Hoàn tác về phiên bản này** (Lead trở lên).
+- Mở một lead → tab **Lịch sử thay đổi** → **Hoàn tác về phiên bản này** (Trưởng Telesale trở lên).
 - **Cài đặt → Nhật ký hệ thống**: lọc theo người / thời gian / hành động / loại dữ liệu; **Hoàn tác theo lô** — gỡ mọi thay đổi của một tài khoản trong một khoảng thời gian (xem trước rồi mới áp dụng; cột nào đã có người khác sửa tiếp thì được giữ nguyên và báo là xung đột).
 - **Cảnh báo bất thường**: một tài khoản sửa / chuyển vào thùng rác quá 150 bản ghi trong một giờ → hiện cảnh báo cho Quản trị và tự khoá tài khoản đó (không bao giờ tự khoá Quản trị cấp cao). Quản trị mở khoá ở Nhật ký hệ thống.
 - Nhật ký chỉ có từ lúc chạy `003_data_safety.sql`; thay đổi trước đó không được ghi.

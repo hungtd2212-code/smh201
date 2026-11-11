@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "setup:supabase": "node scripts/setup-supabase.mjs",
-    "test:db": "node supabase/tests/data-safety.test.mjs"
+    "test:db": "node supabase/tests/data-safety.test.mjs && node supabase/tests/marketing-catalog.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

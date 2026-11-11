@@ -1,4 +1,5 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { isNotMigrated } from "@/lib/supabase/errors";
 import {
   DEFAULT_SAFETY_SETTINGS,
   type AuditAction,
@@ -302,4 +303,36 @@ export async function fetchSafetyCounts(): Promise<{ trash: number; auditWeek: n
   if (trash.error) fail(trash.error);
   if (audit.error) fail(audit.error);
   return { trash: trash.count ?? 0, auditWeek: audit.count ?? 0 };
+}
+
+/** Đổi vai trò một tài khoản (Quản trị; cấp / thu vai trò Quản trị thì chỉ Quản trị cấp cao). */
+export async function setStaffRole(userId: string, role: string): Promise<void> {
+  const { error } = await getSupabaseBrowserClient().rpc("set_staff_role", {
+    p_user_id: userId,
+    p_role: role,
+  });
+  if (error) fail(error);
+}
+
+/** Tick / bỏ tick quyền "Xuất file" cho một tài khoản (chỉ Quản trị). */
+export async function setStaffCanExport(userId: string, allowed: boolean): Promise<void> {
+  const { error } = await getSupabaseBrowserClient().rpc("set_staff_can_export", {
+    p_user_id: userId,
+    p_allowed: allowed,
+  });
+  if (error) fail(error);
+}
+
+/**
+ * Ghi sổ một lần xuất file. Gọi TRƯỚC khi tạo file: tài khoản chưa được tick quyền "Xuất file"
+ * thì máy chủ từ chối và hàm này báo lỗi. Cơ sở dữ liệu chưa có sổ xuất file (chưa chạy file 005)
+ * thì bỏ qua bước ghi sổ.
+ */
+export async function logExport(what: string, rowCount: number, details: Record<string, unknown>): Promise<void> {
+  const { error } = await getSupabaseBrowserClient().rpc("log_export", {
+    p_what: what,
+    p_row_count: rowCount,
+    p_details: details,
+  });
+  if (error && !isNotMigrated(error)) fail(error);
 }
