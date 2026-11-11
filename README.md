@@ -47,7 +47,13 @@ Thêm nhân viên khác: làm lại 2 việc trên, `role` là `'lead'` hoặc `
 1. Trong Supabase bấm nút **Connect** (trên cùng), hoặc vào **Project Settings → API Keys**. Cần 2 giá trị:
    - **Project URL** — dạng `https://xxxx.supabase.co`
    - **Publishable key** — dạng `sb_publishable_...` (project cũ gọi là `anon` key)
-2. Trong thư mục dự án, tạo file tên **`.env.local`** (sao chép từ [`.env.example`](.env.example)) và điền:
+2. Trong thư mục dự án chạy lệnh dưới đây rồi dán lần lượt 2 giá trị khi được hỏi. Lệnh tự kiểm tra (từ chối nếu dán nhầm khoá bí mật) và ghi vào file **`.env.local`**:
+
+```bash
+npm run setup:supabase
+```
+
+   Hoặc tự tạo file `.env.local` theo mẫu [`.env.example`](.env.example):
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co

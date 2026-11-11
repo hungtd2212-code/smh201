@@ -93,7 +93,8 @@ type Props = {
 export function LeadDialog({ open, onOpenChange, lead, onSaved }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      {/* max-h + cuộn: trên màn hình thấp, form dài hơn màn hình vẫn dùng được. */}
+      <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-xl">
         {/* key: mỗi lần mở cho một lead khác thì form được khởi tạo lại. */}
         {open && (
           <LeadForm
