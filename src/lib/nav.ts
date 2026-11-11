@@ -36,11 +36,8 @@ export type NavPage = {
   roles?: StaffRole[];
 };
 
-/** Người quản lý phân hệ Marketing. */
-const MARKETING_MANAGERS: StaffRole[] = ["super_admin", "admin", "marketing_manager"];
-
-/** Người nhập và xem số liệu ads hằng ngày: quản lý Marketing và Nhân viên Ads. */
-const ADS_PEOPLE: StaffRole[] = [...MARKETING_MANAGERS, "ads_staff"];
+/** Người gửi và xem báo cáo ads hằng ngày: Quản trị, Trưởng Marketing và Nhân viên Ads. */
+const ADS_PEOPLE: StaffRole[] = ["super_admin", "admin", "marketing_manager", "ads_staff"];
 
 export type NavModule = {
   title: string;
@@ -75,21 +72,10 @@ export const NAV_SECTIONS: NavSection[] = [
         title: "Marketing",
         icon: Megaphone,
         pages: [
-          {
-            title: "Tổng quan",
-            href: "/marketing/tong-quan",
-            hint: "Thẻ số liệu, biểu đồ theo ngày, phễu Mess → Data → Lịch hẹn → Đơn (giai đoạn 4)",
-          },
-          { title: "Nhập số liệu ngày", href: "/marketing/nhap-so-lieu", roles: ADS_PEOPLE },
-          { title: "Báo cáo hiệu suất", href: "/marketing/bao-cao", roles: ADS_PEOPLE },
-          { title: "Chiến dịch & Bài post", href: "/marketing/chien-dich" },
-          { title: "TKQC & Page", href: "/marketing/tkqc-page" },
-          {
-            title: "Mục tiêu & Ngân sách",
-            href: "/marketing/muc-tieu",
-            hint: "Mục tiêu tháng theo tuần, phân bổ ngân sách, khoá sổ tháng (giai đoạn 5)",
-          },
-          { title: "Nhân viên Ads", href: "/marketing/nhan-vien-ads", roles: MARKETING_MANAGERS },
+          // Tạm thời chỉ có 2 mục này (chủ phòng khám, 11/11/2026). Các trang Chiến dịch & Bài post,
+          // TKQC & Page, Nhân viên Ads vẫn mở được bằng đường dẫn — quản lý có lối vào từ màn Nhập liệu.
+          { title: "Nhập liệu", href: "/marketing/nhap-lieu", roles: ADS_PEOPLE },
+          { title: "Tổng quan", href: "/marketing/tong-quan", roles: ADS_PEOPLE },
         ],
       },
       {

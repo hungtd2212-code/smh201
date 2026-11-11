@@ -17,8 +17,7 @@ export const TABLE_LABELS: Record<string, string> = {
   ad_accounts: "TKQC",
   ad_account_assignments: "Phân công TKQC",
   ads_staff: "Nhân viên Ads",
-  ad_daily_spend: "Chi tiêu ads theo ngày",
-  ads_daily_results: "Kết quả ads theo ngày",
+  ad_daily_reports: "Báo cáo ads ngày",
   services: "Dịch vụ",
   staff: "Nhân viên",
   staff_shifts: "Ca làm",
@@ -94,16 +93,10 @@ const FIELD_LABELS: Record<string, string> = {
   value: "Giá trị",
   user_id: "Nhân viên",
   work_date: "Ngày làm",
-  stat_date: "Ngày",
-  spend: "Chi tiêu ads",
-  messages: "Tổng mess",
-  data_count: "Data",
-  sales: "Doanh số",
-  revenue: "Doanh thu",
-  q_potential: "KHTN",
-  q_booked: "Đặt lịch hẹn",
-  q_wrong_area: "Lạc tỉnh",
-  q_no_response: "Không tương tác",
+  report_date: "Ngày báo cáo",
+  spend: "Chi tiêu",
+  messages: "Số lượng tin nhắn",
+  data_count: "Data xin được",
   start_time: "Giờ bắt đầu",
   end_time: "Giờ kết thúc",
 };
@@ -120,6 +113,8 @@ const HIDDEN_FIELDS = new Set([
   "created_by",
   "last_assigned_at",
   "post_key",
+  "submitted_at",
+  "updated_by",
 ]);
 
 /** Cột chữ là "bản chụp" của một cột id — ẩn đi khi cột id cũng đổi trong cùng lần sửa. */
@@ -173,11 +168,12 @@ function formatValue(table: string, key: string, value: unknown, names: CatalogN
     case "price":
     case "budget":
     case "spend":
-    case "sales":
-    case "revenue":
       return `${Number(value).toLocaleString("vi-VN")} ₫`;
     case "branch":
       return text === APP.branch.code ? APP.branch.name : text;
+    case "messages":
+    case "data_count":
+      return Number(value).toLocaleString("vi-VN");
   }
 
   if (typeof value === "boolean") return value ? "Có" : "Không";
@@ -208,24 +204,23 @@ export function describeChanges(entry: AuditEntry, names: CatalogNames): FieldCh
     }));
 }
 
-/** Dòng số liệu ads mà một dòng nhật ký nói tới: ngày nào, của TKQC / nhân viên nào. */
-export type AdsStatRef = { stat_date: string; ad_account_id?: string; ads_staff_id?: string };
+/** Báo cáo ads ngày mà một dòng nhật ký nói tới: ngày nào, của TK ADS nào. */
+export type AdReportRef = { report_date: string; ad_account_id: string };
 
 /** Tên dễ đọc của bản ghi mà dòng nhật ký nói tới. */
 export function recordLabel(
   entry: AuditEntry,
   names: CatalogNames,
   leadLabels?: Map<string, string>,
-  adsStatRefs?: Map<string, AdsStatRef>,
+  adReportRefs?: Map<string, AdReportRef>,
 ): string {
   const old = entry.old_data ?? {};
-  const stat = adsStatRefs?.get(entry.record_id);
-  const statDay = stat ? stat.stat_date.split("-").reverse().join("/") : "";
+  const report = adReportRefs?.get(entry.record_id);
   switch (entry.table_name) {
-    case "ad_daily_spend":
-      return stat ? `${names.adAccount(stat.ad_account_id) ?? "TKQC"} · ${statDay}` : "Chi tiêu một ngày";
-    case "ads_daily_results":
-      return stat ? `${names.adsStaff(stat.ads_staff_id) ?? "Nhân viên Ads"} · ${statDay}` : "Kết quả một ngày";
+    case "ad_daily_reports":
+      return report
+        ? `${names.adAccount(report.ad_account_id) ?? "TK ADS"} · ${report.report_date.split("-").reverse().join("/")}`
+        : "Báo cáo ads ngày";
     case "leads":
       return (
         leadLabels?.get(entry.record_id) ??

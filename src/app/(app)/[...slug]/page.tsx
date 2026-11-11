@@ -15,8 +15,8 @@ import { NAV_PAGES } from "@/lib/nav";
 const BUILT_PAGES = new Set([
   "/telesale/leads",
   "/telesale/chia-lead",
-  "/marketing/nhap-so-lieu",
-  "/marketing/bao-cao",
+  "/marketing/nhap-lieu",
+  "/marketing/tong-quan",
   "/marketing/chien-dich",
   "/marketing/tkqc-page",
   "/marketing/nhan-vien-ads",

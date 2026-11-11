@@ -34,7 +34,7 @@ Mở http://localhost:3000. Ứng dụng cần kết nối Supabase (mục 1 bê
 4. Làm tương tự, lần lượt theo số thứ tự, với các file còn lại trong thư mục `supabase/`:
    [`002_marketing_lead.sql`](supabase/002_marketing_lead.sql), [`003_data_safety.sql`](supabase/003_data_safety.sql),
    [`004_delete_permission.sql`](supabase/004_delete_permission.sql), [`005_marketing_catalog.sql`](supabase/005_marketing_catalog.sql),
-   rồi [`006_ads_daily_stats.sql`](supabase/006_ads_daily_stats.sql).
+   rồi [`006_ad_daily_reports.sql`](supabase/006_ad_daily_reports.sql).
 5. (Tuỳ chọn) Chạy [`supabase/seeds/005_marketing_sample.sql`](supabase/seeds/005_marketing_sample.sql) để có sẵn 7 nhân viên Ads,
    2 TKQC và 1 chiến dịch + 1 bài post mẫu (có chữ “(mẫu)”). Chạy lại nhiều lần không sinh dòng trùng.
 
@@ -151,8 +151,8 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 | `src/lib/leads/phone.ts` | Chuẩn hoá SĐT, tách SĐT và tên từ đoạn chat |
 | `src/lib/catalog/` | Danh mục: kênh, page, TKQC và phân công, nhân viên Ads, chiến dịch, bài post, dịch vụ, tài khoản |
 | `src/components/catalog/` | Các trang danh mục (Nhân viên Ads, TKQC & Page, Chiến dịch & Bài post, Dịch vụ) |
-| `src/lib/ads-stats/` | Số liệu ads hằng ngày: đọc / lưu, cộng theo ngày – tuần – nhân viên, tính giá mess, giá data, tỉ lệ xin số, ads / doanh số |
-| `src/components/ads-stats/` | Trang Nhập số liệu ngày và Báo cáo hiệu suất |
+| `src/lib/ad-reports/` | Báo cáo ads hằng ngày: đọc / gửi / sửa, xử lý ô nhập số (dấu chấm hàng nghìn, dán số), ngày giờ, mốc 24 giờ |
+| `src/components/ad-reports/` | Màn Marketing → Nhập liệu và Marketing → Tổng quan |
 | `src/components/telesale/` | Màn hình Leads: bộ lọc, thẻ số liệu, lịch, biểu đồ, bảng |
 | `src/proxy.ts` | Chặn người chưa đăng nhập, chuyển về `/login` |
 | `supabase/schema.sql` | Bảng `leads`, `staff` và phân quyền ban đầu |
@@ -160,10 +160,9 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 | `supabase/003_data_safety.sql` | An toàn dữ liệu: không ai xoá được, thùng rác, khoá số điện thoại, nhật ký thay đổi, hoàn tác, cảnh báo bất thường, khoá tài khoản |
 | `supabase/004_delete_permission.sql` | Quyền “Xoá dữ liệu” tick theo từng tài khoản |
 | `supabase/005_marketing_catalog.sql` | Phân hệ Marketing giai đoạn 1: vai trò mới, quyền “Xuất file”, nhân viên Ads, TKQC + phân công theo ngày, bài post, tách ID bài từ link |
-| `supabase/006_ads_daily_stats.sql` | Số liệu ads hằng ngày: chi tiêu theo TKQC, kết quả theo nhân viên Ads, hàm lưu `save_ads_daily` |
+| `supabase/006_ad_daily_reports.sql` | Báo cáo ads hằng ngày (`ad_daily_reports`): mỗi (ngày, TK ADS) một báo cáo, nhân viên sửa trong 24 giờ, không ai xoá |
 | `supabase/seeds/` | Dữ liệu mẫu (không bắt buộc) |
-| `supabase/import/` | File nạp số liệu thật một lần (vd tháng 10/2026 chép từ Google Sheet). **Không nằm trong Git** — chỉ có trên máy này |
-| `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`): `data-safety` (schema → 004), `marketing-catalog` (schema → 005), `ads-daily` (schema → 006) và `ads-import` (nạp số tháng 10/2026 rồi so báo cáo với Google Sheet; bỏ qua nếu không có file nạp) |
+| `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`): `data-safety` (schema → 004), `marketing-catalog` (schema → 005), `ad-reports` (schema → 006). `npm test` chạy thêm `tests/number-input.test.mjs` (ô nhập số) |
 | `src/lib/safety/`, `src/components/safety/` | Tài khoản & Phân quyền, Thùng rác, Nhật ký hệ thống, Sao lưu & Khôi phục, tab Lịch sử của lead |
 
 ### Cách tính các chỉ số
@@ -197,16 +196,14 @@ Giai đoạn 1 — danh mục (file `005_marketing_catalog.sql`):
 - **Quyền** (chặn ngay trong cơ sở dữ liệu): Quản trị và Trưởng Marketing quản lý mọi danh mục Marketing; Nhân viên Ads chỉ thấy TKQC từng được giao và chỉ thêm / sửa chiến dịch, bài post trong TKQC **đang** phụ trách; Nhân viên Ads không đọc được lead.
 - Mọi bảng mới đều có thùng rác (không xoá hẳn), nhật ký thay đổi, người tạo / ngày tạo / ngày sửa.
 
-Số liệu ads hằng ngày và báo cáo (file `006_ads_daily_stats.sql`) — thay cho file Google Sheet “BC ads”:
+Báo cáo ads hằng ngày (file `006_ad_daily_reports.sql`, bản đơn giản theo yêu cầu 11/11/2026). Menu Marketing tạm thời chỉ có 2 mục:
 
-- **Nhập số liệu ngày** (`/marketing/nhap-so-lieu`): mỗi nhân viên Ads điền, cho từng ngày, chi tiêu của **từng TKQC mình phụ trách ngày đó** và kết quả của mình: tổng mess, data, doanh số, doanh thu, chất lượng data (KHTN, đặt lịch hẹn, lạc tỉnh, không tương tác). Quản trị và Trưởng Marketing nhập được cho mọi người. Nhập lại cùng ngày = sửa số. Không nhập cho ngày chưa tới.
-- **Báo cáo hiệu suất** (`/marketing/bao-cao`): theo tháng — thẻ tổng, bảng theo tuần (thứ Hai → Chủ nhật, cắt theo đầu / cuối tháng), bảng theo nhân viên, bảng theo ngày có cột chi tiêu từng TKQC. Cùng bộ cột với sheet. Nhân viên Ads chỉ thấy số của mình.
-- **Số tính ra, không lưu**: giá mess = chi tiêu / mess; giá data = chi tiêu / data; tỉ lệ xin số = data / mess; ads / doanh số = chi tiêu / doanh số. Chia cho 0 thì hiện “–”.
-- **Chi tiêu của ngày nào thuộc về người phụ trách TKQC ngày đó** (theo bảng phân công). Đổi người phụ trách có hiệu lực từ ngày nào thì chi tiêu từ ngày đó tính cho người mới.
-- **Không ai xoá được dòng số liệu**; nhập sai thì sửa số. Mỗi lần nhập / sửa đều vào Nhật ký hệ thống (ai, lúc nào, số cũ → số mới) và Quản trị hoàn tác được. TKQC, nhân viên Ads, phân công đã có số liệu thì không chuyển vào thùng rác được (chuyển sang “Ngừng dùng” / “Nghỉ”).
-- Chưa làm: nhập từ file CSV của Ads Manager, số liệu tới mức chiến dịch / bài post, xuất Excel, khoá sổ tháng.
+- **Nhập liệu** (`/marketing/nhap-lieu`): chọn ngày [Hôm nay] [Hôm qua] [Tuỳ chỉnh] (không chọn được ngày chưa tới). Mỗi TK ADS nhân viên phụ trách ngày đó là một nhóm cột nền xanh lá với 3 ô bắt buộc: Chi tiêu, Số lượng tin nhắn, Data xin được (điện thoại: mỗi TK ADS một thẻ). Ô chỉ nhận số nguyên ≥ 0, tự thêm dấu chấm hàng nghìn; gõ / dán “1.000.000”, “235,335”, “235 335” đều được. Nút **Gửi báo cáo** chỉ sáng khi đủ mọi ô (nhập 0 là hợp lệ). Mỗi (ngày, TK ADS) gửi một lần; ngày đã gửi thì chỉ xem, kèm nút đi tới Tổng quan. Quản trị / Trưởng Marketing chọn được nhân viên để nhập thay.
+- **Tổng quan** (`/marketing/tong-quan`): lọc Hôm nay / Hôm qua / Tuỳ chỉnh (khoảng ngày); mỗi nhân viên một bảng, dòng = ngày, nhóm cột = TK ADS, kèm giờ gửi và nút **Sửa**. Nhân viên sửa được trong 24 giờ kể từ lúc gửi lần đầu (hiện “Còn sửa được … ”, quá hạn thì “Đã khoá”); sửa không làm mới mốc 24 giờ; dòng đã sửa hiện “Đã sửa lúc …”. Quản trị / Trưởng Marketing xem tất cả, lọc theo nhân viên, sửa bất kỳ lúc nào.
+- Cơ sở dữ liệu tự chặn: gửi cho TK ADS không phụ trách, ngày chưa tới, gửi trùng, số âm / số thập phân / ô trống, nhân viên sửa quá 24 giờ (“Báo cáo đã quá 24 giờ, không thể sửa”), mọi lệnh xoá. Mọi lần gửi / sửa vào Nhật ký hệ thống (số cũ → số mới, ai, lúc nào).
+- Các trang Chiến dịch & Bài post, TKQC & Page, Nhân viên Ads tạm ẩn khỏi menu nhưng vẫn mở được; quản lý có đường vào từ màn Nhập liệu / Tổng quan (để giao TK ADS cho nhân viên).
 
-Các giai đoạn sau (chưa làm): 2 — Nhập lead (dán link bài, tự điền Bài → Camp → TKQC → Nhân viên Ads, “Số tôi đã dán”); 3 — nhập file CSV từ Ads Manager; 4 — báo cáo tới mức chiến dịch / bài post; 5 — Mục tiêu & Ngân sách, công trực page, khoá sổ tháng; 6 — Nhập dữ liệu T9/2026 (T10/2026 đã có file nạp ở `supabase/import/`).
+Các giai đoạn sau (chưa làm): 2 — Nhập lead (dán link bài, tự điền Bài → Camp → TKQC → Nhân viên Ads, “Số tôi đã dán”); 3 — nhập file CSV từ Ads Manager; 4 — báo cáo tới mức chiến dịch / bài post; 5 — Mục tiêu & Ngân sách, công trực page, khoá sổ tháng; 6 — Nhập dữ liệu T9–T10/2026.
 
 ### An toàn dữ liệu
 

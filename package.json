@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "setup:supabase": "node scripts/setup-supabase.mjs",
-    "test:db": "node supabase/tests/data-safety.test.mjs && node supabase/tests/marketing-catalog.test.mjs && node supabase/tests/ads-daily.test.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON supabase/tests/ads-import.test.mjs"
+    "test:db": "node supabase/tests/data-safety.test.mjs && node supabase/tests/marketing-catalog.test.mjs && node supabase/tests/ad-reports.test.mjs",
+    "test:ui": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/number-input.test.mjs",
+    "test": "npm run test:db && npm run test:ui"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

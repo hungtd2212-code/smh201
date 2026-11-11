@@ -1,6 +1,6 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isNotMigrated } from "@/lib/supabase/errors";
-import type { AdsStatRef } from "./labels";
+import type { AdReportRef } from "./labels";
 import {
   DEFAULT_SAFETY_SETTINGS,
   type AuditAction,
@@ -198,24 +198,21 @@ export async function fetchLeadLabels(ids: string[]): Promise<Map<string, string
 }
 
 /**
- * Các dòng số liệu ads (chi tiêu / kết quả theo ngày) theo id: ngày nào, của TKQC hay nhân viên nào —
- * để nhật ký hiện "THE DUONG 01 · 05/10/2026" thay cho một mã khó đọc.
+ * Các báo cáo ads ngày theo id: ngày nào, của TK ADS nào — để nhật ký hiện "THE DUONG 01 · 05/10/2026"
+ * thay cho một mã khó đọc.
  */
-export async function fetchAdsStatRefs(
+export async function fetchAdReportRefs(
   rows: { table_name: string; record_id: string }[],
-): Promise<Map<string, AdsStatRef>> {
-  const refs = new Map<string, AdsStatRef>();
-  const supabase = getSupabaseBrowserClient();
-  for (const [table, column] of [
-    ["ad_daily_spend", "ad_account_id"],
-    ["ads_daily_results", "ads_staff_id"],
-  ] as const) {
-    const ids = [...new Set(rows.filter((row) => row.table_name === table).map((row) => row.record_id))];
-    if (ids.length === 0) continue;
-    const { data, error } = await supabase.from(table).select(`id, stat_date, ${column}`).in("id", ids);
-    if (error) continue; // không đọc được thì nhật ký vẫn hiện, chỉ thiếu tên dễ đọc
-    for (const row of data as unknown as ({ id: string } & AdsStatRef)[]) refs.set(row.id, row);
-  }
+): Promise<Map<string, AdReportRef>> {
+  const refs = new Map<string, AdReportRef>();
+  const ids = [...new Set(rows.filter((row) => row.table_name === "ad_daily_reports").map((row) => row.record_id))];
+  if (ids.length === 0) return refs;
+  const { data, error } = await getSupabaseBrowserClient()
+    .from("ad_daily_reports")
+    .select("id, report_date, ad_account_id")
+    .in("id", ids);
+  if (error) return refs; // không đọc được thì nhật ký vẫn hiện, chỉ thiếu tên dễ đọc
+  for (const row of data as ({ id: string } & AdReportRef)[]) refs.set(row.id, row);
   return refs;
 }
 
