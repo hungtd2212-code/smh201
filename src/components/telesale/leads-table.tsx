@@ -1,9 +1,11 @@
 "use client";
 
 import { format } from "date-fns";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Search } from "lucide-react";
+import { BellRing, ChevronLeft, ChevronRight, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useCatalogNames } from "@/components/catalog-provider";
+import { ConfirmActionDialog } from "@/components/safety/confirm-action-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -29,9 +31,13 @@ import {
   type LeadStatusKey,
 } from "@/lib/leads/status";
 import type { Lead } from "@/lib/leads/types";
+import { softDeleteRecords } from "@/lib/safety/repo";
+import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
 const ALL = "__all";
+/** Chuyển vào Thùng rác quá số này phải nhập lại mật khẩu (máy chủ kiểm tra lại theo cấu hình thật). */
+const PASSWORD_OVER = 20;
 
 /** Bỏ dấu tiếng Việt để tìm "ha" ra cả "Hà". */
 const normalize = (text: string) =>
@@ -56,27 +62,74 @@ type Props = {
   onAdd: () => void;
   onEdit: (lead: Lead) => void;
   onLeadUpdated: (lead: Lead) => void;
+  /** Quản trị và Lead được chọn nhiều lead để chuyển vào Thùng rác. */
+  canDelete: boolean;
+  onLeadsDeleted: (ids: string[]) => void;
 };
 
-export function LeadsTable({ leads, loading, onAdd, onEdit, onLeadUpdated }: Props) {
+export function LeadsTable({
+  leads,
+  loading,
+  onAdd,
+  onEdit,
+  onLeadUpdated,
+  canDelete,
+  onLeadsDeleted,
+}: Props) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>(ALL);
   const [page, setPage] = useState(0);
+  /** Chỉ xem lead mà khách vừa nhắn lại, telesale chưa xử lý. */
+  const [onlyRecontacted, setOnlyRecontacted] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const names = useCatalogNames();
+  const recontactedCount = useMemo(
+    () => leads.filter((lead) => lead.recontacted_at).length,
+    [leads],
+  );
 
   const filtered = useMemo(() => {
     const q = normalize(query.trim());
     return leads.filter((lead) => {
+      if (onlyRecontacted && !lead.recontacted_at) return false;
       if (status !== ALL && lead.status !== status) return false;
       if (!q) return true;
       return [lead.full_name, lead.phone, lead.ads_id, lead.note, lead.service]
         .filter(Boolean)
         .some((field) => normalize(field as string).includes(q));
     });
-  }, [leads, query, status]);
+  }, [leads, query, status, onlyRecontacted]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
   const rows = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+  // Chỉ tính những lead đang chọn mà còn nằm trong kết quả lọc hiện tại.
+  const chosen = filtered.filter((lead) => selected.has(lead.id));
+  const pageChosen = rows.length > 0 && rows.every((lead) => selected.has(lead.id));
+  const columnCount = canDelete ? 11 : 10;
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function togglePage() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const lead of rows) {
+        if (pageChosen) next.delete(lead.id);
+        else next.add(lead.id);
+      }
+      return next;
+    });
+  }
 
   async function changeStatus(lead: Lead, next: LeadStatusKey) {
     if (next === lead.status) return;
@@ -88,6 +141,16 @@ export function LeadsTable({ leads, loading, onAdd, onEdit, onLeadUpdated }: Pro
         description: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  async function deleteChosen() {
+    const ids = chosen.map((lead) => lead.id);
+    const deleted = await softDeleteRecords("leads", ids);
+    toast.success(`Đã chuyển ${deleted} lead vào Thùng rác`, {
+      description: "Quản trị có thể khôi phục trong Cài đặt → Thùng rác.",
+    });
+    setSelected(new Set());
+    onLeadsDeleted(ids);
   }
 
   return (
@@ -127,16 +190,65 @@ export function LeadsTable({ leads, loading, onAdd, onEdit, onLeadUpdated }: Pro
             ))}
           </SelectContent>
         </Select>
+        {recontactedCount > 0 && (
+          <Button
+            variant="outline"
+            aria-pressed={onlyRecontacted}
+            className={cn(onlyRecontacted && "border-amber-400 bg-amber-50 dark:bg-amber-950/40")}
+            onClick={() => {
+              setOnlyRecontacted((v) => !v);
+              setPage(0);
+            }}
+          >
+            <BellRing className="text-amber-600" />
+            Khách nhắn lại ({recontactedCount})
+          </Button>
+        )}
         <Button className="ml-auto" onClick={onAdd}>
           <Plus />
           Thêm lead
         </Button>
       </div>
 
+      {canDelete && chosen.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-accent/40 px-3 py-2 text-sm">
+          <span className="font-medium">Đã chọn {chosen.length} lead</span>
+          {chosen.length < filtered.length && (
+            <Button
+              size="sm"
+              variant="link"
+              className="h-auto p-0"
+              onClick={() => setSelected(new Set(filtered.map((lead) => lead.id)))}
+            >
+              Chọn cả {filtered.length.toLocaleString("vi-VN")} lead đang lọc
+            </Button>
+          )}
+          <Button size="sm" variant="destructive" onClick={() => setConfirmingDelete(true)}>
+            <Trash2 />
+            Chuyển vào thùng rác
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Bỏ chọn
+          </Button>
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-xl border bg-card">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
+              {canDelete && (
+                <TableHead className="w-10">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-primary"
+                    aria-label="Chọn mọi lead trên trang này"
+                    checked={pageChosen}
+                    disabled={rows.length === 0}
+                    onChange={togglePage}
+                  />
+                </TableHead>
+              )}
               <TableHead>Ngày tạo</TableHead>
               <TableHead>Khách hàng</TableHead>
               <TableHead>SĐT</TableHead>
@@ -153,7 +265,7 @@ export function LeadsTable({ leads, loading, onAdd, onEdit, onLeadUpdated }: Pro
             {loading ? (
               Array.from({ length: 6 }, (_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={10}>
+                  <TableCell colSpan={columnCount}>
                     <Skeleton className="h-6 w-full" />
                   </TableCell>
                 </TableRow>
@@ -161,7 +273,7 @@ export function LeadsTable({ leads, loading, onAdd, onEdit, onLeadUpdated }: Pro
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={10}
+                  colSpan={columnCount}
                   className="h-28 text-center text-muted-foreground"
                 >
                   {leads.length === 0
@@ -171,21 +283,58 @@ export function LeadsTable({ leads, loading, onAdd, onEdit, onLeadUpdated }: Pro
               </TableRow>
             ) : (
               rows.map((lead) => (
-                <TableRow key={lead.id}>
+                <TableRow key={lead.id} data-state={selected.has(lead.id) ? "selected" : undefined}>
+                  {canDelete && (
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-primary"
+                        aria-label={`Chọn lead ${lead.full_name}`}
+                        checked={selected.has(lead.id)}
+                        onChange={() => toggle(lead.id)}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums">
                     {format(new Date(lead.created_at), "dd/MM HH:mm")}
                   </TableCell>
-                  <TableCell className="font-medium whitespace-nowrap">
-                    {lead.full_name}
+                  <TableCell className="whitespace-nowrap">
+                    <div className="font-medium">{lead.full_name}</div>
+                    {(lead.recontacted_at || lead.invalid_phone || lead.reopened_at) && (
+                      <div className="mt-0.5 flex flex-wrap gap-1 text-xs">
+                        {lead.recontacted_at && (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+                            Nhắn lại
+                          </span>
+                        )}
+                        {lead.reopened_at && (
+                          <span className="rounded bg-sky-100 px-1.5 py-0.5 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200">
+                            Mở lại
+                          </span>
+                        )}
+                        {lead.invalid_phone && (
+                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-red-800 dark:bg-red-900/50 dark:text-red-200">
+                            Số sai
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="tabular-nums">{lead.phone}</TableCell>
                   <TableCell className="whitespace-nowrap">
                     {lead.service ?? "—"}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    <div>{lead.source ?? "—"}</div>
-                    {lead.ads_id && (
-                      <div className="text-xs text-muted-foreground">{lead.ads_id}</div>
+                  <TableCell className="max-w-56">
+                    <div className="truncate">
+                      {names.channel(lead.channel_id) ?? lead.source ?? "—"}
+                      {lead.page_id && ` › ${names.page(lead.page_id) ?? "…"}`}
+                    </div>
+                    {(lead.campaign_id || lead.ads_id) && (
+                      <div className="truncate text-xs text-muted-foreground">
+                        {[names.campaign(lead.campaign_id), lead.ads_id]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>
@@ -271,6 +420,30 @@ export function LeadsTable({ leads, loading, onAdd, onEdit, onLeadUpdated }: Pro
           </Button>
         </div>
       </div>
+
+      <ConfirmActionDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title={`Chuyển ${chosen.length} lead vào thùng rác?`}
+        description={
+          <>
+            <p>
+              {chosen.length === 1
+                ? `Lead ${chosen[0].full_name} (${chosen[0].phone})`
+                : `${chosen.length} lead đã chọn`}{" "}
+              sẽ được chuyển vào Thùng rác và không còn hiện trong danh sách. Không số nào bị
+              xoá: Quản trị có thể khôi phục trong Cài đặt → Thùng rác.
+            </p>
+            {chosen.length > PASSWORD_OVER && (
+              <p>Chuyển hơn {PASSWORD_OVER} bản ghi một lúc cần nhập lại mật khẩu của bạn.</p>
+            )}
+          </>
+        }
+        confirmLabel="Chuyển vào Thùng rác"
+        destructive
+        needsPassword={chosen.length > PASSWORD_OVER}
+        onConfirm={deleteChosen}
+      />
     </div>
   );
 }

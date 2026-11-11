@@ -1,7 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { SetupNotice } from "@/components/setup-notice";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 /**
  * Màn hình Leads phụ thuộc vào ngày giờ hiện tại và dữ liệu của người đang
@@ -27,5 +29,6 @@ const LeadsDashboard = dynamic(
 );
 
 export function LeadsDashboardLoader() {
+  if (!isSupabaseConfigured) return <SetupNotice />;
   return <LeadsDashboard />;
 }

@@ -1,9 +1,10 @@
 "use client";
 
 import { endOfMonth, format, startOfMonth } from "date-fns";
-import { Info, Phone, ShieldAlert } from "lucide-react";
+import { Phone } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { AccessNotice } from "@/components/access-notice";
 import {
   Card,
   CardContent,
@@ -12,16 +13,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ROLE_LABELS, useCurrentStaff } from "@/hooks/use-current-staff";
+import { ROLE_LABELS, isManagerRole, useCurrentStaff } from "@/hooks/use-current-staff";
 import { APP } from "@/lib/config";
 import { exportLeadsToExcel } from "@/lib/leads/export";
-import { fetchLeads } from "@/lib/leads/repo";
+import { fetchLead, fetchLeads } from "@/lib/leads/repo";
 import { computeLeadStats } from "@/lib/leads/stats";
-import type { Lead } from "@/lib/leads/types";
-import { isSupabaseConfigured } from "@/lib/supabase/env";
+import type { Lead, LeadIntakeResult } from "@/lib/leads/types";
 import { formatRange, monthRange, type DayRange } from "./date-range";
 import { LeadCalendar } from "./lead-calendar";
 import { LeadDialog } from "./lead-dialog";
+import { LeadIntakeDialog } from "./lead-intake-dialog";
 import { LeadFilters } from "./lead-filters";
 import { LeadsTable } from "./leads-table";
 import { StatCards } from "./stat-cards";
@@ -77,22 +78,51 @@ export function LeadsDashboard() {
 
   const stats = useMemo(() => computeLeadStats(leads), [leads]);
 
-  // Hộp thoại thêm / sửa lead.
-  const [dialog, setDialog] = useState<{ open: boolean; lead: Lead | null }>({
+  // Hộp thoại "Thêm lead" (trực page dán số) và hộp thoại telesale xử lý một lead.
+  const [intakeOpen, setIntakeOpen] = useState(false);
+  const [editing, setEditing] = useState<{ open: boolean; lead: Lead | null }>({
     open: false,
     lead: null,
   });
 
-  function handleSaved(saved: Lead, isNew: boolean) {
-    setLoaded((prev) =>
-      prev && {
-        ...prev,
-        leads: isNew
-          ? [saved, ...prev.leads]
-          : prev.leads.map((lead) => (lead.id === saved.id ? saved : lead)),
-      },
-    );
-    setDialog((prev) => ({ ...prev, open: false }));
+  /** Đưa một lead vừa tạo / vừa sửa vào danh sách đang hiển thị mà không tải lại cả tháng. */
+  function mergeLead(saved: Lead) {
+    setLoaded((prev) => {
+      if (!prev) return prev;
+      if (prev.leads.some((lead) => lead.id === saved.id)) {
+        return { ...prev, leads: prev.leads.map((lead) => (lead.id === saved.id ? saved : lead)) };
+      }
+      const created = new Date(saved.created_at).getTime();
+      const inWindow = created >= windowFrom.getTime() && created <= windowTo.getTime();
+      return inWindow ? { ...prev, leads: [saved, ...prev.leads] } : prev;
+    });
+  }
+
+  function handleLeadSaved(saved: Lead) {
+    mergeLead(saved);
+    setEditing((prev) => ({ ...prev, open: false }));
+  }
+
+  /** Lead vừa được hoàn tác về phiên bản cũ: cập nhật cả danh sách lẫn hộp thoại đang mở. */
+  function handleLeadChanged(changed: Lead) {
+    mergeLead(changed);
+    setEditing((prev) => ({ ...prev, lead: changed }));
+  }
+
+  /** Bỏ các lead vừa bị xoá (đã vào Thùng rác) khỏi danh sách đang hiển thị. */
+  function removeLeads(ids: string[]) {
+    const gone = new Set(ids);
+    setLoaded((prev) => prev && { ...prev, leads: prev.leads.filter((lead) => !gone.has(lead.id)) });
+  }
+
+  /** Sau mỗi lần dán: lấy lại đúng lead đó từ máy chủ (lead mới, hoặc lead cũ vừa được cập nhật). */
+  async function handleIntakeSaved(result: LeadIntakeResult) {
+    try {
+      const lead = await fetchLead(result.lead_id);
+      if (lead) mergeLead(lead);
+    } catch {
+      setReloadCount((n) => n + 1);
+    }
   }
 
   const [exporting, setExporting] = useState(false);
@@ -125,28 +155,7 @@ export function LeadsDashboard() {
         </p>
       </div>
 
-      {staff.status === "no-access" && (
-        <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
-          <ShieldAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
-          <span>
-            Tài khoản <strong>{staff.email}</strong> đã đăng nhập nhưng chưa được
-            cấp quyền nên chưa xem được dữ liệu. Quản trị viên cần thêm tài khoản
-            này vào bảng <code>staff</code> trong Supabase (xem cuối file
-            supabase/schema.sql).
-          </span>
-        </div>
-      )}
-
-      {!isSupabaseConfigured && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-          <Info className="mt-0.5 size-4 shrink-0" />
-          <span>
-            Đang hiển thị <strong>dữ liệu mẫu</strong> vì chưa kết nối Supabase —
-            lead thêm/sửa ở đây sẽ mất khi tải lại trang. Xem mục “Kết nối
-            Supabase” trong file README.md.
-          </span>
-        </div>
-      )}
+      <AccessNotice staff={staff} />
 
       <LeadFilters
         range={range}
@@ -221,18 +230,27 @@ export function LeadsDashboard() {
           <LeadsTable
             leads={leads}
             loading={loading}
-            onAdd={() => setDialog({ open: true, lead: null })}
-            onEdit={(lead) => setDialog({ open: true, lead })}
-            onLeadUpdated={(lead) => handleSaved(lead, false)}
+            onAdd={() => setIntakeOpen(true)}
+            onEdit={(lead) => setEditing({ open: true, lead })}
+            onLeadUpdated={mergeLead}
+            canDelete={staff.status === "ok" && isManagerRole(staff.role)}
+            onLeadsDeleted={removeLeads}
           />
         </>
       )}
 
+      <LeadIntakeDialog
+        open={intakeOpen}
+        onOpenChange={setIntakeOpen}
+        onSaved={handleIntakeSaved}
+      />
       <LeadDialog
-        open={dialog.open}
-        onOpenChange={(open) => setDialog((prev) => ({ ...prev, open }))}
-        lead={dialog.lead}
-        onSaved={handleSaved}
+        open={editing.open}
+        onOpenChange={(open) => setEditing((prev) => ({ ...prev, open }))}
+        lead={editing.lead}
+        onSaved={handleLeadSaved}
+        onChanged={handleLeadChanged}
+        onDeleted={(id) => removeLeads([id])}
       />
     </div>
   );

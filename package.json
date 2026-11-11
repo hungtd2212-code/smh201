@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "setup:supabase": "node scripts/setup-supabase.mjs"
+    "setup:supabase": "node scripts/setup-supabase.mjs",
+    "test:db": "node supabase/tests/data-safety.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -28,6 +29,7 @@
     "write-excel-file": "^4.1.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@tailwindcss/turbopack": "4.3.3",
     "@types/node": "^20",
     "@types/react": "^19",

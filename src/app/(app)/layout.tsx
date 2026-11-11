@@ -1,4 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar";
+import { CatalogProvider } from "@/components/catalog-provider";
+import { SecurityAlertBell } from "@/components/safety/security-alert-bell";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -21,11 +23,14 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
           <span className="text-sm text-muted-foreground">
             Cơ sở {APP.branch.name}
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <SecurityAlertBell />
             <ThemeToggle />
           </div>
         </header>
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className="flex-1 p-4 md:p-6">
+          <CatalogProvider>{children}</CatalogProvider>
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );

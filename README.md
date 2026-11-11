@@ -1,6 +1,13 @@
 # Smile Hub ERP — Phòng khám nha khoa (cơ sở Hà Nội)
 
-Hệ thống quản lý nội bộ. Hiện có màn hình **Telesale → Leads**; các mục khác trong menu là trang giữ chỗ.
+Hệ thống quản lý nội bộ. Các màn hình đã có:
+
+- **Telesale → Leads**: bảng điều khiển lead, form Thêm lead (dán đoạn chat, kiểm tra trùng số, chia telesale), form telesale xử lý lead.
+- **Telesale → Chia lead / Chia ca**: bật / tắt nhận lead, thứ tự xoay vòng (xếp ca làm: đợt 2).
+- **Marketing → Chiến dịch**, **Marketing → Nguồn lead & Trang**, **Cài đặt → Dịch vụ & Bảng giá**: các danh mục.
+- **Cài đặt → Thùng rác**, **Nhật ký hệ thống**, **Sao lưu & Khôi phục**: an toàn dữ liệu (xem mục “An toàn dữ liệu” bên dưới).
+
+Các mục khác trong menu là trang giữ chỗ.
 
 - **Giao diện:** Next.js 16 + Tailwind + shadcn/ui
 - **Dữ liệu & đăng nhập:** Supabase
@@ -12,7 +19,7 @@ Hệ thống quản lý nội bộ. Hiện có màn hình **Telesale → Leads**
 npm run dev
 ```
 
-Mở http://localhost:3000. Khi chưa kết nối Supabase, ứng dụng chạy bằng **dữ liệu mẫu** và không cần đăng nhập.
+Mở http://localhost:3000. Ứng dụng cần kết nối Supabase (mục 1 bên dưới) mới dùng được.
 
 ---
 
@@ -23,8 +30,17 @@ Mở http://localhost:3000. Khi chưa kết nối Supabase, ứng dụng chạy 
 1. Vào [supabase.com/dashboard](https://supabase.com/dashboard) → chọn (hoặc tạo) project. Nên chọn vùng **Singapore** cho gần Việt Nam.
 2. Menu trái → **SQL Editor** → **New query**.
 3. Mở file [`supabase/schema.sql`](supabase/schema.sql), sao chép toàn bộ, dán vào và bấm **Run**.
+4. Làm tương tự, lần lượt theo số thứ tự, với các file còn lại trong thư mục `supabase/`:
+   [`002_marketing_lead.sql`](supabase/002_marketing_lead.sql) rồi [`003_data_safety.sql`](supabase/003_data_safety.sql).
 
-File này tạo 2 bảng `leads` và `staff`, kèm phân quyền: chỉ tài khoản có tên trong bảng `staff` mới xem/sửa được lead.
+`schema.sql` tạo 2 bảng `leads` và `staff`, kèm phân quyền: chỉ tài khoản có tên trong bảng `staff` mới xem/sửa được lead.
+
+> **Lưu ý thứ tự.** Chạy lại *cùng một file* thì không sao. Nhưng khi đã chạy `003_data_safety.sql`
+> thì **không chạy lại `schema.sql` hay `002_marketing_lead.sql` nữa** — hai file cũ sẽ ghi đè
+> các quy tắc an toàn mà file 003 vừa đặt.
+>
+> Trước khi đem một file SQL mới lên Supabase, chạy `npm run test:db`: lệnh này chạy cả ba file
+> trên một cơ sở dữ liệu giả lập ngay trong máy và kiểm tra hơn 100 tình huống, không đụng tới dữ liệu thật.
 
 ### Bước 2 — Tạo tài khoản đăng nhập cho bạn
 
@@ -38,7 +54,17 @@ from auth.users
 where email = 'email-cua-ban@example.com';
 ```
 
-Thêm nhân viên khác: làm lại 2 việc trên, `role` là `'lead'` hoặc `'sale'`.
+Thêm nhân viên khác: làm lại 2 việc trên, `role` là một trong:
+
+| `role` | Tên trong ứng dụng | Được làm gì |
+|---|---|---|
+| `super_admin` | Quản trị cấp cao | Mọi thứ, kể cả xoá vĩnh viễn và đổi ngưỡng an toàn |
+| `admin` | Quản trị | Thùng rác, khôi phục, nhật ký hệ thống, hoàn tác theo lô, khoá tài khoản |
+| `lead` | Lead (trưởng nhóm) | Chuyển lead / danh mục vào thùng rác, hoàn tác một lead về phiên bản cũ |
+| `sale` | Telesale | Xử lý lead được giao; **không** chuyển được lead vào thùng rác |
+| `page` | Trực page | Dán lead; **không** chuyển được lead vào thùng rác |
+
+Khi chạy `003_data_safety.sql`, tài khoản `admin` được tạo sớm nhất tự động trở thành `super_admin`.
 
 3. Nên tắt tự đăng ký: **Authentication → Sign In / Providers** → tắt **Allow new users to sign up**.
 
@@ -106,10 +132,17 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 | `src/app/globals.css` | Bảng màu giao diện (lấy từ hai màu xanh của logo) |
 | `src/lib/nav.ts` | Các mục trong menu trái |
 | `src/lib/leads/status.ts` | 13 trạng thái lead (nhãn, màu) và công thức “số thực nhận” |
-| `src/lib/leads/repo.ts` | Đọc / ghi lead (Supabase, hoặc dữ liệu mẫu khi chưa kết nối) |
+| `src/lib/leads/repo.ts` | Đọc / ghi lead, dán lead (`intake_lead`), kiểm tra trùng số |
+| `src/lib/leads/phone.ts` | Chuẩn hoá SĐT, tách SĐT và tên từ đoạn chat |
+| `src/lib/catalog/` | Danh mục: kênh, page, chiến dịch, dịch vụ, nhân viên |
+| `src/components/catalog/` | Các trang danh mục |
 | `src/components/telesale/` | Màn hình Leads: bộ lọc, thẻ số liệu, lịch, biểu đồ, bảng |
 | `src/proxy.ts` | Chặn người chưa đăng nhập, chuyển về `/login` |
-| `supabase/schema.sql` | Bảng dữ liệu và phân quyền |
+| `supabase/schema.sql` | Bảng `leads`, `staff` và phân quyền ban đầu |
+| `supabase/002_marketing_lead.sql` | Phân hệ Marketing → Lead: danh mục, lần tiếp cận, quy tắc trùng số, chia telesale |
+| `supabase/003_data_safety.sql` | An toàn dữ liệu: không ai xoá được, thùng rác, khoá số điện thoại, nhật ký thay đổi, hoàn tác, cảnh báo bất thường, khoá tài khoản |
+| `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`) |
+| `src/lib/safety/`, `src/components/safety/` | Thùng rác, Nhật ký hệ thống, Sao lưu & Khôi phục, tab Lịch sử của lead |
 
 ### Cách tính các chỉ số
 
@@ -119,3 +152,39 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 - **Tiềm năng** — số lead đang ở trạng thái *Tiềm năng*.
 
 Muốn đổi công thức: sửa `NOT_RECEIVED_STATUSES` trong `src/lib/leads/status.ts` và hàm `computeLeadStats` trong `src/lib/leads/stats.ts`.
+
+### Quy tắc của phân hệ Marketing → Lead
+
+- **Mỗi số điện thoại một lead.** Trực page dán lại số cũ thì không tạo lead mới; mỗi lần dán được lưu thành một “lần tiếp cận”.
+- **Nguồn của lead = lần tiếp cận gần nhất.**
+- **Lead đang xử lý** bị dán lại → cập nhật nguồn, giữ telesale cũ, hiện nhãn “Nhắn lại” cho telesale.
+- **Lead đã Số huỷ / Fail / Số hết nhu cầu quá 30 ngày** bị dán lại → mở lại thành “Số mới” và chia lại. Số ngày nằm ở bảng `app_settings`, khoá `lead_reopen_days`.
+- **Lead đã làm dịch vụ** bị dán lại → ghi nhận là khách cũ cho CSKH, không tính là lead marketing.
+- **Chia lead**: xoay vòng trong những người đang bật nhận lead (ai lâu chưa được chia nhất thì nhận); trực page chọn tay thì vẫn tính một lượt.
+
+### An toàn dữ liệu
+
+**Lớp 1 — Không ai xoá được.** Số điện thoại đã thêm vào thì không ai xoá được. Ứng dụng không có nút “Xoá”, chỉ có **Chuyển vào thùng rác** (ẩn đi, khôi phục lại được) — áp dụng cho lead, kênh, page, chiến dịch, dịch vụ.
+
+- **Chuyển vào thùng rác**: Lead (trưởng nhóm) trở lên. Telesale và trực page không làm được — chỉ đổi trạng thái (Fail, Số huỷ…).
+- **Khôi phục** (Cài đặt → Thùng rác): Quản trị trở lên.
+- **Xoá vĩnh viễn**: chỉ Quản trị cấp cao (chủ phòng khám), phải nhập lại mật khẩu, và chỉ với bản ghi đã nằm trong thùng rác đủ 90 ngày. Không có gì tự bị xoá vĩnh viễn.
+- **Số điện thoại của một lead không sửa hay gỡ được** (trừ Quản trị cấp cao). Số sai thì đánh dấu “Số sai”.
+- Chuyển hơn 20 bản ghi vào thùng rác (tính dồn trong 10 phút) phải nhập lại mật khẩu.
+- Các điều trên được chặn ngay trong cơ sở dữ liệu, không chỉ ở giao diện: gọi thẳng API cũng không xoá hay sửa số được.
+- Số điện thoại của lead trong thùng rác được coi là số mới: dán lại sẽ tạo lead mới. Khi đó khôi phục lead cũ sẽ báo trùng số.
+
+**Lớp 2 — Nhật ký thay đổi.** Mọi lần thêm / sửa / chuyển vào thùng rác / khôi phục đều được cơ sở dữ liệu tự ghi lại: bảng nào, bản ghi nào, giá trị cũ, giá trị mới, ai, lúc nào, địa chỉ IP. Ứng dụng không sửa hay xoá được nhật ký.
+
+- Mở một lead → tab **Lịch sử thay đổi** → **Hoàn tác về phiên bản này** (Lead trở lên).
+- **Cài đặt → Nhật ký hệ thống**: lọc theo người / thời gian / hành động / loại dữ liệu; **Hoàn tác theo lô** — gỡ mọi thay đổi của một tài khoản trong một khoảng thời gian (xem trước rồi mới áp dụng; cột nào đã có người khác sửa tiếp thì được giữ nguyên và báo là xung đột).
+- **Cảnh báo bất thường**: một tài khoản sửa / chuyển vào thùng rác quá 150 bản ghi trong một giờ → hiện cảnh báo cho Quản trị và tự khoá tài khoản đó (không bao giờ tự khoá Quản trị cấp cao). Quản trị mở khoá ở Nhật ký hệ thống.
+- Nhật ký chỉ có từ lúc chạy `003_data_safety.sql`; thay đổi trước đó không được ghi.
+
+**Các ngưỡng** (90 ngày, 20 bản ghi, 150 bản ghi / giờ, có tự khoá hay không) nằm ở **Cài đặt → Sao lưu & Khôi phục**, chỉ Quản trị cấp cao đổi được.
+
+**Lớp 3 và 4 — Sao lưu.** *Chưa thiết lập.* Trang **Sao lưu & Khôi phục** đã có chỗ hiển thị lần sao lưu gần nhất, dung lượng, thành công / lỗi và sổ ghi “chạy thử khôi phục” hằng quý, nhưng:
+
+- Lớp 3 (sao lưu hằng ngày + PITR của Supabase) cần nâng gói Supabase. Khôi phục kiểu này là khôi phục **cả cơ sở dữ liệu** — muốn lấy lại vài bản ghi thì khôi phục ra một project tạm rồi chép sang.
+- Lớp 4 (bản sao lưu riêng hằng đêm, mã hoá, lưu ngoài Supabase; giữ 30 bản ngày + 12 bản tháng) chưa có — cần chọn nơi lưu và tạo khoá mã hoá.
+

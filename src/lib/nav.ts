@@ -220,6 +220,8 @@ export const NAV_SECTIONS: NavSection[] = [
           { title: "Danh mục chung", href: "/cai-dat/danh-muc", hint: "Nguồn, trạng thái lead, lý do huỷ…" },
           { title: "Mẫu tin nhắn / Zalo / SMS", href: "/cai-dat/mau-tin-nhan" },
           { title: "Nhật ký hệ thống", href: "/cai-dat/nhat-ky" },
+          { title: "Thùng rác", href: "/cai-dat/thung-rac" },
+          { title: "Sao lưu & Khôi phục", href: "/cai-dat/sao-luu" },
         ],
       },
     ],

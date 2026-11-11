@@ -40,7 +40,7 @@ export function UserMenu() {
           <AvatarFallback>XT</AvatarFallback>
         </Avatar>
         <div className="grid leading-tight">
-          <span className="text-sm font-medium">Chế độ xem thử</span>
+          <span className="text-sm font-medium">Chưa kết nối</span>
           <span className="text-xs text-muted-foreground">Chưa kết nối Supabase</span>
         </div>
       </div>
@@ -61,7 +61,7 @@ export function UserMenu() {
   const name =
     staff.status === "ok"
       ? staff.fullName
-      : staff.status === "no-access"
+      : staff.status === "no-access" || staff.status === "locked"
         ? staff.email.split("@")[0]
         : "…";
   const detail =
@@ -69,11 +69,15 @@ export function UserMenu() {
       ? ROLE_LABELS[staff.role]
       : staff.status === "no-access"
         ? "Chưa được cấp quyền"
-        : staff.status === "error"
-          ? "Lỗi tải tài khoản"
-          : "Đang tải…";
+        : staff.status === "locked"
+          ? "Tài khoản bị khoá"
+          : staff.status === "error"
+            ? "Lỗi tải tài khoản"
+            : "Đang tải…";
   const email =
-    staff.status === "ok" || staff.status === "no-access" ? staff.email : null;
+    staff.status === "ok" || staff.status === "no-access" || staff.status === "locked"
+      ? staff.email
+      : null;
 
   return (
     <SidebarMenu>

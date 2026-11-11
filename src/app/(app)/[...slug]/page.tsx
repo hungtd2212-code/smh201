@@ -11,7 +11,19 @@ import { NAV_PAGES } from "@/lib/nav";
  * — Next.js sẽ ưu tiên trang đó thay cho trang giữ chỗ này.
  */
 
-const PLACEHOLDER_PAGES = NAV_PAGES.filter((p) => p.href !== "/telesale/leads");
+/** Các trang đã xây thật (có thư mục riêng) — không dựng trang giữ chỗ cho chúng. */
+const BUILT_PAGES = new Set([
+  "/telesale/leads",
+  "/telesale/chia-lead",
+  "/marketing/chien-dich",
+  "/marketing/nguon-lead",
+  "/cai-dat/dich-vu",
+  "/cai-dat/nhat-ky",
+  "/cai-dat/thung-rac",
+  "/cai-dat/sao-luu",
+]);
+
+const PLACEHOLDER_PAGES = NAV_PAGES.filter((p) => !BUILT_PAGES.has(p.href));
 
 const findPage = (slug: string[]) =>
   PLACEHOLDER_PAGES.find((p) => p.href === `/${slug.join("/")}`);
@@ -51,7 +63,7 @@ export default async function PlaceholderPage({
         </p>
       )}
       <p className="max-w-sm text-sm text-muted-foreground">
-        Trang này chưa được xây dựng. Hiện mới có Telesale → Leads.
+        Trang này chưa được xây dựng.
       </p>
       <Button asChild variant="outline">
         <Link href="/telesale/leads">Về trang Leads</Link>
