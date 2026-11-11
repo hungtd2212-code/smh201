@@ -99,9 +99,6 @@ export function useCatalogNames() {
       campaign: nameIndex(catalogs.campaigns, catalogs.trashed.campaigns),
       service: nameIndex(catalogs.services, catalogs.trashed.services),
       staff: lookup(catalogs.staff.map((s) => [s.user_id, s.full_name])),
-      /** Tên Miền theo mã (cột branch). */
-      region: lookup(catalogs.regions.map((r) => [r.code, r.name])),
-      regionById: lookup(catalogs.regions.map((r) => [r.id, r.name])),
       adAccount,
       adsStaff,
       adPost: lookup(catalogs.adPosts.map((p) => [p.id, p.title ?? p.url])),

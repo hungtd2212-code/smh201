@@ -49,15 +49,6 @@ export function AdsStaffManager() {
     { name: "full_name", label: "Họ tên", type: "text", required: true },
     { name: "staff_code", label: "Mã nhân viên nội bộ", type: "text", placeholder: "vd MKT01" },
     {
-      name: "branch",
-      label: "Miền",
-      type: "select",
-      required: true,
-      options: catalogs.regions
-        .filter((r) => r.is_active || r.code === row?.branch)
-        .map((r) => ({ value: r.code, label: r.name })),
-    },
-    {
       name: "user_id",
       label: "Tài khoản đăng nhập",
       type: "select",
@@ -83,7 +74,6 @@ export function AdsStaffManager() {
       {
         full_name: toText(values.full_name),
         staff_code: toText(values.staff_code),
-        branch: values.branch,
         user_id: toId(values.user_id),
         note: toText(values.note),
         is_active: Boolean(values.is_active),
@@ -124,7 +114,6 @@ export function AdsStaffManager() {
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead>Họ tên</TableHead>
                   <TableHead>Mã NV</TableHead>
-                  <TableHead>Miền</TableHead>
                   <TableHead>Tài khoản đăng nhập</TableHead>
                   <TableHead>TKQC đang phụ trách</TableHead>
                   <TableHead>Trạng thái</TableHead>
@@ -134,7 +123,7 @@ export function AdsStaffManager() {
               <TableBody>
                 {catalogs.adsStaff.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                       {canManage ? "Chưa có nhân viên Ads nào." : "Không có dòng nào bạn được xem."}
                     </TableCell>
                   </TableRow>
@@ -148,7 +137,6 @@ export function AdsStaffManager() {
                           {member.note && <div className="text-xs text-muted-foreground">{member.note}</div>}
                         </TableCell>
                         <TableCell className="tabular-nums">{member.staff_code ?? "—"}</TableCell>
-                        <TableCell className="whitespace-nowrap">{names.region(member.branch) ?? member.branch}</TableCell>
                         <TableCell className="whitespace-nowrap">
                           {names.staff(member.user_id) ?? <span className="text-muted-foreground">Chưa có</span>}
                         </TableCell>
@@ -201,7 +189,6 @@ export function AdsStaffManager() {
         initialValues={{
           full_name: row?.full_name ?? "",
           staff_code: row?.staff_code ?? "",
-          branch: row?.branch ?? catalogs.regions[0]?.code ?? NONE,
           user_id: row?.user_id ?? NONE,
           note: row?.note ?? "",
           is_active: row?.is_active ?? true,

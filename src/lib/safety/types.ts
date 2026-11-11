@@ -7,7 +7,6 @@ export type SoftDeleteTable =
   | "services"
   | "pages"
   | "campaigns"
-  | "regions"
   | "ads_staff"
   | "ad_accounts"
   | "ad_account_assignments"

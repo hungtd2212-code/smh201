@@ -15,7 +15,7 @@
 --     page = Trực page.
 --   • Quyền "Xuất file" tick theo từng tài khoản (staff.can_export) + sổ ghi
 --     mỗi lần xuất file (export_log).
---   • Danh mục: regions (Miền), ads_staff (Nhân viên Ads), ad_accounts (TKQC),
+--   • Danh mục: ads_staff (Nhân viên Ads), ad_accounts (TKQC),
 --     ad_account_assignments (phân công TKQC theo ngày), ad_posts (bài post).
 --   • pages: thêm link và trực page phụ trách. campaigns: thêm TKQC, mục tiêu.
 --   • Mọi bảng mới: thùng rác (xoá mềm), nhật ký thay đổi, người tạo, ngày sửa.
@@ -74,26 +74,11 @@ $$;
 
 
 -- ---------------------------------------------------------------------
--- 1. MIỀN
---    Cột "branch" sẵn có ở các bảng (pages, campaigns, leads, staff…) chứa mã Miền.
+-- 1. MIỀN / CƠ SỞ — chưa làm (chủ phòng khám quyết định 11/11/2026)
+--    Không có danh mục Miền. Cột "branch" sẵn có ở pages, campaigns, leads, staff
+--    giữ nguyên như cũ (mặc định 'HN') và chưa hiện trên màn hình nào của Marketing.
+--    Khi mở thêm cơ sở: chỉ cần hiện cột này lên form và thêm một bộ lọc.
 -- ---------------------------------------------------------------------
-create table if not exists public.regions (
-  id         uuid primary key default gen_random_uuid(),
-  code       text not null unique check (code ~ '^[A-Z0-9_]{2,12}$'),
-  name       text not null check (char_length(name) between 1 and 80),
-  sort_order int not null default 0,
-  is_active  boolean not null default true,
-  created_at timestamptz not null default now(),
-  created_by uuid default auth.uid() references auth.users (id) on delete set null,
-  updated_at timestamptz not null default now(),
-  deleted_at timestamptz,
-  deleted_by uuid references auth.users (id) on delete set null
-);
-
-insert into public.regions (code, name, sort_order) values
-  ('HN', 'Miền Bắc (HN)', 1),
-  ('HCM', 'Miền Nam (HCM)', 2)
-on conflict (code) do nothing;
 
 
 -- ---------------------------------------------------------------------
@@ -106,7 +91,6 @@ create table if not exists public.ads_staff (
   full_name  text not null check (char_length(full_name) between 1 and 120),
   staff_code text check (staff_code is null or char_length(staff_code) between 1 and 30),  -- mã nhân viên nội bộ
   user_id    uuid references public.staff (user_id) on delete set null,                    -- tài khoản đăng nhập (nếu có)
-  branch     text not null default 'HN' references public.regions (code),                  -- Miền
   is_active  boolean not null default true,                                                -- true = Đang làm · false = Nghỉ
   note       text,
   created_at timestamptz not null default now(),
@@ -200,19 +184,6 @@ alter table public.campaigns
   add column if not exists objective text
     check (objective is null or objective in ('messages', 'engagement', 'conversion'));  -- Tin nhắn / Tương tác / Chuyển đổi
 create index if not exists campaigns_ad_account_idx on public.campaigns (ad_account_id);
-
--- Miền của page và chiến dịch phải là một Miền có trong danh mục.
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'pages_branch_fkey') then
-    alter table public.pages
-      add constraint pages_branch_fkey foreign key (branch) references public.regions (code);
-  end if;
-  if not exists (select 1 from pg_constraint where conname = 'campaigns_branch_fkey') then
-    alter table public.campaigns
-      add constraint campaigns_branch_fkey foreign key (branch) references public.regions (code);
-  end if;
-end $$;
 
 
 -- ---------------------------------------------------------------------
@@ -387,13 +358,13 @@ create or replace trigger ad_posts_fill
 create or replace function private.soft_delete_tables()
 returns text[] language sql immutable set search_path = '' as $$
   select array['leads', 'channels', 'services', 'pages', 'campaigns',
-               'regions', 'ads_staff', 'ad_accounts', 'ad_account_assignments', 'ad_posts'];
+               'ads_staff', 'ad_accounts', 'ad_account_assignments', 'ad_posts'];
 $$;
 
 create or replace function private.undoable_tables()
 returns text[] language sql immutable set search_path = '' as $$
   select array['leads', 'channels', 'services', 'pages', 'campaigns', 'staff_shifts',
-               'regions', 'ads_staff', 'ad_accounts', 'ad_account_assignments', 'ad_posts'];
+               'ads_staff', 'ad_accounts', 'ad_account_assignments', 'ad_posts'];
 $$;
 
 -- Cột không bao giờ hoàn tác (do hệ thống tự tính).
@@ -417,7 +388,7 @@ begin
          add column if not exists updated_at timestamptz not null default now()', t);
   end loop;
 
-  foreach t in array array['regions', 'ads_staff', 'ad_accounts', 'ad_account_assignments', 'ad_posts'] loop
+  foreach t in array array['ads_staff', 'ad_accounts', 'ad_account_assignments', 'ad_posts'] loop
     execute format(
       'create index if not exists %I on public.%I (deleted_at) where deleted_at is not null',
       t || '_deleted_idx', t);
@@ -428,7 +399,7 @@ begin
   end loop;
 
   foreach t in array array['channels', 'services', 'pages', 'campaigns',
-                           'regions', 'ads_staff', 'ad_accounts', 'ad_account_assignments', 'ad_posts'] loop
+                           'ads_staff', 'ad_accounts', 'ad_account_assignments', 'ad_posts'] loop
     execute format(
       'create or replace trigger %I
          before update on public.%I
@@ -486,20 +457,6 @@ $$;
 -- ---------------------------------------------------------------------
 -- 8. PHÂN QUYỀN (RLS)
 -- ---------------------------------------------------------------------
-
--- MIỀN: nhân viên xem; Quản trị thêm / sửa.
-alter table public.regions enable row level security;
-drop policy if exists regions_select_staff on public.regions;
-create policy regions_select_staff on public.regions
-  for select to authenticated using ((select private.is_staff()));
-drop policy if exists regions_insert_admin on public.regions;
-create policy regions_insert_admin on public.regions
-  for insert to authenticated with check ((select private.is_admin()));
-drop policy if exists regions_update_admin on public.regions;
-create policy regions_update_admin on public.regions
-  for update to authenticated
-  using ((select private.is_admin()) and deleted_at is null)
-  with check ((select private.is_admin()));
 
 -- NHÂN VIÊN ADS: quản lý Marketing thấy tất cả; nhân viên Ads chỉ thấy dòng của mình.
 alter table public.ads_staff enable row level security;
@@ -608,7 +565,7 @@ create policy ad_posts_update on public.ad_posts
 do $$
 declare t text;
 begin
-  foreach t in array array['regions', 'ads_staff', 'ad_accounts', 'ad_account_assignments', 'ad_posts'] loop
+  foreach t in array array['ads_staff', 'ad_accounts', 'ad_account_assignments', 'ad_posts'] loop
     execute format('revoke all on public.%I from anon, authenticated', t);
     execute format('grant select, insert, update on public.%I to authenticated', t);
   end loop;
@@ -721,10 +678,6 @@ begin
     if not private.is_manager() then
       raise exception 'Chỉ Quản trị hoặc Trưởng Telesale được chuyển dịch vụ vào thùng rác' using errcode = '42501';
     end if;
-  elsif p_table = 'regions' then
-    if not private.is_admin() then
-      raise exception 'Chỉ Quản trị được chuyển Miền vào thùng rác' using errcode = '42501';
-    end if;
   elsif p_table <> 'leads' then
     if not private.manages_marketing() then
       raise exception 'Chỉ Quản trị hoặc Trưởng Marketing được chuyển danh mục Marketing vào thùng rác' using errcode = '42501';
@@ -773,20 +726,6 @@ begin
   if p_table = 'ads_staff' and exists (
        select 1 from public.ad_account_assignments x where x.ads_staff_id = any (p_ids) and x.deleted_at is null) then
     raise exception 'Nhân viên Ads này đã từng được giao TKQC. Nếu người này nghỉ, hãy chuyển trạng thái sang "Nghỉ" để giữ số liệu lịch sử'
-      using errcode = '23503';
-  end if;
-  if p_table = 'regions' and (
-       exists (select 1 from public.regions r join public.pages p on p.branch = r.code
-               where r.id = any (p_ids) and p.deleted_at is null)
-       or exists (select 1 from public.regions r join public.campaigns c on c.branch = r.code
-                  where r.id = any (p_ids) and c.deleted_at is null)
-       or exists (select 1 from public.regions r join public.ads_staff a on a.branch = r.code
-                  where r.id = any (p_ids) and a.deleted_at is null)
-       or exists (select 1 from public.regions r join public.staff s on s.branch = r.code
-                  where r.id = any (p_ids))
-       or exists (select 1 from public.regions r join public.leads l on l.branch = r.code
-                  where r.id = any (p_ids) and l.deleted_at is null)) then
-    raise exception 'Miền này đang được dùng — không chuyển vào thùng rác được. Nếu muốn ngừng dùng, hãy bỏ tick "Đang dùng"'
       using errcode = '23503';
   end if;
 
@@ -878,9 +817,6 @@ create or replace view public.trash_items with (security_invoker = true) as
   union all
   select 'services', s.id, s.name, s.deleted_at, s.deleted_by
   from public.services s where s.deleted_at is not null and (select private.is_admin())
-  union all
-  select 'regions', r.id, r.name, r.deleted_at, r.deleted_by
-  from public.regions r where r.deleted_at is not null and (select private.is_admin())
   union all
   select 'ads_staff', a.id, a.full_name, a.deleted_at, a.deleted_by
   from public.ads_staff a where a.deleted_at is not null and (select private.is_admin())

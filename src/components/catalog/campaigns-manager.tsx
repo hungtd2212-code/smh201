@@ -84,15 +84,6 @@ export function CampaignsManager() {
         .map((s) => ({ value: s.id, label: s.name })),
     },
     {
-      name: "branch",
-      label: "Miền",
-      type: "select",
-      required: true,
-      options: catalogs.regions
-        .filter((r) => r.is_active || r.code === row?.branch)
-        .map((r) => ({ value: r.code, label: r.name })),
-    },
-    {
       name: "page_id",
       label: "Chạy trên page",
       type: "select",
@@ -124,7 +115,6 @@ export function CampaignsManager() {
       channel_id: account.channel_id, // kênh của chiến dịch đi theo kênh của TKQC
       objective: toId(values.objective),
       service_id: toId(values.service_id),
-      branch: values.branch,
       page_id: toId(values.page_id),
       ads_id: toText(values.ads_id),
       start_date: start,
@@ -176,7 +166,6 @@ export function CampaignsManager() {
                   <TableHead>TKQC › Phụ trách</TableHead>
                   <TableHead>Mục tiêu</TableHead>
                   <TableHead>Dịch vụ</TableHead>
-                  <TableHead>Miền</TableHead>
                   <TableHead>Ngày chạy</TableHead>
                   <TableHead className="text-right">Ngân sách</TableHead>
                   <TableHead className="text-right">Bài post</TableHead>
@@ -187,7 +176,7 @@ export function CampaignsManager() {
               <TableBody>
                 {catalogs.campaigns.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                       Chưa có chiến dịch nào. Tạo TKQC ở “TKQC &amp; Page” trước, rồi thêm chiến dịch.
                     </TableCell>
                   </TableRow>
@@ -212,9 +201,6 @@ export function CampaignsManager() {
                         {campaign.objective ? OBJECTIVE_LABELS[campaign.objective] : "—"}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">{names.service(campaign.service_id) ?? "—"}</TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {names.region(campaign.branch) ?? campaign.branch}
-                      </TableCell>
                       <TableCell className="whitespace-nowrap tabular-nums">
                         {formatDate(campaign.start_date)}
                         {campaign.end_date && ` → ${formatDate(campaign.end_date)}`}
@@ -262,7 +248,6 @@ export function CampaignsManager() {
           ad_account_id: row?.ad_account_id ?? NONE,
           objective: row?.objective ?? NONE,
           service_id: row?.service_id ?? NONE,
-          branch: row?.branch ?? catalogs.regions[0]?.code ?? NONE,
           page_id: row?.page_id ?? NONE,
           ads_id: row?.ads_id ?? "",
           start_date: row?.start_date ?? "",

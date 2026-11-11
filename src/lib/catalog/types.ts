@@ -2,7 +2,7 @@ import type { StaffRole } from "@/hooks/use-current-staff";
 
 /**
  * Các bảng danh mục dùng chung: kênh, dịch vụ, page, chiến dịch (supabase/002_marketing_lead.sql)
- * và danh mục Marketing: Miền, nhân viên Ads, TKQC, phân công TKQC, bài post
+ * và danh mục Marketing: nhân viên Ads, TKQC, phân công TKQC, bài post
  * (supabase/005_marketing_catalog.sql).
  */
 
@@ -24,22 +24,12 @@ export type Service = {
   deleted_at: string | null;
 };
 
-/** Miền (Miền Bắc — HN, Miền Nam — HCM). Cột `branch` ở các bảng khác chứa `code` của Miền. */
-export type Region = {
-  id: string;
-  code: string;
-  name: string;
-  sort_order: number;
-  is_active: boolean;
-  deleted_at: string | null;
-};
-
 /** Page (fanpage, kênh TikTok…) nơi khách nhắn tin. */
 export type Page = {
   id: string;
   name: string;
   channel_id: string;
-  /** Mã Miền. */
+  /** Mã cơ sở (hiện chỉ có một cơ sở; cột này chưa hiện trên form). */
   branch: string;
   url: string | null;
   /** Trực page phụ trách (staff.user_id). */
@@ -56,8 +46,6 @@ export type AdsStaff = {
   staff_code: string | null;
   /** Tài khoản đăng nhập gắn với người này (staff.user_id). */
   user_id: string | null;
-  /** Mã Miền. */
-  branch: string;
   /** true = Đang làm · false = Nghỉ. */
   is_active: boolean;
   note: string | null;
@@ -105,7 +93,7 @@ export type Campaign = {
   ad_account_id: string | null;
   objective: CampaignObjective | null;
   service_id: string | null;
-  /** Mã Miền. */
+  /** Mã cơ sở (hiện chỉ có một cơ sở; cột này chưa hiện trên form). */
   branch: string;
   start_date: string | null; // yyyy-MM-dd
   end_date: string | null;
@@ -149,7 +137,7 @@ export type StaffMember = {
   user_id: string;
   full_name: string;
   role: StaffRole;
-  /** Mã Miền. */
+  /** Mã cơ sở (hiện chỉ có một cơ sở; cột này chưa hiện trên form). */
   branch: string;
   /** Đang bật nhận lead (được tính vào xoay vòng). */
   accepts_leads: boolean;
@@ -174,7 +162,6 @@ export type Catalogs = CatalogRows & {
   /** Các dòng đã xoá — chỉ dùng để tra tên cho dữ liệu cũ, không hiện trong form hay bảng danh mục. */
   trashed: CatalogRows;
   /** Danh mục Marketing (chỉ gồm dòng đang dùng, và chỉ những dòng tài khoản này được xem). */
-  regions: Region[];
   adsStaff: AdsStaff[];
   adAccounts: AdAccount[];
   assignments: AdAccountAssignment[];
@@ -193,7 +180,6 @@ export const EMPTY_CATALOGS: Catalogs = {
   campaigns: [],
   staff: [],
   trashed: { channels: [], services: [], pages: [], campaigns: [] },
-  regions: [],
   adsStaff: [],
   adAccounts: [],
   assignments: [],

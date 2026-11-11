@@ -5,7 +5,7 @@
 -- sao: dòng nào đã có thì bỏ qua. Không sửa, không xoá dữ liệu đang có.
 --
 -- Thêm:
---   • 7 nhân viên Ads: Dương, Nam, An, Sang, A Hưng, Trung, Hằng (Miền Bắc).
+--   • 7 nhân viên Ads: Dương, Nam, An, Sang, A Hưng, Trung, Hằng.
 --   • 2 TKQC lấy tên từ ví dụ: "THE DUONG 01" (Dương), "An 02" (An), giao từ
 --     01/09/2026. Danh sách TKQC đầy đủ sẽ nhập từ file Google Sheet ở giai
 --     đoạn 6 — phân công ở đây chỉ để có dữ liệu xem thử, cần rà lại.
@@ -14,8 +14,8 @@
 -- =====================================================================
 begin;
 
-insert into public.ads_staff (full_name, branch)
-select v.name, 'HN'
+insert into public.ads_staff (full_name)
+select v.name
 from (values ('Dương'), ('Nam'), ('An'), ('Sang'), ('A Hưng'), ('Trung'), ('Hằng')) as v (name)
 where not exists (
   select 1 from public.ads_staff a
@@ -39,18 +39,18 @@ where not exists (
   select 1 from public.ad_account_assignments x
   where x.ad_account_id = a.id and x.deleted_at is null);
 
-insert into public.campaigns (name, channel_id, ad_account_id, objective, service_id, branch, start_date, budget)
-select 'Niềng răng HN — Tin nhắn (mẫu)', a.channel_id, a.id, 'messages', sv.id, 'HN', date '2026-11-01', 30000000
+insert into public.campaigns (name, channel_id, ad_account_id, objective, service_id, start_date, budget)
+select 'Niềng răng — Tin nhắn (mẫu)', a.channel_id, a.id, 'messages', sv.id, date '2026-11-01', 30000000
 from public.ad_accounts a
 left join public.services sv on sv.name = 'Niềng răng' and sv.deleted_at is null
 where lower(a.name) = 'the duong 01' and a.deleted_at is null
-  and not exists (select 1 from public.campaigns c where c.name = 'Niềng răng HN — Tin nhắn (mẫu)');
+  and not exists (select 1 from public.campaigns c where c.name = 'Niềng răng — Tin nhắn (mẫu)');
 
 insert into public.ad_posts (campaign_id, url, title, media_type, start_date)
 select c.id, 'https://www.facebook.com/smilehub.mau/posts/1000000000000001',
        'Video niềng răng 01 (mẫu)', 'video', date '2026-11-01'
 from public.campaigns c
-where c.name = 'Niềng răng HN — Tin nhắn (mẫu)' and c.deleted_at is null
+where c.name = 'Niềng răng — Tin nhắn (mẫu)' and c.deleted_at is null
   and not exists (select 1 from public.ad_posts p where p.post_key = 'fb:1000000000000001');
 
 commit;

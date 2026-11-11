@@ -148,7 +148,7 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 | `src/lib/leads/status.ts` | 13 trạng thái lead (nhãn, màu) và công thức “số thực nhận” |
 | `src/lib/leads/repo.ts` | Đọc / ghi lead, dán lead (`intake_lead`), kiểm tra trùng số |
 | `src/lib/leads/phone.ts` | Chuẩn hoá SĐT, tách SĐT và tên từ đoạn chat |
-| `src/lib/catalog/` | Danh mục: miền, kênh, page, TKQC và phân công, nhân viên Ads, chiến dịch, bài post, dịch vụ, tài khoản |
+| `src/lib/catalog/` | Danh mục: kênh, page, TKQC và phân công, nhân viên Ads, chiến dịch, bài post, dịch vụ, tài khoản |
 | `src/components/catalog/` | Các trang danh mục (Nhân viên Ads, TKQC & Page, Chiến dịch & Bài post, Dịch vụ) |
 | `src/components/telesale/` | Màn hình Leads: bộ lọc, thẻ số liệu, lịch, biểu đồ, bảng |
 | `src/proxy.ts` | Chặn người chưa đăng nhập, chuyển về `/login` |
@@ -156,7 +156,7 @@ Nếu sửa biến môi trường trên Vercel sau khi đã deploy, phải **Red
 | `supabase/002_marketing_lead.sql` | Phân hệ Marketing → Lead: danh mục, lần tiếp cận, quy tắc trùng số, chia telesale |
 | `supabase/003_data_safety.sql` | An toàn dữ liệu: không ai xoá được, thùng rác, khoá số điện thoại, nhật ký thay đổi, hoàn tác, cảnh báo bất thường, khoá tài khoản |
 | `supabase/004_delete_permission.sql` | Quyền “Xoá dữ liệu” tick theo từng tài khoản |
-| `supabase/005_marketing_catalog.sql` | Phân hệ Marketing giai đoạn 1: vai trò mới, quyền “Xuất file”, miền, nhân viên Ads, TKQC + phân công theo ngày, bài post, tách ID bài từ link |
+| `supabase/005_marketing_catalog.sql` | Phân hệ Marketing giai đoạn 1: vai trò mới, quyền “Xuất file”, nhân viên Ads, TKQC + phân công theo ngày, bài post, tách ID bài từ link |
 | `supabase/seeds/` | Dữ liệu mẫu (không bắt buộc) |
 | `supabase/tests/` | Kiểm thử các file SQL trên Postgres giả lập (`npm run test:db`): `data-safety` (schema → 004) và `marketing-catalog` (schema → 005) |
 | `src/lib/safety/`, `src/components/safety/` | Tài khoản & Phân quyền, Thùng rác, Nhật ký hệ thống, Sao lưu & Khôi phục, tab Lịch sử của lead |
@@ -183,11 +183,11 @@ Muốn đổi công thức: sửa `NOT_RECEIVED_STATUSES` trong `src/lib/leads/s
 
 Giai đoạn 1 — danh mục (file `005_marketing_catalog.sql`):
 
-- **Miền**: Miền Bắc (HN), Miền Nam (HCM). Cột `branch` của page, chiến dịch, lead, nhân viên Ads giữ mã miền.
-- **Nhân viên Ads**: tên, mã nhân viên nội bộ, miền, tài khoản đăng nhập (nếu có), Đang làm / Nghỉ. Người đã nghỉ vẫn giữ nguyên lịch sử.
+- **Chỉ quản lý một cơ sở.** Không có danh mục Miền (Miền Bắc / Miền Nam). Cột `branch` sẵn có ở page, chiến dịch, lead, tài khoản giữ nguyên giá trị mặc định `HN` và không hiện trên form; khi mở thêm cơ sở chỉ cần hiện cột này lên và thêm một bộ lọc.
+- **Nhân viên Ads**: tên, mã nhân viên nội bộ, tài khoản đăng nhập (nếu có), Đang làm / Nghỉ. Người đã nghỉ vẫn giữ nguyên lịch sử.
 - **TKQC** và **phân công theo ngày**: mỗi TKQC tại một thời điểm chỉ có một người phụ trách; giao cho người mới thì phân công cũ tự kết thúc vào hôm trước. Số liệu của ngày nào tính cho người phụ trách ngày đó.
-- **Page**: kênh, miền, link, các tài khoản Trực page phụ trách.
-- **Chiến dịch**: thuộc một TKQC; mục tiêu (Tin nhắn / Tương tác / Chuyển đổi), dịch vụ, miền, ngày chạy, ngân sách, ID camp.
+- **Page**: kênh, link, các tài khoản Trực page phụ trách.
+- **Chiến dịch**: thuộc một TKQC; mục tiêu (Tin nhắn / Tương tác / Chuyển đổi), dịch vụ, ngày chạy, ngân sách, ID camp.
 - **Bài post**: thuộc một chiến dịch; hệ thống tự tách **ID bài** và **ID ads** từ link Facebook / TikTok. Mỗi bài chỉ thuộc một chiến dịch. Link rút gọn / link chia sẻ (fb.watch, /share/, vm.tiktok…) không chứa ID bài nên chỉ khớp khi dán đúng link đó. Bài “Chưa khai báo” là bài trực page dán mà chưa ai khai (dùng từ giai đoạn 2).
 - **Quyền** (chặn ngay trong cơ sở dữ liệu): Quản trị và Trưởng Marketing quản lý mọi danh mục Marketing; Nhân viên Ads chỉ thấy TKQC từng được giao và chỉ thêm / sửa chiến dịch, bài post trong TKQC **đang** phụ trách; Nhân viên Ads không đọc được lead.
 - Mọi bảng mới đều có thùng rác (không xoá hẳn), nhật ký thay đổi, người tạo / ngày tạo / ngày sửa.
@@ -196,7 +196,7 @@ Các giai đoạn sau (chưa làm): 2 — Nhập lead (dán link bài, tự đi�
 
 ### An toàn dữ liệu
 
-**Lớp 1 — Không ai xoá được.** Số điện thoại đã thêm vào thì không ai xoá được. Ứng dụng không có nút “Xoá”, chỉ có **Chuyển vào thùng rác** (ẩn đi, khôi phục lại được) — áp dụng cho lead và mọi danh mục (kênh, page, TKQC, phân công TKQC, nhân viên Ads, chiến dịch, bài post, dịch vụ, miền).
+**Lớp 1 — Không ai xoá được.** Số điện thoại đã thêm vào thì không ai xoá được. Ứng dụng không có nút “Xoá”, chỉ có **Chuyển vào thùng rác** (ẩn đi, khôi phục lại được) — áp dụng cho lead và mọi danh mục (kênh, page, TKQC, phân công TKQC, nhân viên Ads, chiến dịch, bài post, dịch vụ).
 
 - **Chuyển vào thùng rác**: chỉ tài khoản được Quản trị cấp cao **tick quyền “Xoá dữ liệu”** ở **Cài đặt → Tài khoản & Phân quyền** — chỉ những tài khoản đó mới thấy nút. Mặc định không ai được tick; Quản trị cấp cao luôn có quyền. Người không được tick chỉ đổi trạng thái (Fail, Số huỷ…). Với danh mục, ngoài ô tick còn phải đúng vai trò quản lý: Quản trị hoặc Trưởng Marketing (danh mục Marketing), Quản trị hoặc Trưởng Telesale (dịch vụ).
 - **Khôi phục** (Cài đặt → Thùng rác): Quản trị trở lên.

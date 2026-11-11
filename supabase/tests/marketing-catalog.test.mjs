@@ -50,8 +50,7 @@ ok(campAfter.ad_account_id === null && campAfter.objective === null, "… cột 
 const pageAfter = await one(`select name, url, page_staff_ids from public.pages where id = $1`, [oldPage]);
 ok(pageAfter.name === "Fanpage cũ" && pageAfter.url === null && pageAfter.page_staff_ids.length === 0, "page đang có giữ nguyên, cột mới để trống", pageAfter);
 ok((await one(`select count(*)::int n from public.audit_log`)).n === auditBefore, "chạy 005 không ghi dòng nhật ký nào (không sửa dữ liệu cũ)");
-const regions = await all(`select code, name from public.regions order by sort_order`);
-ok(regions.length === 2 && regions[0].code === "HN" && regions[1].code === "HCM", "có sẵn 2 Miền: HN, HCM", regions);
+ok((await one(`select to_regclass('public.regions') as t`)).t === null, "không tạo danh mục Miền (chỉ quản lý một cơ sở)");
 const roles = await all(`select role from public.staff order by created_at, full_name`);
 ok(roles.map((r) => r.role).sort().join(",") === "admin,lead,page,sale,super_admin", "vai trò cũ giữ nguyên", roles);
 
@@ -163,16 +162,12 @@ await as(U.lead1, `update public.pages set name = 'Bị sửa' where id = $1`, [
 ok((await one(`select name from public.pages where id = $1`, [oldPage])).name === "Fanpage cũ", "… và không sửa được page");
 ok((await errOf(U.lead1, `insert into public.services (name) values ('Dịch vụ thử')`)) === null, "Trưởng Telesale vẫn thêm được dịch vụ (không thuộc Marketing)");
 
-const newPage = (await as(U.mm, `insert into public.pages (name, channel_id, branch, url, page_staff_ids) values ('Smile Hub HCM', $1, 'HCM', 'https://facebook.com/smilehub.hcm', $2::uuid[]) returning id`, [fb, arr([U.page1])]))[0].id;
-ok(Boolean(newPage), "Trưởng Marketing thêm page kèm Miền, link, trực page phụ trách");
-e = await errOf(U.mm, `insert into public.pages (name, channel_id, branch) values ('Page sai miền', $1, 'XX')`, [fb]);
-ok(/foreign key/.test(e ?? ""), "Miền không có trong danh mục → bị chặn", e);
+const newPage = (await as(U.mm, `insert into public.pages (name, channel_id, url, page_staff_ids) values ('Smile Hub 2', $1, 'https://facebook.com/smilehub.2', $2::uuid[]) returning id`, [fb, arr([U.page1])]))[0].id;
+ok(Boolean(newPage), "Trưởng Marketing thêm page kèm link, trực page phụ trách");
+ok((await one(`select branch from public.pages where id = $1`, [newPage])).branch === "HN", "… không cần chọn cơ sở: page mới tự thuộc cơ sở mặc định");
 await as(U.mm, `update public.pages set page_staff_ids = '{}' where id = $1`, [newPage]);
 log = await all(`select old_data, new_data from public.audit_log where table_name = 'pages' and record_id = $1 order by id desc limit 1`, [newPage]);
 ok(JSON.stringify(Object.keys(log[0].new_data)) === '["page_staff_ids"]' && log[0].old_data.page_staff_ids[0] === U.page1, "đổi trực page phụ trách được ghi nhật ký, không kèm cột ngày sửa", log[0]);
-e = await errOf(U.mm, `insert into public.regions (code, name) values ('DN', 'Miền Trung')`);
-ok(rlsDenied.test(e ?? ""), "Trưởng Marketing thêm Miền → bị từ chối (chỉ Quản trị)", e);
-ok((await errOf(U.adm, `insert into public.regions (code, name, sort_order) values ('DN', 'Miền Trung (ĐN)', 3)`)) === null, "Quản trị thêm được Miền");
 
 // ---------------------------------------------------------------------------
 section("Phân công TKQC theo ngày");
@@ -217,7 +212,7 @@ ok((await as(U.ads1, `select id from public.ad_account_assignments`)).length ===
 ok((await as(U.ads2, `select id from public.ad_account_assignments`)).length === 1, "An thấy 1 phân công của mình");
 
 const addCamp = (uid, name, account) =>
-  as(uid, `insert into public.campaigns (name, channel_id, ad_account_id, objective, service_id, branch) values ($1, $2, $3, 'messages', $4, 'HN') returning id`, [name, fb, account, svc]);
+  as(uid, `insert into public.campaigns (name, channel_id, ad_account_id, objective, service_id) values ($1, $2, $3, 'messages', $4) returning id`, [name, fb, account, svc]);
 const campD = (await addCamp(U.ads1, "Niềng răng — mess (Dương)", acc2))[0].id;
 ok(Boolean(campD), "Dương thêm chiến dịch vào TKQC đang giữ");
 e = await errOf(U.ads1, `insert into public.campaigns (name, channel_id, ad_account_id) values ('Lạ', $1, $2)`, [fb, acc1]);
@@ -358,8 +353,6 @@ ok(/Chỉ Quản trị hoặc Trưởng Telesale/.test(e ?? ""), "Trưởng Mark
 e = await mayTrash(U.ads1, "campaigns");
 ok(/Chỉ Quản trị hoặc Trưởng Marketing/.test(e ?? ""), "nhân viên Ads được tick vẫn không chuyển được chiến dịch", e);
 ok((await mayTrash(U.sale1, "leads")) === null, "telesale được tick vẫn chuyển được lead như trước");
-e = await mayTrash(U.mm, "regions");
-ok(/Chỉ Quản trị được chuyển Miền/.test(e ?? ""), "Trưởng Marketing không chuyển được Miền", e);
 
 const trash = async (uid, table, ids) => (await as(uid, `select public.soft_delete_records($1, $2::uuid[]) as r`, [table, arr(ids)]))[0].r;
 e = await errOf(U.mm, `select public.soft_delete_records('campaigns', $1::uuid[])`, [arr([campD])]);
@@ -370,10 +363,6 @@ e = await errOf(U.mm, `select public.soft_delete_records('ads_staff', $1::uuid[]
 ok(/chuyển trạng thái sang "Nghỉ"/.test(e ?? ""), "nhân viên Ads đã từng được giao TKQC → bị chặn, gợi ý chuyển sang Nghỉ", e);
 e = await errOf(U.mm, `select public.soft_delete_records('channels', $1::uuid[])`, [arr([tiktok])]);
 ok(/còn TKQC/.test(e ?? ""), "kênh còn TKQC → bị chặn", e);
-e = await errOf(U.owner, `select public.soft_delete_records('regions', $1::uuid[])`, [arr([(await one(`select id from public.regions where code = 'HN'`)).id])]);
-ok(/đang được dùng/.test(e ?? ""), "Miền đang được dùng → bị chặn", e);
-r = await trash(U.owner, "regions", [(await one(`select id from public.regions where code = 'DN'`)).id]);
-ok(r.deleted === 1, "Miền chưa dùng → Quản trị cấp cao chuyển được vào thùng rác", r);
 r = await trash(U.mm, "ads_staff", [hang]);
 ok(r.deleted === 1, "nhân viên Ads chưa từng được giao TKQC → chuyển được", r);
 
@@ -385,7 +374,7 @@ ok((await as(U.ads1, `select id from public.campaigns where id = $1`, [campD])).
 await as(U.ads1, `update public.campaigns set name = 'Sửa trong thùng rác' where id = $1`, [campD]);
 ok((await one(`select name from public.campaigns where id = $1`, [campD])).name === "Niềng răng — mess (Dương)", "… nhưng không sửa được");
 const items = await as(U.adm, `select table_name, label from public.trash_items order by table_name, label`);
-ok(items.length === 5 && items.some((x) => x.table_name === "ad_posts" && x.label === "Đổi tên") && items.some((x) => x.table_name === "ads_staff" && x.label === "Hằng"), "thùng rác (Quản trị) liệt kê cả bảng mới, có tên dễ đọc", items);
+ok(items.length === 4 && items.some((x) => x.table_name === "ad_posts" && x.label === "Đổi tên") && items.some((x) => x.table_name === "ads_staff" && x.label === "Hằng"), "thùng rác (Quản trị) liệt kê cả bảng mới, có tên dễ đọc", items);
 ok((await as(U.mm, `select * from public.trash_items`)).length === 0, "Trưởng Marketing không xem được thùng rác");
 e = await errOf(U.mm, `select public.restore_records('ad_posts', $1::uuid[])`, [arr([postD.id])]);
 ok(/Chỉ Quản trị/.test(e ?? ""), "Trưởng Marketing không khôi phục được", e);

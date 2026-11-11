@@ -9,7 +9,6 @@ import type {
   Catalogs,
   Channel,
   Page,
-  Region,
   Service,
   StaffMember,
 } from "./types";
@@ -21,7 +20,6 @@ export type CatalogTable =
   | "services"
   | "pages"
   | "campaigns"
-  | "regions"
   | "ads_staff"
   | "ad_accounts"
   | "ad_account_assignments"
@@ -68,7 +66,6 @@ const PAGE_COLUMNS = "id, name, channel_id, branch, is_active, deleted_at";
 type MarketingRows = {
   pages: Page[];
   campaigns: Campaign[];
-  regions: Region[];
   adsStaff: AdsStaff[];
   adAccounts: AdAccount[];
   assignments: AdAccountAssignment[];
@@ -85,13 +82,8 @@ async function fetchMarketing(): Promise<MarketingRows | null> {
       .select(`${CAMPAIGN_COLUMNS}, ad_account_id, objective`)
       .order("created_at", { ascending: false }),
     supabase
-      .from("regions")
-      .select("id, code, name, sort_order, is_active, deleted_at")
-      .is("deleted_at", null)
-      .order("sort_order"),
-    supabase
       .from("ads_staff")
-      .select("id, full_name, staff_code, user_id, branch, is_active, note, deleted_at")
+      .select("id, full_name, staff_code, user_id, is_active, note, deleted_at")
       .is("deleted_at", null)
       .order("full_name"),
     supabase
@@ -112,11 +104,10 @@ async function fetchMarketing(): Promise<MarketingRows | null> {
   ] as const);
 
   if (results.some((result) => isNotMigrated(result.error))) return null;
-  const [pages, campaigns, regions, adsStaff, adAccounts, assignments, adPosts] = results;
+  const [pages, campaigns, adsStaff, adAccounts, assignments, adPosts] = results;
   return {
     pages: unwrap(pages) as Page[],
     campaigns: unwrap(campaigns) as Campaign[],
-    regions: unwrap(regions) as Region[],
     adsStaff: unwrap(adsStaff) as AdsStaff[],
     adAccounts: unwrap(adAccounts) as AdAccount[],
     assignments: unwrap(assignments) as AdAccountAssignment[],
@@ -167,7 +158,6 @@ export async function fetchCatalogs(): Promise<Catalogs> {
     campaigns: g.live,
     staff,
     trashed: { channels: c.trashed, services: s.trashed, pages: p.trashed, campaigns: g.trashed },
-    regions: marketing?.regions ?? [],
     adsStaff: marketing?.adsStaff ?? [],
     adAccounts: marketing?.adAccounts ?? [],
     assignments: marketing?.assignments ?? [],

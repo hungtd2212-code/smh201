@@ -61,15 +61,6 @@ export function TkqcPageManager() {
         .filter((c) => c.is_active || c.id === page?.channel_id)
         .map((c) => ({ value: c.id, label: c.name })),
     },
-    {
-      name: "branch",
-      label: "Miền",
-      type: "select",
-      required: true,
-      options: catalogs.regions
-        .filter((r) => r.is_active || r.code === page?.branch)
-        .map((r) => ({ value: r.code, label: r.name })),
-    },
     { name: "url", label: "Link page", type: "text", placeholder: "https://www.facebook.com/…", wide: true },
     {
       name: "page_staff_ids",
@@ -103,7 +94,6 @@ export function TkqcPageManager() {
       {
         name: toText(values.name),
         channel_id: values.channel_id,
-        branch: values.branch,
         url,
         page_staff_ids: toIds(values.page_staff_ids),
         is_active: Boolean(values.is_active),
@@ -150,7 +140,6 @@ export function TkqcPageManager() {
                   <TableRow className="bg-muted/50 hover:bg-muted/50">
                     <TableHead>Page</TableHead>
                     <TableHead>Kênh</TableHead>
-                    <TableHead>Miền</TableHead>
                     <TableHead>Trực page phụ trách</TableHead>
                     <TableHead>Trạng thái</TableHead>
                     <TableHead className="w-20" />
@@ -159,7 +148,7 @@ export function TkqcPageManager() {
                 <TableBody>
                   {catalogs.pages.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                         Chưa có page nào.
                       </TableCell>
                     </TableRow>
@@ -181,7 +170,6 @@ export function TkqcPageManager() {
                           )}
                         </TableCell>
                         <TableCell>{names.channel(item.channel_id) ?? "—"}</TableCell>
-                        <TableCell className="whitespace-nowrap">{names.region(item.branch) ?? item.branch}</TableCell>
                         <TableCell>
                           {item.page_staff_ids.length > 0 ? (
                             item.page_staff_ids.map((id) => names.staff(id) ?? "…").join(", ")
@@ -292,7 +280,6 @@ export function TkqcPageManager() {
         initialValues={{
           name: page?.name ?? "",
           channel_id: page?.channel_id ?? NONE,
-          branch: page?.branch ?? catalogs.regions[0]?.code ?? NONE,
           url: page?.url ?? "",
           page_staff_ids: (page?.page_staff_ids ?? []).join(","),
           is_active: page?.is_active ?? true,

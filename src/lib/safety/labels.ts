@@ -1,6 +1,7 @@
 import { format } from "date-fns";
 import type { CatalogNames } from "@/components/catalog-provider";
 import { ROLE_LABELS, type StaffRole } from "@/hooks/use-current-staff";
+import { APP } from "@/lib/config";
 import { OBJECTIVE_LABELS, POST_STATUS_LABELS, type AdPostStatus, type CampaignObjective } from "@/lib/catalog/types";
 import { getLeadStatus } from "@/lib/leads/status";
 import type { AuditAction, AuditEntry } from "./types";
@@ -17,7 +18,6 @@ export const TABLE_LABELS: Record<string, string> = {
   ad_account_assignments: "Phân công TKQC",
   ads_staff: "Nhân viên Ads",
   services: "Dịch vụ",
-  regions: "Miền",
   staff: "Nhân viên",
   staff_shifts: "Ca làm",
   app_settings: "Cấu hình",
@@ -74,7 +74,7 @@ const FIELD_LABELS: Record<string, string> = {
   invalid_phone: "Số sai",
   recontacted_at: "Khách nhắn lại",
   reopened_at: "Mở lại",
-  branch: "Miền",
+  branch: "Cơ sở",
   name: "Tên",
   sort_order: "Thứ tự",
   is_active: "Đang dùng",
@@ -162,7 +162,7 @@ function formatValue(table: string, key: string, value: unknown, names: CatalogN
     case "budget":
       return `${Number(value).toLocaleString("vi-VN")} ₫`;
     case "branch":
-      return names.region(text) ?? text;
+      return text === APP.branch.code ? APP.branch.name : text;
   }
 
   if (typeof value === "boolean") return value ? "Có" : "Không";
@@ -222,8 +222,6 @@ export function recordLabel(
       return names.adPost(entry.record_id) ?? (old.title ? String(old.title) : old.url ? String(old.url) : "Bài post");
     case "ad_account_assignments":
       return names.assignment(entry.record_id) ?? "Phân công TKQC";
-    case "regions":
-      return names.regionById(entry.record_id) ?? (old.name ? String(old.name) : "Miền");
     case "staff":
       return names.staff(entry.record_id) ?? "Nhân viên";
     case "app_settings":

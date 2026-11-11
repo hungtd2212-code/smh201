@@ -40,7 +40,6 @@ const TRASH_TABLES: SoftDeleteTable[] = [
   "pages",
   "channels",
   "services",
-  "regions",
 ];
 
 const keyOf = (item: TrashItem) => `${item.table_name}:${item.id}`;
