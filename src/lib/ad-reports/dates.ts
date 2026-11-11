@@ -1,5 +1,8 @@
 import { format } from "date-fns";
-import { EDIT_WINDOW_MS, type AdDailyReport } from "./types";
+import { EDIT_WINDOW_MS } from "./types";
+
+/** Một thứ đã gửi (báo cáo TKQC hoặc dòng Data xin được chung): có mốc gửi lần đầu và lần sửa gần nhất. */
+type Sent = { submitted_at: string; updated_at: string };
 
 /** Ngày giờ cho các màn báo cáo ads. Mọi ngày dạng yyyy-MM-dd, tính theo giờ Việt Nam. */
 
@@ -52,10 +55,10 @@ export function formatClock(iso: string, today: string, short = false) {
 }
 
 /** Hạn chót nhân viên còn sửa được báo cáo (mili-giây). */
-export const editDeadline = (report: AdDailyReport) => Date.parse(report.submitted_at) + EDIT_WINDOW_MS;
+export const editDeadline = (sent: Sent) => Date.parse(sent.submitted_at) + EDIT_WINDOW_MS;
 
 /** Báo cáo đã từng được sửa số chưa (lúc gửi, hai mốc giờ bằng nhau). */
-export const wasEdited = (report: AdDailyReport) => Date.parse(report.updated_at) - Date.parse(report.submitted_at) > 1000;
+export const wasEdited = (sent: Sent) => Date.parse(sent.updated_at) - Date.parse(sent.submitted_at) > 1000;
 
 /** 18_720_000 → "5 giờ 12 phút" */
 export function durationText(ms: number) {

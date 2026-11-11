@@ -3,7 +3,7 @@
 import { useId } from "react";
 import { Label } from "@/components/ui/label";
 import { formatNumber } from "@/lib/ad-reports/number";
-import { REPORT_FIELDS, type ReportField, type ReportValues } from "@/lib/ad-reports/types";
+import { DATA_MAX_DIGITS, REPORT_FIELDS, type ReportField, type ReportValues } from "@/lib/ad-reports/types";
 import type { AdAccount } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
 import { NumberInput } from "./number-input";
@@ -21,6 +21,21 @@ export type FieldItem = {
 
 export const REQUIRED_TEXT = "Bắt buộc nhập, tối thiểu 0";
 
+/** Dòng "Data xin được" chung bên dưới các TKQC. */
+export type DataRow = {
+  value: string;
+  /** Có giá trị = chỉ xem (đã gửi / đã khoá). */
+  shown?: number;
+  /** vd "Đã gửi lúc 09:15", "Đã khoá". */
+  note?: string;
+  touched: boolean;
+  onChange: (digits: string) => void;
+  onTouch: () => void;
+};
+
+const DATA_LABEL = "Data xin được";
+const DATA_HINT = "Tổng số điện thoại xin được trong ngày của tất cả TKQC (lấy từ trực page).";
+
 const fieldKey = (accountId: string, field: ReportField) => `${accountId}:${field}`;
 
 type Props = {
@@ -34,6 +49,8 @@ type Props = {
   layout: "table" | "cards";
   /** Cột "Ngày" của bảng. */
   dayLabel: string;
+  /** Dòng "Data xin được" chung (bỏ trống = không hiện). */
+  data?: DataRow;
 };
 
 function GroupHead({ item, className }: { item: FieldItem; className?: string }) {
@@ -65,8 +82,10 @@ function ShownValue({ value, suffix }: { value: number; suffix?: string }) {
   );
 }
 
-/** Bảng / thẻ nhập 3 ô (Chi tiêu, Số lượng tin nhắn, Data xin được) cho từng TK ADS. */
-export function ReportFields({ items, values, touched, onChange, onTouch, layout, dayLabel }: Props) {
+/**
+ * Bảng / thẻ nhập: mỗi TK ADS hai ô (Chi tiêu, Số lượng tin nhắn), bên dưới một dòng "Data xin được" chung.
+ */
+export function ReportFields({ items, values, touched, onChange, onTouch, layout, dayLabel, data }: Props) {
   // Mã riêng cho từng bảng nhập: trên cùng một trang có thể có hai bảng (vd hộp Sửa mở trên trang).
   const uid = useId();
   const cell = (item: FieldItem, field: (typeof REPORT_FIELDS)[number], prefix: string, withLabel: boolean) => {
@@ -98,12 +117,38 @@ export function ReportFields({ items, values, touched, onChange, onTouch, layout
     );
   };
 
+  const dataInput = (prefix: string, withLabel: boolean) => {
+    if (!data) return null;
+    if (data.shown !== undefined) return <ShownValue value={data.shown} />;
+    const id = `${uid}${prefix}-data`;
+    const missing = data.value === "" && data.touched;
+    return (
+      <>
+        <NumberInput
+          id={id}
+          value={data.value}
+          maxDigits={DATA_MAX_DIGITS}
+          invalid={missing}
+          label={withLabel ? undefined : DATA_LABEL}
+          describedBy={missing ? `${id}-error` : undefined}
+          onValueChange={data.onChange}
+          onBlur={data.onTouch}
+        />
+        {missing && (
+          <p id={`${id}-error`} className="text-xs text-destructive">
+            {REQUIRED_TEXT}
+          </p>
+        )}
+      </>
+    );
+  };
+
   const cards = (
     <div className={cn("grid gap-3", layout === "table" && "md:hidden")}>
       {items.map((item) => (
         <section key={item.account.id} className="overflow-hidden rounded-xl border bg-card">
           <GroupHead item={item} className="px-3 py-2" />
-          <div className={cn("grid gap-3 p-3", layout === "cards" && "sm:grid-cols-3")}>
+          <div className={cn("grid gap-3 p-3", layout === "cards" && "sm:grid-cols-2")}>
             {REPORT_FIELDS.map((field) => (
               <div key={field.key} className="grid content-start gap-1.5">
                 <Label htmlFor={`${uid}c-${item.account.id}-${field.key}`}>
@@ -116,6 +161,22 @@ export function ReportFields({ items, values, touched, onChange, onTouch, layout
           </div>
         </section>
       ))}
+      {data && (
+        <section className="overflow-hidden rounded-xl border bg-card">
+          <div className="bg-sky-100 px-3 py-2 text-sky-950 dark:bg-sky-900/50 dark:text-sky-50">
+            <div className="font-semibold">{DATA_LABEL}</div>
+            <div className="text-xs opacity-80">{data.note ?? "Chung cho tất cả TKQC"}</div>
+          </div>
+          <div className="grid gap-1.5 p-3 sm:max-w-xs">
+            <Label htmlFor={`${uid}c-data`}>
+              {DATA_LABEL}
+              {data.shown === undefined && <Required />}
+            </Label>
+            {dataInput("c", true)}
+            <p className="text-xs text-muted-foreground">{DATA_HINT}</p>
+          </div>
+        </section>
+      )}
     </div>
   );
 
@@ -131,7 +192,11 @@ export function ReportFields({ items, values, touched, onChange, onTouch, layout
                 Ngày
               </th>
               {items.map((item) => (
-                <th key={item.account.id} colSpan={3} className="border-b border-l p-0 text-left font-normal">
+                <th
+                  key={item.account.id}
+                  colSpan={REPORT_FIELDS.length}
+                  className="border-b border-l p-0 text-left font-normal"
+                >
                   <GroupHead item={item} className="px-3 py-2" />
                 </th>
               ))}
@@ -164,6 +229,21 @@ export function ReportFields({ items, values, touched, onChange, onTouch, layout
                 )),
               )}
             </tr>
+            {data && (
+              <tr className="border-t bg-sky-50/70 dark:bg-sky-950/30">
+                <td className="px-3 py-2.5 align-top font-medium whitespace-nowrap">
+                  {DATA_LABEL}
+                  {data.shown === undefined && <Required />}
+                  <div className="text-xs font-normal text-muted-foreground">{data.note ?? "Chung cho tất cả TKQC"}</div>
+                </td>
+                <td colSpan={items.length * REPORT_FIELDS.length} className="border-l px-2 py-2 align-top">
+                  <div className="grid max-w-xs gap-1">
+                    {dataInput("t", false)}
+                    <p className="text-xs text-muted-foreground">{DATA_HINT}</p>
+                  </div>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -180,7 +260,6 @@ export const allFilled = (items: FieldItem[], values: Record<string, ReportValue
 export const toNumbers = (value: ReportValues): Record<ReportField, number> => ({
   spend: Number(value.spend),
   messages: Number(value.messages),
-  data_count: Number(value.data_count),
 });
 
 export { fieldKey };

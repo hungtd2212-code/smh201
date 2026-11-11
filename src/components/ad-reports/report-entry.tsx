@@ -19,8 +19,14 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentStaff } from "@/hooks/use-current-staff";
 import { formatClock, formatDay } from "@/lib/ad-reports/dates";
-import { submitReports } from "@/lib/ad-reports/repo";
-import { EMPTY_VALUES, type AdDailyReport, type ReportField, type ReportValues } from "@/lib/ad-reports/types";
+import { submitDailyData, submitReports } from "@/lib/ad-reports/repo";
+import {
+  EMPTY_VALUES,
+  type AdDailyData,
+  type AdDailyReport,
+  type ReportField,
+  type ReportValues,
+} from "@/lib/ad-reports/types";
 import type { AdAccount, AdsStaff } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
 import { AccountSetup } from "./account-setup";
@@ -224,7 +230,9 @@ function EntryBody() {
               today={today}
               accounts={shown.length > 0 ? shown : accounts}
               numbers={numbers}
+              personId={person.id}
               reports={state.reports}
+              dailyData={state.data}
               overviewHref={`/marketing/tong-quan?ngay=${day}${scope.managesMarketing ? `&nv=${person.id}` : ""}`}
               onSubmitted={reload}
             />
@@ -240,23 +248,31 @@ function EntryBody() {
 function EntryForm({
   day,
   today,
+  personId,
   accounts,
   numbers,
   reports,
+  dailyData,
   overviewHref,
   onSubmitted,
 }: {
   day: string;
   today: string;
+  /** Nhân viên Ads đang nhập (dòng "Data xin được" chung là của người này). */
+  personId: string;
   accounts: AdAccount[];
   /** Số thứ tự TK ADS 1, 2… trong danh sách đầy đủ của người này. */
   numbers: Map<string, number>;
   reports: AdDailyReport[];
+  /** null = chưa chạy file 010 (chưa có dòng "Data xin được" chung). */
+  dailyData: AdDailyData[] | null;
   overviewHref: string;
   onSubmitted: () => Promise<void>;
 }) {
   const [values, setValues] = useState<Record<string, ReportValues>>({});
   const [touched, setTouched] = useState<Set<string>>(new Set());
+  const [dataValue, setDataValue] = useState("");
+  const [dataTouched, setDataTouched] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const sentOf = (accountId: string) =>
@@ -270,10 +286,13 @@ function EntryForm({
       note: sent ? `Đã gửi lúc ${formatClock(sent.submitted_at, today)}` : undefined,
     };
   });
+  const dataSent = dailyData?.find((d) => d.report_date === day && d.ads_staff_id === personId);
   const pending = items.filter((item) => !item.shown);
   const sent = items.map((item) => sentOf(item.account.id)).filter((r): r is AdDailyReport => Boolean(r));
-  const ready = allFilled(items, values);
-  const firstSent = sent.map((r) => r.submitted_at).sort()[0];
+  const dataPending = dailyData !== null && !dataSent;
+  const ready = allFilled(items, values) && (!dataPending || dataValue !== "");
+  const firstSent = [...sent.map((r) => r.submitted_at), ...(dataSent ? [dataSent.submitted_at] : [])].sort()[0];
+  const nothingLeft = pending.length === 0 && !dataPending;
 
   const setValue = (accountId: string, field: ReportField, digits: string) =>
     setValues((prev) => ({ ...prev, [accountId]: { ...(prev[accountId] ?? EMPTY_VALUES), [field]: digits } }));
@@ -290,6 +309,9 @@ function EntryForm({
           ...toNumbers(values[item.account.id] ?? EMPTY_VALUES),
         })),
       );
+      if (dataPending) {
+        await submitDailyData({ report_date: day, ads_staff_id: personId, data_count: Number(dataValue) });
+      }
       toast.success(`Đã gửi báo cáo ngày ${formatDay(day)}`);
       await onSubmitted();
     } catch (error) {
@@ -300,9 +322,20 @@ function EntryForm({
     }
   }
 
+  const missingParts = [
+    sent.length > 0 && pending.length > 0 && `${pending.length} TK ADS`,
+    (sent.length > 0 || pending.length === 0) && dataPending && "Data xin được",
+  ].filter(Boolean);
+
   return (
     <section className="grid gap-4">
-      {pending.length === 0 ? (
+      {dailyData === null && (
+        <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+          Dòng “Data xin được” chung chưa dùng được: cơ sở dữ liệu chưa được cập nhật (file{" "}
+          <code>supabase/010_ads_daily_data.sql</code> chưa chạy). Vẫn gửi được chi tiêu và tin nhắn của từng TKQC.
+        </p>
+      )}
+      {nothingLeft ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-50">
           <p>
             Báo cáo ngày <b>{formatDay(day)}</b> đã gửi lúc <b>{firstSent ? formatClock(firstSent, today) : "…"}</b>.
@@ -316,10 +349,10 @@ function EntryForm({
           </Button>
         </div>
       ) : (
-        sent.length > 0 && (
+        missingParts.length > 0 && (
           <ReadOnlyNote>
-            Đã gửi {sent.length}/{items.length} TK ADS của ngày {formatDay(day)}. Điền nốt các TK ADS còn lại rồi bấm Gửi
-            báo cáo.
+            Báo cáo ngày {formatDay(day)} đã gửi một phần, còn thiếu: {missingParts.join(", ")}. Điền nốt rồi bấm Gửi báo
+            cáo.
           </ReadOnlyNote>
         )
       )}
@@ -332,9 +365,21 @@ function EntryForm({
         onTouch={touch}
         layout="table"
         dayLabel={formatDay(day)}
+        data={
+          dailyData === null
+            ? undefined
+            : {
+                value: dataValue,
+                shown: dataSent?.data_count,
+                note: dataSent ? `Đã gửi lúc ${formatClock(dataSent.submitted_at, today)}` : undefined,
+                touched: dataTouched,
+                onChange: setDataValue,
+                onTouch: () => setDataTouched(true),
+              }
+        }
       />
 
-      {pending.length > 0 && (
+      {!nothingLeft && (
         <div className="flex flex-wrap items-center gap-3">
           <Button size="lg" disabled={!ready || saving} onClick={submit}>
             <Send />

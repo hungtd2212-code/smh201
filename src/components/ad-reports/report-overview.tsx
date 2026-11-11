@@ -28,8 +28,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentStaff } from "@/hooks/use-current-staff";
 import { daysDesc, durationText, editDeadline, formatClock, formatDay, wasEdited } from "@/lib/ad-reports/dates";
 import { formatNumber } from "@/lib/ad-reports/number";
-import { updateReport } from "@/lib/ad-reports/repo";
-import { REPORT_FIELDS, type AdDailyReport, type ReportField, type ReportValues } from "@/lib/ad-reports/types";
+import { updateDailyData, updateReport } from "@/lib/ad-reports/repo";
+import {
+  REPORT_FIELDS,
+  type AdDailyData,
+  type AdDailyReport,
+  type ReportField,
+  type ReportValues,
+} from "@/lib/ad-reports/types";
 import type { AdAccount, AdAccountAssignment, AdsStaff } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
 import { RangeFilter, type DayRange } from "./date-filters";
@@ -164,6 +170,7 @@ function OverviewBody() {
           range={range}
           today={today}
           reports={state.reports}
+          dailyData={state.data}
           accounts={catalogs.adAccounts}
           assignments={
             accountFilter === ALL ? catalogs.assignments : catalogs.assignments.filter((x) => x.ad_account_id === accountFilter)
@@ -187,7 +194,17 @@ type Row = {
   /** Các TK ADS người này phụ trách ngày đó, kèm báo cáo (nếu đã gửi). */
   cells: Map<string, AdDailyReport | null>;
   reports: AdDailyReport[];
+  /** Dòng "Data xin được" chung của ngày đó (null = chưa gửi). */
+  data: AdDailyData | null;
+  /** Data nhập theo từng TKQC ở các báo cáo cũ (trước khi có dòng chung). */
+  legacyData: number;
 };
+
+/** Những thứ đã gửi của một dòng (báo cáo TKQC + dòng Data chung) — để tính giờ gửi, hạn sửa. */
+const sentOf = (row: Row) => [...row.reports, ...(row.data ? [row.data] : [])];
+
+/** Số "Data xin được" của dòng: dòng chung nếu có, không thì cộng từ báo cáo cũ. */
+const dataOf = (row: Row) => row.data?.data_count ?? (row.legacyData > 0 ? row.legacyData : null);
 
 type Group = { person: AdsStaff; accounts: AdAccount[]; rows: Row[] };
 
@@ -195,10 +212,12 @@ function buildGroups(
   people: AdsStaff[],
   days: string[],
   reports: AdDailyReport[],
+  dailyData: AdDailyData[],
   accounts: AdAccount[],
   assignments: AdAccountAssignment[],
 ): Group[] {
   const byKey = new Map(reports.map((r) => [`${r.report_date}:${r.ad_account_id}`, r]));
+  const dataByKey = new Map(dailyData.map((d) => [`${d.report_date}:${d.ads_staff_id}`, d]));
   return people
     .map((person) => {
       const mine = assignments.filter((x) => x.ads_staff_id === person.id);
@@ -211,8 +230,10 @@ function buildGroups(
           cells.set(x.ad_account_id, byKey.get(`${day}:${x.ad_account_id}`) ?? null);
           used.add(x.ad_account_id);
         }
-        if (cells.size === 0) continue;
-        rows.push({ day, cells, reports: [...cells.values()].filter((r): r is AdDailyReport => r !== null) });
+        const data = dataByKey.get(`${day}:${person.id}`) ?? null;
+        if (cells.size === 0 && !data) continue;
+        const sent = [...cells.values()].filter((r): r is AdDailyReport => r !== null);
+        rows.push({ day, cells, reports: sent, data, legacyData: sent.reduce((sum, r) => sum + r.data_count, 0) });
       }
       return { person, accounts: accounts.filter((a) => used.has(a.id)), rows };
     })
@@ -224,6 +245,7 @@ function Sections({
   range,
   today,
   reports,
+  dailyData,
   accounts,
   assignments,
   canAlwaysEdit,
@@ -235,6 +257,8 @@ function Sections({
   range: DayRange;
   today: string;
   reports: AdDailyReport[];
+  /** null = chưa chạy file 010. */
+  dailyData: AdDailyData[] | null;
   accounts: AdAccount[];
   assignments: AdAccountAssignment[];
   canAlwaysEdit: boolean;
@@ -244,8 +268,8 @@ function Sections({
 }) {
   const days = useMemo(() => daysDesc(range.from, range.to), [range.from, range.to]);
   const groups = useMemo(
-    () => buildGroups(people, days, reports, accounts, assignments),
-    [people, days, reports, accounts, assignments],
+    () => buildGroups(people, days, reports, dailyData ?? [], accounts, assignments),
+    [people, days, reports, dailyData, accounts, assignments],
   );
   const [editing, setEditing] = useState<{ group: Group; row: Row } | null>(null);
 
@@ -267,6 +291,7 @@ function Sections({
           <GroupTable
             group={group}
             today={today}
+            dataReady={dailyData !== null}
             canAlwaysEdit={canAlwaysEdit}
             focusDay={focusDay}
             entryHref={(day) => `/marketing/nhap-lieu?ngay=${day}${showNames ? `&nv=${group.person.id}` : ""}`}
@@ -279,6 +304,7 @@ function Sections({
           key={`${editing.group.person.id}:${editing.row.day}`}
           group={editing.group}
           row={editing.row}
+          today={today}
           canAlwaysEdit={canAlwaysEdit}
           onClose={() => setEditing(null)}
           onSaved={onSaved}
@@ -290,11 +316,12 @@ function Sections({
 
 const head = "px-2.5 py-1.5 text-right text-xs font-medium whitespace-nowrap";
 const cell = "px-2.5 py-2 text-right whitespace-nowrap tabular-nums";
-const SHORT_LABELS: Record<ReportField, string> = { spend: "Chi tiêu", messages: "Tin nhắn", data_count: "Data" };
+const SHORT_LABELS: Record<ReportField, string> = { spend: "Chi tiêu", messages: "Tin nhắn" };
 
 function GroupTable({
   group,
   today,
+  dataReady,
   canAlwaysEdit,
   focusDay,
   entryHref,
@@ -302,6 +329,8 @@ function GroupTable({
 }: {
   group: Group;
   today: string;
+  /** false = chưa chạy file 010: không nhắc "thiếu Data". */
+  dataReady: boolean;
   canAlwaysEdit: boolean;
   focusDay: string | null;
   entryHref: (day: string) => string;
@@ -310,6 +339,7 @@ function GroupTable({
   const now = useNow();
   const totals = (account: AdAccount, field: ReportField) =>
     group.rows.reduce((sum, row) => sum + (row.cells.get(account.id)?.[field] ?? 0), 0);
+  const dataTotal = group.rows.reduce((sum, row) => sum + (dataOf(row) ?? 0), 0);
 
   return (
     <div className="overflow-x-auto rounded-xl border bg-card">
@@ -322,13 +352,20 @@ function GroupTable({
             {group.accounts.map((account, i) => (
               <th
                 key={account.id}
-                colSpan={3}
+                colSpan={REPORT_FIELDS.length}
                 className="border-b border-l bg-emerald-100 px-3 py-1.5 text-left font-normal text-emerald-950 dark:bg-emerald-900/50 dark:text-emerald-50"
               >
                 <div className="text-[11px] font-semibold tracking-wide uppercase opacity-75">TK ADS {i + 1}</div>
                 <div className="font-semibold whitespace-nowrap">{account.name}</div>
               </th>
             ))}
+            <th
+              rowSpan={2}
+              className="border-b border-l bg-sky-100 px-3 py-2 text-right align-bottom font-medium whitespace-nowrap text-sky-950 dark:bg-sky-900/50 dark:text-sky-50"
+              title="Chung cho tất cả TKQC"
+            >
+              Data xin được
+            </th>
             <th rowSpan={2} className="border-b border-l bg-muted px-3 py-2 text-left align-bottom font-medium">
               Gửi lúc
             </th>
@@ -357,17 +394,22 @@ function GroupTable({
                   </td>
                 )),
               )}
+              <td className={cn(cell, "border-l")}>{formatNumber(dataTotal)}</td>
               <td className="border-l" />
               <td />
             </tr>
           )}
           {group.rows.map((row) => {
+            const sent = sentOf(row);
             const missing = [...row.cells.values()].filter((r) => r === null).length;
-            const firstSent = row.reports.map((r) => r.submitted_at).sort()[0];
-            const lastEdit = row.reports.filter(wasEdited).map((r) => r.updated_at).sort().at(-1);
-            // Nhân viên: sửa được những báo cáo còn trong 24 giờ; quản lý: luôn sửa được.
-            const openDeadlines = row.reports.map(editDeadline).filter((d) => now > 0 && d > now);
-            const editable = row.reports.length > 0 && (canAlwaysEdit || openDeadlines.length > 0);
+            const missingData = dataReady && !row.data && row.legacyData === 0;
+            const missingText = [missing > 0 && `${missing} TK ADS`, missingData && "Data"].filter(Boolean).join(", ");
+            const firstSent = sent.map((r) => r.submitted_at).sort()[0];
+            const lastEdit = sent.filter(wasEdited).map((r) => r.updated_at).sort().at(-1);
+            // Nhân viên: sửa được những gì còn trong 24 giờ kể từ lúc gửi; quản lý: luôn sửa được.
+            const openDeadlines = sent.map(editDeadline).filter((d) => now > 0 && d > now);
+            const editable = sent.length > 0 && (canAlwaysEdit || openDeadlines.length > 0);
+            const data = dataOf(row);
             const focused = row.day === focusDay;
             return (
               <tr key={row.day} className={cn("border-b last:border-0", focused ? "bg-muted" : "bg-card hover:bg-muted")}>
@@ -398,11 +440,23 @@ function GroupTable({
                     );
                   }),
                 )}
+                <td
+                  className={cn(cell, "border-l")}
+                  title={!row.data && data !== null ? "Cộng từ data nhập theo từng TKQC (báo cáo cũ)" : undefined}
+                >
+                  {data === null ? (
+                    <span className="text-muted-foreground/60" title="Chưa gửi">
+                      –
+                    </span>
+                  ) : (
+                    formatNumber(data)
+                  )}
+                </td>
                 <td className="border-l px-3 py-2 align-top text-xs whitespace-nowrap">
                   {firstSent ? (
                     <div className="grid gap-1">
                       <span className="text-sm tabular-nums">{formatClock(firstSent, today, true)}</span>
-                      {missing > 0 && <span className="text-amber-700 dark:text-amber-300">Thiếu {missing} TK ADS</span>}
+                      {missingText && <span className="text-amber-700 dark:text-amber-300">Thiếu {missingText}</span>}
                       {lastEdit && (
                         <span className="w-fit rounded-full bg-sky-100 px-2 py-0.5 font-medium text-sky-900 dark:bg-sky-900/40 dark:text-sky-100">
                           Đã sửa lúc {formatClock(lastEdit, today, true)}
@@ -416,7 +470,7 @@ function GroupTable({
                   )}
                 </td>
                 <td className="px-3 py-2 align-top whitespace-nowrap">
-                  {row.reports.length === 0 ? (
+                  {sent.length === 0 ? (
                     <Button asChild variant="outline" size="sm">
                       <Link href={entryHref(row.day)}>Nhập</Link>
                     </Button>
@@ -438,9 +492,9 @@ function GroupTable({
                           Còn sửa được {durationText(Math.min(...openDeadlines) - now)}
                         </span>
                       )}
-                      {missing > 0 && (
+                      {missingText && (
                         <Link href={entryHref(row.day)} className="text-xs text-muted-foreground underline underline-offset-2">
-                          Gửi nốt TK ADS còn thiếu
+                          Gửi nốt phần còn thiếu
                         </Link>
                       )}
                     </div>
@@ -458,18 +512,19 @@ function GroupTable({
 const toValues = (report: AdDailyReport): ReportValues => ({
   spend: String(report.spend),
   messages: String(report.messages),
-  data_count: String(report.data_count),
 });
 
 function EditDialog({
   group,
   row,
+  today,
   canAlwaysEdit,
   onClose,
   onSaved,
 }: {
   group: Group;
   row: Row;
+  today: string;
   canAlwaysEdit: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -479,9 +534,14 @@ function EditDialog({
     Object.fromEntries(row.reports.map((r) => [r.ad_account_id, toValues(r)])),
   );
   const [touched, setTouched] = useState<Set<string>>(new Set());
+  const [dataValue, setDataValue] = useState(row.data ? String(row.data.data_count) : "");
+  const [dataTouched, setDataTouched] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const isOpen = (report: AdDailyReport) => canAlwaysEdit || (now > 0 && editDeadline(report) > now);
+  const isOpen = (sent: { submitted_at: string; updated_at: string }) =>
+    canAlwaysEdit || (now > 0 && editDeadline(sent) > now);
+  const dataOpen = row.data !== null && isOpen(row.data);
+  const dataChanged = dataOpen && row.data !== null && dataValue !== String(row.data.data_count);
   const items: FieldItem[] = group.accounts.flatMap((account, i) => {
     const report = row.cells.get(account.id);
     if (!report) return [];
@@ -492,7 +552,8 @@ function EditDialog({
   const changed = openReports.filter(
     (r) => JSON.stringify(values[r.ad_account_id]) !== JSON.stringify(toValues(r)),
   );
-  const deadline = openReports.length > 0 ? Math.min(...openReports.map(editDeadline)) : 0;
+  const openSent = sentOf(row).filter(isOpen);
+  const deadline = openSent.length > 0 ? Math.min(...openSent.map(editDeadline)) : 0;
 
   async function save() {
     setSaving(true);
@@ -500,6 +561,7 @@ function EditDialog({
       for (const report of changed) {
         await updateReport(report.id, toNumbers(values[report.ad_account_id]));
       }
+      if (dataChanged && row.data) await updateDailyData(row.data.id, Number(dataValue));
       toast.success(`Đã cập nhật báo cáo ngày ${formatDay(row.day)}`);
       onClose();
     } catch (error) {
@@ -535,13 +597,37 @@ function EditDialog({
           onTouch={(accountId, field) => setTouched((prev) => new Set(prev).add(fieldKey(accountId, field)))}
           layout="cards"
           dayLabel={formatDay(row.day)}
+          data={
+            row.data
+              ? {
+                  value: dataValue,
+                  shown: dataOpen ? undefined : row.data.data_count,
+                  note: dataOpen
+                    ? `Gửi lúc ${formatClock(row.data.submitted_at, today)} · chung cho tất cả TKQC`
+                    : "Đã khoá (quá 24 giờ)",
+                  touched: dataTouched,
+                  onChange: setDataValue,
+                  onTouch: () => setDataTouched(true),
+                }
+              : undefined
+          }
         />
+        {!row.data && (
+          <p className="text-sm text-muted-foreground">
+            Ngày này chưa gửi “Data xin được” — gửi ở màn Nhập liệu.
+          </p>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Huỷ
           </Button>
-          <Button onClick={save} disabled={saving || changed.length === 0 || !allFilled(items, values)}>
+          <Button
+            onClick={save}
+            disabled={
+              saving || (changed.length === 0 && !dataChanged) || !allFilled(items, values) || (dataOpen && dataValue === "")
+            }
+          >
             {saving ? "Đang lưu…" : "Lưu thay đổi"}
           </Button>
         </DialogFooter>

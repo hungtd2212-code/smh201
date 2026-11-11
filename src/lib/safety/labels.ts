@@ -27,6 +27,7 @@ export const TABLE_LABELS: Record<string, string> = {
   ad_account_assignments: "Phân công TKQC",
   ads_staff: "Nhân viên Ads",
   ad_daily_reports: "Báo cáo ads ngày",
+  ads_daily_data: "Data xin được theo ngày",
   services: "Dịch vụ",
   staff: "Nhân viên",
   staff_shifts: "Ca làm",
@@ -219,8 +220,8 @@ export function describeChanges(entry: AuditEntry, names: CatalogNames): FieldCh
     }));
 }
 
-/** Báo cáo ads ngày mà một dòng nhật ký nói tới: ngày nào, của TK ADS nào. */
-export type AdReportRef = { report_date: string; ad_account_id: string };
+/** Báo cáo ads ngày mà một dòng nhật ký nói tới: ngày nào, của TK ADS nào (hoặc nhân viên nào). */
+export type AdReportRef = { report_date: string; ad_account_id?: string; ads_staff_id?: string };
 
 /** Tên dễ đọc của bản ghi mà dòng nhật ký nói tới. */
 export function recordLabel(
@@ -236,6 +237,10 @@ export function recordLabel(
       return report
         ? `${names.adAccount(report.ad_account_id) ?? "TK ADS"} · ${report.report_date.split("-").reverse().join("/")}`
         : "Báo cáo ads ngày";
+    case "ads_daily_data":
+      return report
+        ? `Data · ${names.adsStaff(report.ads_staff_id) ?? "Nhân viên Ads"} · ${report.report_date.split("-").reverse().join("/")}`
+        : "Data xin được theo ngày";
     case "leads":
       return (
         leadLabels?.get(entry.record_id) ??

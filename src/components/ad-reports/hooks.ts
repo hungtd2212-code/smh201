@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { fetchReports } from "@/lib/ad-reports/repo";
-import type { AdDailyReport } from "@/lib/ad-reports/types";
+import { fetchDailyData, fetchReports } from "@/lib/ad-reports/repo";
+import type { AdDailyData, AdDailyReport } from "@/lib/ad-reports/types";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export type ReportsState =
   | { status: "loading" }
-  | { status: "ready"; reports: AdDailyReport[] }
+  /** `data` = null: chưa chạy file 010 (chưa có dòng "Data xin được" chung). */
+  | { status: "ready"; reports: AdDailyReport[]; data: AdDailyData[] | null }
   /** Cơ sở dữ liệu chưa chạy supabase/006_ad_daily_reports.sql. */
   | { status: "not-migrated" }
   | { status: "error"; message: string };
@@ -26,8 +27,8 @@ export function useAdReports(from: string, to: string) {
     const requested = `${from}:${to}`;
     let state: ReportsState;
     try {
-      const reports = await fetchReports(from, to);
-      state = reports ? { status: "ready", reports } : { status: "not-migrated" };
+      const [reports, data] = await Promise.all([fetchReports(from, to), fetchDailyData(from, to)]);
+      state = reports ? { status: "ready", reports, data } : { status: "not-migrated" };
     } catch (error) {
       state = { status: "error", message: error instanceof Error ? error.message : String(error) };
     }

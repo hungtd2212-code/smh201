@@ -1,6 +1,6 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isNotMigrated } from "@/lib/supabase/errors";
-import type { AdDailyReport, ReportField } from "./types";
+import type { AdDailyData, AdDailyReport, ReportField } from "./types";
 
 /** Đọc / gửi / sửa báo cáo ads hằng ngày. Quyền do Supabase kiểm soát (supabase/006_ad_daily_reports.sql). */
 
@@ -50,6 +50,42 @@ export async function fetchReports(from: string, to: string): Promise<AdDailyRep
     rows.push(...(data as AdDailyReport[]).map((row) => ({ ...row, spend: Number(row.spend) })));
     if (data.length < PAGE) return rows;
   }
+}
+
+/**
+ * Dòng "Data xin được" chung của mỗi nhân viên trong khoảng ngày. Trả về null nếu cơ sở dữ liệu chưa chạy
+ * file 010.
+ */
+export async function fetchDailyData(from: string, to: string): Promise<AdDailyData[] | null> {
+  const { data, error } = await getSupabaseBrowserClient()
+    .from("ads_daily_data")
+    .select("id, report_date, ads_staff_id, data_count, user_id, submitted_at, updated_at, updated_by")
+    .gte("report_date", from)
+    .lte("report_date", to)
+    .order("report_date", { ascending: false })
+    .limit(5000);
+  if (error) {
+    if (isNotMigrated(error)) return null;
+    throw reportError(error);
+  }
+  return data as AdDailyData[];
+}
+
+/** Gửi "Data xin được" chung của một ngày. */
+export async function submitDailyData(row: { report_date: string; ads_staff_id: string; data_count: number }) {
+  const { error } = await getSupabaseBrowserClient().from("ads_daily_data").insert(row);
+  if (error) throw reportError(error);
+}
+
+/** Sửa "Data xin được" đã gửi. */
+export async function updateDailyData(id: string, dataCount: number): Promise<void> {
+  const { data, error } = await getSupabaseBrowserClient()
+    .from("ads_daily_data")
+    .update({ data_count: dataCount })
+    .eq("id", id)
+    .select("id");
+  if (error) throw reportError(error);
+  if (data.length === 0) throw new Error("Không lưu được: đây không phải số liệu của bạn.");
 }
 
 export type NewReport = { report_date: string; ad_account_id: string } & Record<ReportField, number>;
