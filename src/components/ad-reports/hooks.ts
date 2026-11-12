@@ -7,8 +7,11 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export type ReportsState =
   | { status: "loading" }
-  /** `data` = null: chưa chạy file 010 (chưa có dòng "Data xin được" chung). */
-  | { status: "ready"; reports: AdDailyReport[]; data: AdDailyData[] | null }
+  /**
+   * `data` = null: chưa chạy file 010 (chưa có dòng "Data xin được" chung).
+   * `revenueReady` = false: chưa chạy file 018 (chưa có ô "Doanh thu theo ngày").
+   */
+  | { status: "ready"; reports: AdDailyReport[]; data: AdDailyData[] | null; revenueReady: boolean }
   /** Cơ sở dữ liệu chưa chạy supabase/006_ad_daily_reports.sql. */
   | { status: "not-migrated" }
   | { status: "error"; message: string };
@@ -28,7 +31,9 @@ export function useAdReports(from: string, to: string) {
     let state: ReportsState;
     try {
       const [reports, data] = await Promise.all([fetchReports(from, to), fetchDailyData(from, to)]);
-      state = reports ? { status: "ready", reports, data } : { status: "not-migrated" };
+      state = reports
+        ? { status: "ready", reports, data: data?.rows ?? null, revenueReady: data?.revenueReady ?? false }
+        : { status: "not-migrated" };
     } catch (error) {
       state = { status: "error", message: error instanceof Error ? error.message : String(error) };
     }

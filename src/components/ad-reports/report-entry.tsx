@@ -226,6 +226,7 @@ function EntryBody() {
               personId={person.id}
               reports={state.reports}
               dailyData={state.data}
+              revenueReady={state.revenueReady}
               overviewHref={`/marketing/tong-quan?ngay=${day}${scope.managesMarketing ? `&nv=${person.id}` : ""}`}
               onSubmitted={reload}
             />
@@ -246,6 +247,7 @@ function EntryForm({
   numbers,
   reports,
   dailyData,
+  revenueReady,
   overviewHref,
   onSubmitted,
 }: {
@@ -259,6 +261,8 @@ function EntryForm({
   reports: AdDailyReport[];
   /** null = chưa chạy file 010 (chưa có dòng "Data xin được" chung). */
   dailyData: AdDailyData[] | null;
+  /** false = chưa chạy file 018 → không có ô "Doanh thu theo ngày". */
+  revenueReady: boolean;
   overviewHref: string;
   onSubmitted: () => Promise<void>;
 }) {
@@ -266,6 +270,8 @@ function EntryForm({
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [dataValue, setDataValue] = useState("");
   const [dataTouched, setDataTouched] = useState(false);
+  // Doanh thu theo ngày: không bắt buộc, "" = để trống.
+  const [revenueValue, setRevenueValue] = useState("");
   const [saving, setSaving] = useState(false);
 
   const sentOf = (accountId: string) =>
@@ -303,7 +309,12 @@ function EntryForm({
         })),
       );
       if (dataPending) {
-        await submitDailyData({ report_date: day, ads_staff_id: personId, data_count: Number(dataValue) });
+        await submitDailyData({
+          report_date: day,
+          ads_staff_id: personId,
+          data_count: Number(dataValue),
+          revenue: revenueReady && revenueValue !== "" ? Number(revenueValue) : null,
+        });
       }
       toast.success(`Đã gửi báo cáo ngày ${formatDay(day)}`);
       await onSubmitted();
@@ -368,6 +379,9 @@ function EntryForm({
                 touched: dataTouched,
                 onChange: setDataValue,
                 onTouch: () => setDataTouched(true),
+                revenue: revenueReady
+                  ? { value: revenueValue, shown: dataSent ? dataSent.revenue : undefined, onChange: setRevenueValue }
+                  : undefined,
               }
         }
       />
@@ -381,7 +395,7 @@ function EntryForm({
           </Button>
           {!ready && (
             <span className="text-sm text-muted-foreground max-md:w-full max-md:text-center max-md:text-xs">
-              Điền đủ tất cả các ô (không có thì nhập 0) để gửi.
+              Điền đủ các ô có dấu * (không có thì nhập 0) để gửi.
             </span>
           )}
         </div>

@@ -3,7 +3,8 @@
  * 24 giờ kể từ lúc gửi (Quản trị, Trưởng Marketing sửa được bất kỳ lúc nào).
  *   • Mỗi (ngày, TK ADS) một báo cáo: chi tiêu, số lượng tin nhắn (supabase/006_ad_daily_reports.sql).
  *   • Mỗi (ngày, nhân viên Ads) một dòng "Data xin được" chung cho mọi TKQC — số điện thoại lấy từ trực
- *     page nên không tách được theo TKQC (supabase/010_ads_daily_data.sql).
+ *     page nên không tách được theo TKQC (supabase/010_ads_daily_data.sql), kèm "Doanh thu theo ngày" không bắt
+ *     buộc (supabase/018_daily_revenue.sql).
  */
 export type AdDailyReport = {
   id: string;
@@ -30,6 +31,11 @@ export type AdDailyData = {
   report_date: string; // yyyy-MM-dd
   ads_staff_id: string;
   data_count: number;
+  /**
+   * Doanh thu theo ngày (đồng) nhân viên tự nhập — không bắt buộc; null = chưa nhập. Quản lý nhập doanh thu
+   * tháng (ad_revenue) thì số tháng đó dùng số của quản lý.
+   */
+  revenue: number | null;
   user_id: string | null;
   submitted_at: string;
   updated_at: string;
@@ -51,6 +57,9 @@ export const REPORT_FIELDS: { key: ReportField; label: string; suffix?: string; 
 
 /** Dòng "Data xin được" chung bên dưới các TKQC. */
 export const DATA_MAX_DIGITS = 9;
+
+/** Ô "Doanh thu theo ngày" (đồng) — như ô Chi tiêu. */
+export const REVENUE_MAX_DIGITS = 13;
 
 /** Nhân viên sửa được báo cáo trong chừng này thời gian kể từ lúc gửi lần đầu. */
 export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;

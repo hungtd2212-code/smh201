@@ -1,5 +1,5 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { isNotMigrated } from "@/lib/supabase/errors";
+import { MISSING_COLUMN, isNotMigrated } from "@/lib/supabase/errors";
 import type { AdDailyData, AdDailyReport, ReportField } from "./types";
 
 /** Đọc / gửi / sửa báo cáo ads hằng ngày. Quyền do Supabase kiểm soát (supabase/006_ad_daily_reports.sql). */
@@ -52,43 +52,70 @@ export async function fetchReports(from: string, to: string): Promise<AdDailyRep
   }
 }
 
+const DAILY_COLUMNS = "id, report_date, ads_staff_id, data_count, user_id, submitted_at, updated_at, updated_by";
+
+export type DailyDataResult = {
+  rows: AdDailyData[];
+  /** false = chưa chạy file 018 (chưa có cột "Doanh thu theo ngày") → ẩn ô doanh thu, đọc kiểu cũ. */
+  revenueReady: boolean;
+};
+
 /**
- * Dòng "Data xin được" chung của mỗi nhân viên trong khoảng ngày. Trả về null nếu cơ sở dữ liệu chưa chạy
- * file 010.
+ * Dòng "Data xin được" (kèm "Doanh thu theo ngày") chung của mỗi nhân viên trong khoảng ngày. Trả về null nếu
+ * cơ sở dữ liệu chưa chạy file 010.
  */
-export async function fetchDailyData(from: string, to: string): Promise<AdDailyData[] | null> {
+export async function fetchDailyData(from: string, to: string): Promise<DailyDataResult | null> {
   const supabase = getSupabaseBrowserClient();
   const rows: AdDailyData[] = [];
+  let revenueReady = true;
   // Xem nhiều tháng / nhiều năm có thể quá 1000 dòng → đọc từng trang.
   for (let start = 0; ; start += PAGE) {
     const { data, error } = await supabase
       .from("ads_daily_data")
-      .select("id, report_date, ads_staff_id, data_count, user_id, submitted_at, updated_at, updated_by")
+      .select(revenueReady ? `${DAILY_COLUMNS}, revenue` : DAILY_COLUMNS)
       .gte("report_date", from)
       .lte("report_date", to)
       .order("report_date", { ascending: false })
       .order("id")
       .range(start, start + PAGE - 1);
     if (error) {
+      // Chưa chạy file 018: đọc lại trang này không có cột doanh thu.
+      if (error.code === MISSING_COLUMN && revenueReady) {
+        revenueReady = false;
+        start -= PAGE;
+        continue;
+      }
       if (isNotMigrated(error)) return null;
       throw reportError(error);
     }
-    rows.push(...(data as AdDailyData[]));
-    if (data.length < PAGE) return rows;
+    // Cột bigint có thể về dạng chữ khi số lớn → ép về số cho chắc.
+    for (const row of data as unknown as (Omit<AdDailyData, "revenue"> & { revenue?: number | string | null })[]) {
+      rows.push({ ...row, revenue: row.revenue === null || row.revenue === undefined ? null : Number(row.revenue) });
+    }
+    if (data.length < PAGE) return { rows, revenueReady };
   }
 }
 
-/** Gửi "Data xin được" chung của một ngày. */
-export async function submitDailyData(row: { report_date: string; ads_staff_id: string; data_count: number }) {
-  const { error } = await getSupabaseBrowserClient().from("ads_daily_data").insert(row);
+/** Gửi "Data xin được" (kèm doanh thu nếu có) chung của một ngày. */
+export async function submitDailyData(row: {
+  report_date: string;
+  ads_staff_id: string;
+  data_count: number;
+  /** null = không nhập (để trống). Không gửi cột này khi để trống — chạy được cả khi chưa có file 018. */
+  revenue: number | null;
+}) {
+  const { revenue, ...rest } = row;
+  const { error } = await getSupabaseBrowserClient()
+    .from("ads_daily_data")
+    .insert(revenue === null ? rest : row);
   if (error) throw reportError(error);
 }
 
-/** Sửa "Data xin được" đã gửi. */
-export async function updateDailyData(id: string, dataCount: number): Promise<void> {
+/** Sửa "Data xin được" / "Doanh thu theo ngày" đã gửi. `revenue` undefined = không đụng tới cột doanh thu. */
+export async function updateDailyData(id: string, dataCount: number, revenue?: number | null): Promise<void> {
   const { data, error } = await getSupabaseBrowserClient()
     .from("ads_daily_data")
-    .update({ data_count: dataCount })
+    .update(revenue === undefined ? { data_count: dataCount } : { data_count: dataCount, revenue })
     .eq("id", id)
     .select("id");
   if (error) throw reportError(error);

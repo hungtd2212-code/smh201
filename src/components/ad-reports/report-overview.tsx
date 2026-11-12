@@ -413,6 +413,7 @@ function OverviewBody() {
               today={today}
               reports={state.reports}
               dailyData={state.data}
+              revenueReady={state.revenueReady}
               accounts={catalogs.adAccounts}
               assignments={catalogs.assignments}
               canAlwaysEdit={scope.managesMarketing}
@@ -727,6 +728,8 @@ function StaffSection({
 }
 
 const dash = <span className="text-muted-foreground/60">–</span>;
+/** Cột "Doanh thu ngày" — cùng màu xanh với dòng "Data xin được / Doanh thu" ở Nhập liệu. */
+const REVENUE = "bg-sky-100 text-sky-950 dark:bg-sky-900/40 dark:text-sky-50";
 const num = (value: number | null) => (value === null ? dash : formatNumber(value));
 
 /** 5 ô chỉ số (Tổng mess, Giá mess, Data, Giá data, Tỉ lệ xin số) của một dòng. */
@@ -853,6 +856,7 @@ function PersonMonth({
   today,
   reports,
   dailyData,
+  revenueReady,
   accounts,
   assignments,
   canAlwaysEdit,
@@ -869,6 +873,8 @@ function PersonMonth({
   reports: AdDailyReport[];
   /** null = chưa chạy file 010. */
   dailyData: AdDailyData[] | null;
+  /** false = chưa chạy file 018 (chưa có "Doanh thu theo ngày"). */
+  revenueReady: boolean;
   accounts: AdAccount[];
   assignments: AdAccountAssignment[];
   canAlwaysEdit: boolean;
@@ -896,6 +902,7 @@ function PersonMonth({
           totalLabel={/^Tháng/.test(label) ? "Tổng tháng" : "Tổng"}
           today={today}
           dataReady={dailyData !== null}
+          revenueReady={revenueReady && dailyData !== null}
           canAlwaysEdit={canAlwaysEdit}
           focusDay={focusDay}
           entryHref={(day) => `/marketing/nhap-lieu?ngay=${day}${showEntryStaff ? `&nv=${person.id}` : ""}`}
@@ -908,6 +915,7 @@ function PersonMonth({
           group={group}
           row={editing}
           today={today}
+          revenueReady={revenueReady}
           canAlwaysEdit={canAlwaysEdit}
           onClose={() => setEditing(null)}
           onSaved={onSaved}
@@ -922,6 +930,7 @@ function MonthTable({
   totalLabel,
   today,
   dataReady,
+  revenueReady,
   canAlwaysEdit,
   focusDay,
   entryHref,
@@ -932,6 +941,8 @@ function MonthTable({
   today: string;
   /** false = chưa chạy file 010: không nhắc "thiếu Data". */
   dataReady: boolean;
+  /** Có cột "Doanh thu ngày" (đã chạy file 018). */
+  revenueReady: boolean;
   canAlwaysEdit: boolean;
   focusDay: string | null;
   entryHref: (day: string) => string;
@@ -941,6 +952,7 @@ function MonthTable({
   const spendTotal = (account: AdAccount) =>
     group.rows.reduce((sum, row) => sum + (row.cells.get(account.id)?.spend ?? 0), 0);
   const total = group.rows.map(rowTotals).reduce(add, zero());
+  const revenueTotal = group.rows.reduce((sum, row) => sum + (row.data?.revenue ?? 0), 0);
 
   return (
     <div className="overflow-x-auto rounded-xl border bg-card">
@@ -962,6 +974,15 @@ function MonthTable({
               Tổng chi tiêu ngày
             </th>
             <MetricHeads rowSpan={2} />
+            {revenueReady && (
+              <th
+                rowSpan={2}
+                className={cn(TH, "border-b align-bottom", REVENUE)}
+                title="Doanh thu nhân viên tự nhập theo ngày (không bắt buộc)"
+              >
+                Doanh thu ngày
+              </th>
+            )}
             <th rowSpan={2} className="border-b border-l bg-muted px-3 py-2 text-left align-bottom text-xs font-medium">
               Gửi lúc
             </th>
@@ -990,6 +1011,7 @@ function MonthTable({
             ))}
             <td className={TD}>{formatNumber(total.spend)}</td>
             <MetricCells totals={total} />
+            {revenueReady && <td className={TD}>{revenueTotal > 0 ? formatNumber(revenueTotal) : dash}</td>}
             <td className="border-l" />
             <td className="border-l" />
           </tr>
@@ -1034,6 +1056,9 @@ function MonthTable({
                 })}
                 <td className={cn(TD, "font-medium")}>{sent.length > 0 ? formatNumber(totals.spend) : dash}</td>
                 <MetricCells totals={totals} empty={sent.length === 0} />
+                {revenueReady && (
+                  <td className={TD}>{!row.data ? "" : row.data.revenue === null ? dash : formatNumber(row.data.revenue)}</td>
+                )}
                 <td className="border-l px-3 py-2 align-top text-xs whitespace-nowrap">
                   {firstSent ? (
                     <div className="grid gap-1">
@@ -1106,6 +1131,7 @@ function EditDialog({
   group,
   row,
   today,
+  revenueReady,
   canAlwaysEdit,
   onClose,
   onSaved,
@@ -1113,6 +1139,8 @@ function EditDialog({
   group: Group;
   row: Row;
   today: string;
+  /** false = chưa chạy file 018 → không có ô "Doanh thu theo ngày". */
+  revenueReady: boolean;
   canAlwaysEdit: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -1124,12 +1152,16 @@ function EditDialog({
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [dataValue, setDataValue] = useState(row.data ? String(row.data.data_count) : "");
   const [dataTouched, setDataTouched] = useState(false);
+  const savedRevenue = row.data?.revenue === null || row.data?.revenue === undefined ? "" : String(row.data.revenue);
+  const [revenueValue, setRevenueValue] = useState(savedRevenue);
   const [saving, setSaving] = useState(false);
 
   const isOpen = (sent: { submitted_at: string; updated_at: string }) =>
     canAlwaysEdit || (now > 0 && editDeadline(sent) > now);
   const dataOpen = row.data !== null && isOpen(row.data);
-  const dataChanged = dataOpen && row.data !== null && dataValue !== String(row.data.data_count);
+  const revenueChanged = revenueReady && dataOpen && revenueValue !== savedRevenue;
+  const dataChanged =
+    dataOpen && row.data !== null && (dataValue !== String(row.data.data_count) || revenueChanged);
   const items: FieldItem[] = group.accounts.flatMap((account, i) => {
     const report = row.cells.get(account.id);
     if (!report) return [];
@@ -1149,7 +1181,13 @@ function EditDialog({
       for (const report of changed) {
         await updateReport(report.id, toNumbers(values[report.ad_account_id]));
       }
-      if (dataChanged && row.data) await updateDailyData(row.data.id, Number(dataValue));
+      if (dataChanged && row.data) {
+        await updateDailyData(
+          row.data.id,
+          Number(dataValue),
+          revenueReady ? (revenueValue === "" ? null : Number(revenueValue)) : undefined,
+        );
+      }
       toast.success(`Đã cập nhật báo cáo ngày ${formatDay(row.day)}`);
       onClose();
     } catch (error) {
@@ -1196,6 +1234,9 @@ function EditDialog({
                   touched: dataTouched,
                   onChange: setDataValue,
                   onTouch: () => setDataTouched(true),
+                  revenue: revenueReady
+                    ? { value: revenueValue, shown: dataOpen ? undefined : row.data.revenue, onChange: setRevenueValue }
+                    : undefined,
                 }
               : undefined
           }

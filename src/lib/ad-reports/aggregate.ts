@@ -877,3 +877,43 @@ export function scoreBoard(rows: BoardInput[], elapsed: number): BoardScore[] {
     })
     .sort((a, b) => b.score - a.score);
 }
+
+/* ------------------------------------------------------------------------------------------------ */
+/* Doanh thu theo tháng: số quản lý nhập là chính, chưa có thì cộng doanh thu theo ngày                 */
+/* ------------------------------------------------------------------------------------------------ */
+
+/** Doanh thu tháng quản lý nhập (bảng ad_revenue, file 013). `month` dạng yyyy-MM-01. */
+export type MonthlyRevenueRow = { month: string; ads_staff_id: string | null; amount: number };
+/** Doanh thu theo ngày nhân viên tự nhập (cột revenue của ads_daily_data, file 018). */
+export type DailyRevenueRow = { report_date: string; ads_staff_id: string; revenue: number | null };
+
+/**
+ * Doanh thu của từng tháng (yyyy-MM) — như bảng vinh danh trên Supabase (file 018):
+ *   • nhân viên nào trong tháng đó đã có số quản lý nhập (> 0) → dùng số của quản lý;
+ *   • chưa có (hoặc quản lý để 0) → cộng doanh thu theo ngày nhân viên đã nhập.
+ * Không bao giờ cộng cả hai (không tính trùng). `staffId` null = cả công ty: cộng từng người, thêm dòng
+ * "Chưa rõ nhân viên" của quản lý.
+ */
+export function revenueMonths(monthly: MonthlyRevenueRow[], daily: DailyRevenueRow[], staffId: string | null) {
+  const manager = new Map<string, number>();
+  const fromDays = new Map<string, number>();
+  const result = new Map<string, number>();
+  const bump = (map: Map<string, number>, key: string, value: number) => map.set(key, (map.get(key) ?? 0) + value);
+  for (const r of monthly) {
+    const month = r.month.slice(0, 7);
+    if (r.ads_staff_id === null) {
+      if (staffId === null) bump(result, month, r.amount);
+    } else if (staffId === null || r.ads_staff_id === staffId) {
+      bump(manager, `${month}|${r.ads_staff_id}`, r.amount);
+    }
+  }
+  for (const d of daily) {
+    if (d.revenue === null || (staffId !== null && d.ads_staff_id !== staffId)) continue;
+    bump(fromDays, `${d.report_date.slice(0, 7)}|${d.ads_staff_id}`, d.revenue);
+  }
+  for (const key of new Set([...manager.keys(), ...fromDays.keys()])) {
+    const set = manager.get(key) ?? 0;
+    bump(result, key.slice(0, 7), set > 0 ? set : (fromDays.get(key) ?? 0));
+  }
+  return result;
+}

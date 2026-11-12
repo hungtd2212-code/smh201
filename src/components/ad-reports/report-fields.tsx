@@ -3,7 +3,13 @@
 import { useId } from "react";
 import { Label } from "@/components/ui/label";
 import { formatNumber } from "@/lib/ad-reports/number";
-import { DATA_MAX_DIGITS, REPORT_FIELDS, type ReportField, type ReportValues } from "@/lib/ad-reports/types";
+import {
+  DATA_MAX_DIGITS,
+  REPORT_FIELDS,
+  REVENUE_MAX_DIGITS,
+  type ReportField,
+  type ReportValues,
+} from "@/lib/ad-reports/types";
 import type { AdAccount } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
 import { NumberInput } from "./number-input";
@@ -31,10 +37,22 @@ export type DataRow = {
   touched: boolean;
   onChange: (digits: string) => void;
   onTouch: () => void;
+  /** Ô "Doanh thu theo ngày" bên cạnh (không bắt buộc). Bỏ trống = không hiện (chưa chạy file 018). */
+  revenue?: RevenueCell;
+};
+
+/** Ô "Doanh thu theo ngày": không bắt buộc, để trống được. */
+export type RevenueCell = {
+  value: string;
+  /** Có = chỉ xem (đã gửi / đã khoá); null = đã gửi nhưng để trống. */
+  shown?: number | null;
+  onChange: (digits: string) => void;
 };
 
 const DATA_LABEL = "Data xin được";
 const DATA_HINT = "Tổng số điện thoại xin được trong ngày của tất cả TKQC (lấy từ trực page).";
+const REVENUE_LABEL = "Doanh thu theo ngày";
+const REVENUE_HINT = "Không bắt buộc — chưa biết thì để trống, vào Tổng quan bổ sung trong 24 giờ.";
 
 const fieldKey = (accountId: string, field: ReportField) => `${accountId}:${field}`;
 
@@ -72,18 +90,25 @@ function Required() {
   );
 }
 
-/** Ô chỉ xem (số đã gửi / đã khoá). */
-function ShownValue({ value, suffix }: { value: number; suffix?: string }) {
+/** Ô chỉ xem (số đã gửi / đã khoá). null = để trống ("–"). */
+function ShownValue({ value, suffix }: { value: number | null; suffix?: string }) {
   return (
     <div className="flex h-9 items-center justify-end rounded-lg border border-dashed px-2.5 text-sm tabular-nums">
-      {formatNumber(value)}
-      {suffix && <span className="ml-1 text-muted-foreground">{suffix}</span>}
+      {value === null ? (
+        <span className="text-muted-foreground">–</span>
+      ) : (
+        <>
+          {formatNumber(value)}
+          {suffix && <span className="ml-1 text-muted-foreground">{suffix}</span>}
+        </>
+      )}
     </div>
   );
 }
 
 /**
- * Bảng / thẻ nhập: mỗi TK ADS hai ô (Chi tiêu, Số lượng tin nhắn), bên dưới một dòng "Data xin được" chung.
+ * Bảng / thẻ nhập: mỗi TK ADS hai ô (Chi tiêu, Số lượng tin nhắn), bên dưới một dòng chung cho cả ngày:
+ * "Data xin được" (bắt buộc) và bên cạnh là "Doanh thu theo ngày" (không bắt buộc).
  */
 export function ReportFields({ items, values, touched, onChange, onTouch, layout, dayLabel, data }: Props) {
   // Mã riêng cho từng bảng nhập: trên cùng một trang có thể có hai bảng (vd hộp Sửa mở trên trang).
@@ -143,6 +168,23 @@ export function ReportFields({ items, values, touched, onChange, onTouch, layout
     );
   };
 
+  const revenue = data?.revenue;
+  const revenueInput = (prefix: string, withLabel: boolean) => {
+    if (!revenue) return null;
+    if (revenue.shown !== undefined) return <ShownValue value={revenue.shown} suffix="đ" />;
+    return (
+      <NumberInput
+        id={`${uid}${prefix}-revenue`}
+        value={revenue.value}
+        maxDigits={REVENUE_MAX_DIGITS}
+        suffix="đ"
+        label={withLabel ? undefined : REVENUE_LABEL}
+        onValueChange={revenue.onChange}
+      />
+    );
+  };
+  const revenueHint = revenue && revenue.shown === undefined ? REVENUE_HINT : null;
+
   const cards = (
     <div className={cn("grid gap-3", layout === "table" && "md:hidden")}>
       {items.map((item) => (
@@ -164,17 +206,38 @@ export function ReportFields({ items, values, touched, onChange, onTouch, layout
       {data && (
         <section className="overflow-hidden rounded-xl border bg-card">
           <div className="bg-sky-100 px-3 py-2 text-sky-950 dark:bg-sky-900/50 dark:text-sky-50">
-            <div className="font-semibold">{DATA_LABEL}</div>
+            <div className="font-semibold">{revenue ? "Cả ngày" : DATA_LABEL}</div>
             <div className="text-xs opacity-80">{data.note ?? "Chung cho tất cả TKQC"}</div>
           </div>
-          <div className="grid gap-1.5 p-3 sm:max-w-xs">
-            <Label htmlFor={`${uid}c-data`}>
-              {DATA_LABEL}
-              {data.shown === undefined && <Required />}
-            </Label>
-            {dataInput("c", true)}
-            <p className="text-xs text-muted-foreground">{DATA_HINT}</p>
-          </div>
+          {revenue ? (
+            // Hai ô cạnh nhau: Data xin được | Doanh thu theo ngày.
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 p-3 sm:max-w-xl">
+              <div className="grid content-start gap-1.5">
+                <Label htmlFor={`${uid}c-data`}>
+                  {DATA_LABEL}
+                  {data.shown === undefined && <Required />}
+                </Label>
+                {dataInput("c", true)}
+              </div>
+              <div className="grid content-start gap-1.5">
+                <Label htmlFor={`${uid}c-revenue`}>{REVENUE_LABEL}</Label>
+                {revenueInput("c", true)}
+              </div>
+              <p className="col-span-2 text-xs text-muted-foreground">
+                {DATA_HINT}
+                {revenueHint && <> {revenueHint}</>}
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-1.5 p-3 sm:max-w-xs">
+              <Label htmlFor={`${uid}c-data`}>
+                {DATA_LABEL}
+                {data.shown === undefined && <Required />}
+              </Label>
+              {dataInput("c", true)}
+              <p className="text-xs text-muted-foreground">{DATA_HINT}</p>
+            </div>
+          )}
         </section>
       )}
     </div>
@@ -232,15 +295,33 @@ export function ReportFields({ items, values, touched, onChange, onTouch, layout
             {data && (
               <tr className="border-t bg-sky-50/70 dark:bg-sky-950/30">
                 <td className="px-3 py-2.5 align-top font-medium whitespace-nowrap">
-                  {DATA_LABEL}
-                  {data.shown === undefined && <Required />}
+                  {revenue ? "Cả ngày" : DATA_LABEL}
+                  {!revenue && data.shown === undefined && <Required />}
                   <div className="text-xs font-normal text-muted-foreground">{data.note ?? "Chung cho tất cả TKQC"}</div>
                 </td>
                 <td colSpan={items.length * REPORT_FIELDS.length} className="border-l px-2 py-2 align-top">
-                  <div className="grid max-w-xs gap-1">
-                    {dataInput("t", false)}
-                    <p className="text-xs text-muted-foreground">{DATA_HINT}</p>
-                  </div>
+                  {revenue ? (
+                    <div className="grid max-w-xl grid-cols-2 gap-x-3 gap-y-1">
+                      <Label htmlFor={`${uid}t-data`} className="text-xs">
+                        {DATA_LABEL}
+                        {data.shown === undefined && <Required />}
+                      </Label>
+                      <Label htmlFor={`${uid}t-revenue`} className="text-xs">
+                        {REVENUE_LABEL}
+                      </Label>
+                      <div className="grid content-start gap-1">{dataInput("t", true)}</div>
+                      <div className="grid content-start gap-1">{revenueInput("t", true)}</div>
+                      <p className="col-span-2 text-xs text-muted-foreground">
+                        {DATA_HINT}
+                        {revenueHint && <> {revenueHint}</>}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid max-w-xs gap-1">
+                      {dataInput("t", false)}
+                      <p className="text-xs text-muted-foreground">{DATA_HINT}</p>
+                    </div>
+                  )}
                 </td>
               </tr>
             )}

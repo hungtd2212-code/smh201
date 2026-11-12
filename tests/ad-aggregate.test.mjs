@@ -5,6 +5,7 @@ import {
   metricOf, monthElapsed, monthsBetween, previousOf, shiftDay, shiftMonth, spikeAlerts, sumDays, totalsByAccount,
   totalsByDay, totalsByMonth, totalsByStaff, totalsByWeekday, weekdayOf, trackPeriods, periodElapsed, trackGoals,
   scoreBoard, planFor, splitTotal, weeksOfMonth, dailyGoals, goalOf, judge, phaseOf, previousRange, carryGoals,
+  revenueMonths,
 } from "../src/lib/ad-reports/aggregate.ts";
 
 let passed = 0;
@@ -260,5 +261,32 @@ cg = carryGoals(novBase, novWeeks, actual([80, 70, 70, 10]), "2026-12-01", "next
 ok(same(cg.plans.map((p) => p.goal), [80, 70, 70, 80]), "tuần cuối thiếu → không còn tuần để dồn");
 cg = carryGoals(dailyGoals(null, "2026-11"), novWeeks, actual([0, 0]), "2026-11-20", "spread");
 ok(cg.plans.every((p) => p.goal === null), "chưa đặt mục tiêu số → không dồn");
+console.log("\n== Doanh thu tháng: số quản lý là chính, chưa có thì cộng doanh thu ngày");
+{
+  const monthly = [
+    { month: "2026-11-01", ads_staff_id: "an", amount: 10000000 },
+    { month: "2026-11-01", ads_staff_id: "binh", amount: 0 },
+    { month: "2026-11-01", ads_staff_id: null, amount: 500000 },
+    { month: "2026-10-01", ads_staff_id: "an", amount: 3000000 },
+  ];
+  const daily = [
+    { report_date: "2026-11-02", ads_staff_id: "an", revenue: 4000000 },
+    { report_date: "2026-11-03", ads_staff_id: "an", revenue: null },
+    { report_date: "2026-11-02", ads_staff_id: "binh", revenue: 1000000 },
+    { report_date: "2026-11-05", ads_staff_id: "binh", revenue: 2500000 },
+    { report_date: "2026-11-05", ads_staff_id: "cuong", revenue: 700000 },
+    { report_date: "2026-10-31", ads_staff_id: "cuong", revenue: 100000 },
+  ];
+  ok(revenueMonths(monthly, daily, "an").get("2026-11") === 10000000, "có số quản lý → dùng số quản lý, không cộng số ngày");
+  ok(revenueMonths(monthly, daily, "binh").get("2026-11") === 3500000, "quản lý để 0 → cộng doanh thu ngày");
+  ok(revenueMonths(monthly, daily, "cuong").get("2026-11") === 700000, "chưa có số quản lý → cộng doanh thu ngày");
+  ok(revenueMonths(monthly, daily, "cuong").get("2026-10") === 100000, "tách đúng theo tháng");
+  ok(!revenueMonths(monthly, daily, "dung").has("2026-11"), "không có số nào → không có tháng đó");
+  const all = revenueMonths(monthly, daily, null);
+  ok(all.get("2026-11") === 10000000 + 3500000 + 700000 + 500000, "cả công ty = cộng từng người + dòng chưa rõ nhân viên", [...all]);
+  ok(all.get("2026-10") === 3000000 + 100000, "cả công ty tháng 10");
+  ok(revenueMonths([], [], null).size === 0, "chưa có gì → rỗng");
+}
+
 console.log(`\n${passed} ok, ${failed} lỗi`);
 if (failed > 0) process.exit(1);

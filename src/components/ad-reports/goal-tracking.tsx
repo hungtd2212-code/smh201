@@ -10,6 +10,7 @@ import {
   monthsBetween,
   periodElapsed,
   planFor,
+  revenueMonths,
   sumDays,
   totalsByDay,
   trackGoals,
@@ -23,7 +24,7 @@ import type { AdAccountAssignment } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
 import { GlassBar, TONE_DOT, TONE_TEXT, shortMoney, type Tone } from "./glass";
 import { useAdReports } from "./hooks";
-import { revenueByMonth, useRevenue } from "./revenue";
+import { useRevenue } from "./revenue";
 import { StatsError } from "./shared";
 import type { TargetsState } from "./targets";
 
@@ -139,13 +140,18 @@ export function GoalTrackingSection({
   }
   const targets = targetsState.status === "ready" ? targetsState.targets : [];
   const targetOf = (month: string) => targetFor(targets, staffId, month);
-  const revenueMonths = revenue.status === "ready" ? revenueByMonth(revenue.rows, staffId) : new Map<string, number>();
+  // Doanh thu tháng: số quản lý nhập là chính, tháng nào chưa có thì cộng doanh thu theo ngày nhân viên đã nhập.
+  const moneyByMonth = revenueMonths(
+    revenue.status === "ready" ? revenue.rows : [],
+    state.status === "ready" ? (state.data ?? []) : [],
+    staffId,
+  );
   const thisMonth = today.slice(0, 7);
   const columns = trackPeriods(today).map((period) => {
     const elapsed = periodElapsed(period, today);
     const actual = sumDays(byDay, daysBetween(period.from, today < period.to ? today : period.to));
     const lastMonth = thisMonth < period.to.slice(0, 7) ? thisMonth : period.to.slice(0, 7);
-    const money = monthsBetween(period.from.slice(0, 7), lastMonth).reduce((s, m) => s + (revenueMonths.get(m) ?? 0), 0);
+    const money = monthsBetween(period.from.slice(0, 7), lastMonth).reduce((s, m) => s + (moneyByMonth.get(m) ?? 0), 0);
     // Chỉ hiện những chỉ số đã đặt mục tiêu.
     const items = trackGoals(actual, money, planFor(period, today, targetOf)).filter((i) => i.goal !== null);
     return { period, elapsed, items };

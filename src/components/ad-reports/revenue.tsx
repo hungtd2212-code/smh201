@@ -19,12 +19,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { monthsBetween, shiftMonth } from "@/lib/ad-reports/aggregate";
+import { lastDayOf, monthsBetween, shiftMonth } from "@/lib/ad-reports/aggregate";
 import { monthLabel } from "@/lib/ad-reports/dates";
 import { fetchRevenue, saveRevenue, type AdRevenue } from "@/lib/ad-reports/revenue";
+import type { AdDailyData } from "@/lib/ad-reports/types";
 import type { AdsStaff } from "@/lib/catalog/types";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { cn } from "@/lib/utils";
+import { useAdReports } from "./hooks";
 import { NumberInput } from "./number-input";
 
 /** Doanh thu tháng mang về từ quảng cáo: tải và nhập (Quản trị / Trưởng Marketing). */
@@ -60,17 +62,6 @@ export function useRevenue(fromMonth: string, toMonth: string) {
   return { state: loaded?.key === key ? loaded.state : ({ status: "loading" } as RevenueState), reload };
 }
 
-/** Tổng doanh thu theo tháng của một người (staffId) hoặc của tất cả (null, gồm cả dòng chưa rõ nhân viên). */
-export function revenueByMonth(rows: AdRevenue[], staffId: string | null) {
-  const result = new Map<string, number>();
-  for (const r of rows) {
-    if (staffId !== null && r.ads_staff_id !== staffId) continue;
-    const month = r.month.slice(0, 7);
-    result.set(month, (result.get(month) ?? 0) + r.amount);
-  }
-  return result;
-}
-
 export function RevenueDialog({
   people,
   today,
@@ -85,6 +76,8 @@ export function RevenueDialog({
   const thisMonth = today.slice(0, 7);
   const [month, setMonth] = useState(thisMonth);
   const { state } = useRevenue(month, month);
+  // Doanh thu theo ngày nhân viên tự nhập trong tháng — để quản lý đối chiếu.
+  const { state: days } = useAdReports(`${month}-01`, lastDayOf(month));
   const options = monthsBetween(shiftMonth(thisMonth, -11), thisMonth).reverse();
 
   return (
@@ -94,7 +87,8 @@ export function RevenueDialog({
           <DialogTitle>Doanh thu từ quảng cáo</DialogTitle>
           <DialogDescription>
             Doanh thu tháng do khách đến từ quảng cáo mang về, ghi cho nhân viên Ads phụ trách. Dùng để tính tỉ lệ chi phí
-            ads / doanh thu, so mục tiêu doanh thu và xếp hạng vinh danh. (Khi có phân hệ Thu ngân sẽ tự tính.)
+            ads / doanh thu, so mục tiêu doanh thu và xếp hạng vinh danh. Số bạn nhập ở đây là chính; để trống thì dùng
+            tổng “Doanh thu theo ngày” nhân viên đã nhập. (Khi có phân hệ Thu ngân sẽ tự tính.)
           </DialogDescription>
         </DialogHeader>
         <Select value={month} onValueChange={setMonth}>
@@ -109,7 +103,7 @@ export function RevenueDialog({
             ))}
           </SelectContent>
         </Select>
-        {state.status === "loading" ? (
+        {state.status === "loading" || days.status === "loading" ? (
           <Skeleton className="h-48 w-full rounded-lg" />
         ) : state.status === "not-migrated" ? (
           <p className="text-sm text-amber-700 dark:text-amber-300">
@@ -118,23 +112,43 @@ export function RevenueDialog({
         ) : state.status === "error" ? (
           <p className="text-sm text-destructive">{state.message}</p>
         ) : (
-          <RevenueForm key={month} month={month} people={people} rows={state.rows} onClose={onClose} onSaved={onSaved} />
+          <RevenueForm
+            key={month}
+            month={month}
+            people={people}
+            rows={state.rows}
+            daily={dailySums(days.status === "ready" ? (days.data ?? []) : [])}
+            onClose={onClose}
+            onSaved={onSaved}
+          />
         )}
       </DialogContent>
     </Dialog>
   );
 }
 
+/** Tổng doanh thu theo ngày của từng nhân viên (chỉ những người có nhập). */
+function dailySums(data: AdDailyData[]) {
+  const sums = new Map<string, number>();
+  for (const d of data) {
+    if (d.revenue !== null) sums.set(d.ads_staff_id, (sums.get(d.ads_staff_id) ?? 0) + d.revenue);
+  }
+  return sums;
+}
+
 function RevenueForm({
   month,
   people,
   rows,
+  daily,
   onClose,
   onSaved,
 }: {
   month: string;
   people: AdsStaff[];
   rows: AdRevenue[];
+  /** Tổng doanh thu theo ngày nhân viên đã nhập trong tháng. */
+  daily: Map<string, number>;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -149,7 +163,10 @@ function RevenueForm({
   const [drafts, setDrafts] = useState<Record<string, string>>(() => Object.fromEntries(lines.map((l) => [l.key, initial(l)])));
   const [saving, setSaving] = useState(false);
   const changed = lines.filter((l) => drafts[l.key] !== initial(l) && !(drafts[l.key] === "" && !l.existing));
-  const total = lines.reduce((s, l) => s + Number(drafts[l.key] || 0), 0);
+  const fromDays = (l: (typeof lines)[number]) => (l.staffId ? daily.get(l.staffId) : undefined);
+  // Số đang dùng của từng dòng: số quản lý nhập (> 0), không thì tổng doanh thu theo ngày.
+  const used = (l: (typeof lines)[number]) => Number(drafts[l.key] || 0) || (fromDays(l) ?? 0);
+  const total = lines.reduce((s, l) => s + used(l), 0);
 
   async function save() {
     setSaving(true);
@@ -174,7 +191,22 @@ function RevenueForm({
           <tbody>
             {lines.map((l) => (
               <tr key={l.key} className={cn("border-b last:border-0", l.staffId === null && "bg-muted/50")}>
-                <td className="px-3 py-1.5 font-medium">{l.name}</td>
+                <td className="px-3 py-1.5">
+                  <div className="font-medium">{l.name}</div>
+                  {fromDays(l) !== undefined && (
+                    <div
+                      className={cn(
+                        "text-xs tabular-nums",
+                        // Quản lý đã nhập số → số theo ngày không dùng nữa (gạch đi).
+                        Number(drafts[l.key] || 0) > 0
+                          ? "text-muted-foreground line-through"
+                          : "text-sky-700 dark:text-sky-300",
+                      )}
+                    >
+                      Theo ngày: {(fromDays(l) ?? 0).toLocaleString("vi-VN")}đ
+                    </div>
+                  )}
+                </td>
                 <td className="w-56 border-l px-2 py-1.5">
                   <NumberInput
                     id={`${idPrefix}-${l.key}`}
@@ -188,7 +220,7 @@ function RevenueForm({
               </tr>
             ))}
             <tr className="bg-accent font-semibold text-accent-foreground">
-              <td className="px-3 py-2">Tổng</td>
+              <td className="px-3 py-2">Tổng (đang dùng)</td>
               <td className="border-l px-3 py-2 text-right tabular-nums">{total.toLocaleString("vi-VN")}đ</td>
             </tr>
           </tbody>
