@@ -1,3 +1,5 @@
+import { addAdAccount, saveCatalogRow } from "@/lib/catalog/repo";
+import type { AdAccount, AdAccountAssignment, AdAccountKind, AdPaymentKind, AdsStaff } from "@/lib/catalog/types";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   dataKey,
@@ -15,6 +17,75 @@ import { fetchDailyData, fetchReports } from "./repo";
 import { fetchRevenue } from "./revenue";
 
 /** Nhập từ Excel — phần tải file mẫu, đọc file, đọc số đã có và ghi vào Supabase. */
+
+/**
+ * Danh mục mới nhất để khớp dữ liệu (nhân viên Ads, TKQC, phân công) — đọc thẳng từ máy chủ mỗi lần bấm, để
+ * nhân viên / TKQC vừa tạo (kể cả ở tab khác, trang TKQC & Page) được tính ngay.
+ */
+export async function loadImportCatalog(today: string): Promise<ImportCatalog> {
+  const supabase = getSupabaseBrowserClient();
+  const [staff, accounts, assignments] = await Promise.all([
+    supabase.from("ads_staff").select("id, full_name, staff_code, user_id, is_active, note, deleted_at").is("deleted_at", null),
+    supabase
+      .from("ad_accounts")
+      .select("id, name, account_id, channel_id, account_kind, payment_kind, is_active, note, created_at, deleted_at")
+      .is("deleted_at", null)
+      .order("created_at"),
+    supabase
+      .from("ad_account_assignments")
+      .select("id, ad_account_id, ads_staff_id, from_date, to_date, note, deleted_at")
+      .is("deleted_at", null),
+  ]);
+  const failed = staff.error ?? accounts.error ?? assignments.error;
+  if (failed) throw new Error(`Không đọc được danh mục: ${failed.message}`);
+  return {
+    staff: staff.data as AdsStaff[],
+    accounts: accounts.data as AdAccount[],
+    assignments: assignments.data as AdAccountAssignment[],
+    today,
+  };
+}
+
+/** Gợi ý "Tạo nhân viên Ads" khi tên trong file chưa có. Trả về id người vừa tạo. */
+export async function createAdsStaff(fullName: string, active: boolean): Promise<string> {
+  const name = fullName.replace(/\s+/g, " ").trim();
+  if (!name) throw new Error("Nhập họ tên nhân viên Ads");
+  const { data, error } = await getSupabaseBrowserClient()
+    .from("ads_staff")
+    .insert({ full_name: name, is_active: active })
+    .select("id")
+    .single();
+  if (error) {
+    if (error.code === "23505") throw new Error(`Đã có nhân viên Ads tên "${name}" — chọn người đó thay vì tạo mới.`);
+    if (/row-level security|permission denied/i.test(error.message)) {
+      throw new Error("Chỉ Quản trị và Trưởng Marketing tạo được nhân viên Ads.");
+    }
+    throw new Error(error.message);
+  }
+  return (data as { id: string }).id;
+}
+
+/**
+ * Gợi ý "Tạo TKQC" khi TKQC trong file chưa có: tạo cho đúng người ở tab đó (phụ trách từ trước tới nay, như khai
+ * báo ở Cài đặt TKQC). `stopped` = TKQC đã ngừng chạy → chuyển sang Ngừng dùng để không hiện ở Nhập liệu.
+ */
+export async function createAdAccount(values: {
+  name: string;
+  accountNo: string;
+  accountKind: AdAccountKind;
+  paymentKind: AdPaymentKind;
+  adsStaffId: string;
+  stopped: boolean;
+}) {
+  const id = await addAdAccount({
+    name: values.name,
+    accountId: values.accountNo,
+    accountKind: values.accountKind,
+    paymentKind: values.paymentKind,
+    adsStaffId: values.adsStaffId,
+  });
+  if (values.stopped && id) await saveCatalogRow("ad_accounts", id, { is_active: false });
+}
 
 /** Tải file mẫu của một tháng (yyyy-MM): mỗi nhân viên Ads một tab, cột là TKQC họ phụ trách tháng đó. */
 export async function downloadTemplate(month: string, catalog: ImportCatalog) {

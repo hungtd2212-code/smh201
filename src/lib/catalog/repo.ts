@@ -305,8 +305,8 @@ export async function addAdAccount(values: {
   accountKind: AdAccountKind;
   paymentKind: AdPaymentKind;
   adsStaffId: string | null;
-}): Promise<void> {
-  const { error } = await getSupabaseBrowserClient().rpc("add_ad_account", {
+}): Promise<string> {
+  const { data, error } = await getSupabaseBrowserClient().rpc("add_ad_account", {
     p_name: values.name,
     p_account_id: values.accountId,
     p_account_kind: values.accountKind,
@@ -314,6 +314,7 @@ export async function addAdAccount(values: {
     p_ads_staff_id: values.adsStaffId,
   });
   if (error) throw setupError(error);
+  return data as string;
 }
 
 /**

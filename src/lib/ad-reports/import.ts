@@ -1,14 +1,17 @@
 import type { AdAccount, AdAccountAssignment, AdsStaff } from "../catalog/types";
 
 /**
- * Nhập số liệu quảng cáo cũ từ file Excel (.xlsx) — phần đọc và kiểm tra, không gọi máy chủ.
+ * Nhập số liệu quảng cáo cũ từ file Excel (.xlsx) — phần đọc và khớp dữ liệu, không gọi máy chủ.
  *
  * File (xem "File mẫu" ở Marketing → Tổng quan → Nhập từ Excel):
- *   • Mỗi tab một nhân viên Ads: ô "Nhân viên Ads:" ghi tên (không có thì lấy tên tab), dòng tiêu đề bắt đầu bằng
- *     ô "Ngày", sau đó mỗi cột một TKQC (ghi chi tiêu, đồng), rồi các cột "Mess", "Data", "Doanh thu". Mỗi dòng
- *     một ngày — giống sheet báo cáo tháng đang dùng.
+ *   • Mỗi tab một nhân viên Ads: ô "Nhân viên Ads:" ghi tên (không có thì lấy tên tab); dòng "ID TKQC:" ghi ID tài
+ *     khoản quảng cáo của từng cột; dòng tiêu đề bắt đầu bằng ô "Ngày", sau đó mỗi cột một TKQC (ghi chi tiêu, đồng),
+ *     rồi các cột "Mess", "Data", "Doanh thu". Mỗi dòng một ngày — giống sheet báo cáo tháng đang dùng.
  *   • Tab "Doanh thu tháng": Tháng | Nhân viên Ads | Doanh thu.
  *   • Tab "Hướng dẫn" và các tab không có dòng tiêu đề như trên được bỏ qua.
+ *
+ * Khớp dữ liệu: TKQC khớp theo ID tài khoản quảng cáo (không có ID thì theo tên); nhân viên khớp theo tên (người
+ * dùng chọn được người có sẵn cho một tên trong file). Chỗ chưa khớp trả về `mismatches` kèm gợi ý.
  *
  * Sheet cũ chỉ có tổng mess cả ngày, còn phần mềm ghi mess theo từng TKQC → mess của ngày ghi vào TKQC chi
  * nhiều nhất hôm đó (tổng của từng người vẫn đúng).
@@ -28,8 +31,52 @@ export type ImportCatalog = {
   today: string;
 };
 
-/** Lỗi phải sửa trong file. Còn lỗi thì không cho nhập. `row` = số dòng như Excel hiện (bắt đầu từ 1). */
+export type ParseOptions = {
+  /** Tên nhân viên trong file (khoá `nameKey`) → id nhân viên Ads có sẵn mà người dùng đã chọn. */
+  staffMap?: Record<string, string>;
+};
+
+/** Lỗi số liệu phải sửa trong file. `row` = số dòng như Excel hiện (bắt đầu từ 1). */
 export type ImportIssue = { sheet: string; row: number | null; message: string };
+
+/** Tên nhân viên trong file chưa có trong phần mềm. */
+export type StaffMismatch = {
+  kind: "staff";
+  /** nameKey của tên trong file — dùng làm khoá cho `staffMap`. */
+  key: string;
+  name: string;
+  sheets: string[];
+  /** Nhân viên có sẵn có tên gần giống (vd "Dương" → "Dương Ads"). */
+  suggestions: { id: string; name: string }[];
+};
+
+/** TKQC trong file chưa có trong phần mềm (không thấy ID, hoặc không thấy tên khi file không có ID). */
+export type AccountMismatch = {
+  kind: "account";
+  key: string;
+  name: string;
+  /** ID tài khoản quảng cáo ghi trong file (null = file không ghi ID). */
+  accountNo: string | null;
+  staffId: string;
+  staffName: string;
+  sheets: string[];
+  days: string[];
+};
+
+/** TKQC có trong phần mềm nhưng ngày đó không do người ở tab này phụ trách. */
+export type OwnerMismatch = {
+  kind: "owner";
+  key: string;
+  accountName: string;
+  accountNo: string | null;
+  staffName: string;
+  /** null = ngày đó TKQC chưa có ai phụ trách. */
+  ownerName: string | null;
+  sheets: string[];
+  days: string[];
+};
+
+export type Mismatch = StaffMismatch | AccountMismatch | OwnerMismatch;
 
 export type DayRow = {
   sheet: string;
@@ -60,9 +107,14 @@ export type MonthRow = {
 export type ParsedWorkbook = {
   people: StaffDays[];
   months: MonthRow[];
+  /** Chỗ chưa khớp với phần mềm (nhân viên, TKQC, người phụ trách) — kèm gợi ý cách sửa. */
+  mismatches: Mismatch[];
+  /** Lỗi số liệu trong file (ngày sai, ô không phải số…). */
   issues: ImportIssue[];
-  /** Ghi chú không chặn việc nhập (vd tab bị bỏ qua, tab thiếu cột Mess). */
+  /** Ghi chú không chặn việc nhập (vd tab bị bỏ qua, TKQC khớp theo ID nhưng khác tên). */
   notes: string[];
+  /** Số TKQC trong file đã khớp (theo ID / theo tên). */
+  matchedAccounts: { byId: number; byName: number };
   /** Khoảng ngày trong file — để tải số đã có trong phần mềm. null = không có ngày nào. */
   dayRange: { from: string; to: string } | null;
   monthRange: { from: string; to: string } | null;
@@ -86,7 +138,7 @@ export type StaffSummary = {
   messages: number;
   data: number;
   revenue: number;
-  /** Số dòng sẽ thêm mới / bỏ qua vì đã có. */
+  /** Số ngày sẽ thêm mới / bỏ qua vì đã có. */
   newDays: number;
   existingDays: number;
 };
@@ -108,7 +160,7 @@ export const REVENUE_MAX = 9_999_999_999_999;
 // Chữ và số
 // ---------------------------------------------------------------------------
 
-/** Bỏ dấu, chữ thường, gộp khoảng trắng — chỉ dùng để nhận ra tiêu đề cột cố định. */
+/** Bỏ dấu, chữ thường, gộp khoảng trắng — chỉ dùng để nhận ra tiêu đề cột cố định và gợi ý tên gần giống. */
 export const fold = (text: string) =>
   text
     .normalize("NFD")
@@ -150,6 +202,22 @@ export function toNumber(cell: Cell | undefined): number | null | "bad" {
   else if (/^\d{1,3}(,\d{3})+$/.test(text)) text = text.replace(/,/g, "");
   if (!/^\d+$/.test(text)) return "bad";
   return negative ? -Number(text) : Number(text);
+}
+
+/**
+ * ID tài khoản quảng cáo như phần mềm lưu: chỉ chữ số (5–30 số), bỏ khoảng trắng và tiền tố "act_" (giống
+ * add_ad_account). Trống → null. Sai → "bad".
+ */
+export function toAccountNo(cell: Cell | undefined): string | null | "bad" {
+  if (isBlank(cell ?? null)) return null;
+  let text: string;
+  if (typeof cell === "number") {
+    if (!Number.isFinite(cell) || cell < 0 || !Number.isInteger(cell)) return "bad";
+    text = Number.isSafeInteger(cell) ? String(cell) : cell.toFixed(0);
+  } else if (typeof cell === "string") {
+    text = cell.toLowerCase().replace(/[\s '’]/g, "").replace(/^act_/, "");
+  } else return "bad";
+  return /^\d{5,30}$/.test(text) ? text : "bad";
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -228,8 +296,25 @@ export function dayRanges(days: string[]) {
   return parts.join(", ");
 }
 
+// Từ không mang nghĩa khi so tên gần giống: "A Hưng", "Dương Ads", "C Hằng"…
+const NAME_STOP = new Set(["ads", "ad", "a", "anh", "c", "chi", "e", "em", "mkt", "nv", "marketing"]);
+const nameTokens = (name: string) => fold(name).split(/[^a-z0-9]+/).filter((t) => t !== "" && !NAME_STOP.has(t));
+
+/** Nhân viên có sẵn có tên gần giống `name` (chung ít nhất một chữ, không kể dấu), tối đa 3 người. */
+export function similarStaff(name: string, staff: AdsStaff[]) {
+  const wanted = nameTokens(name);
+  if (wanted.length === 0) return [];
+  return staff
+    .filter((p) => !p.deleted_at)
+    .map((p) => ({ p, score: nameTokens(p.full_name).filter((t) => wanted.includes(t)).length }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || a.p.full_name.localeCompare(b.p.full_name, "vi"))
+    .slice(0, 3)
+    .map(({ p }) => ({ id: p.id, name: p.full_name }));
+}
+
 // ---------------------------------------------------------------------------
-// Đọc file
+// Đọc và khớp file
 // ---------------------------------------------------------------------------
 
 type Role = "day" | "messages" | "data" | "revenue" | "ignore" | "account";
@@ -239,6 +324,7 @@ const DATA_HEADERS = ["data", "data xin duoc", "so data", "tong data"];
 const REVENUE_HEADERS = ["doanh thu", "doanh thu theo ngay", "doanh thu ngay"];
 // Cột tính sẵn trong sheet cũ (tổng, giá, tỉ lệ…) → bỏ qua, phần mềm tự tính lại.
 const IGNORED = /^(tong |gia |ti le|ty le|doanh so|chi tieu|ghi chu|ho va ten|ho ten|ma nhan vien|nhan vien|ads ?\/)/;
+const ID_ROW_LABELS = ["id tkqc", "id tk qc", "id tai khoan", "id tai khoan quang cao", "id tk ads", "id"];
 
 /** Vai trò của một cột theo chữ ở dòng tiêu đề. Còn lại là tên TKQC. */
 export function columnRole(header: Cell | undefined): Role {
@@ -254,56 +340,64 @@ export function columnRole(header: Cell | undefined): Role {
 
 const firstFilled = (row: Cell[] | undefined) => (row ?? []).findIndex((cell) => !isBlank(cell));
 
-/** Dòng tiêu đề: dòng đầu tiên (trong 20 dòng đầu) có ô đầu tiên khác trống là `word` (bỏ dấu). */
-function headerRow(data: Cell[][], word: string) {
-  for (let r = 0; r < Math.min(data.length, 20); r++) {
+/** Dòng (trong 20 dòng đầu) có ô đầu tiên khác trống thuộc `words` (bỏ dấu). -1 = không có. */
+function rowStartingWith(data: Cell[][], words: string[], before = 20) {
+  for (let r = 0; r < Math.min(data.length, before); r++) {
     const c = firstFilled(data[r]);
-    if (c >= 0 && fold(cellText(data[r][c])) === word) return r;
+    if (c >= 0 && words.includes(fold(cellText(data[r][c])))) return r;
   }
   return -1;
 }
 
 /** Tên nhân viên ghi ở ô sau "Nhân viên Ads:" phía trên dòng tiêu đề. */
 function staffNameAbove(data: Cell[][], header: number) {
-  for (let r = 0; r < header; r++) {
-    const row = data[r] ?? [];
-    const c = firstFilled(row);
-    if (c < 0 || !["nhan vien ads", "nhan vien"].includes(fold(cellText(row[c])))) continue;
-    const name = row.slice(c + 1).find((cell) => !isBlank(cell));
-    if (name !== undefined) return cellText(name);
-  }
-  return null;
+  const r = rowStartingWith(data, ["nhan vien ads", "nhan vien"], header);
+  if (r < 0) return null;
+  const row = data[r] ?? [];
+  const name = row.slice(firstFilled(row) + 1).find((cell) => !isBlank(cell));
+  return name === undefined ? null : cellText(name);
 }
 
 /** Excel không cho tên tab có [ ] : * ? / \ và dài quá 31 ký tự. */
 export const safeSheetName = (name: string) => name.replace(/[[\]:*?/\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 31);
 
-export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog): ParsedWorkbook {
+/** TKQC của một cột: đã khớp, chưa có trong phần mềm, hoặc ID sai. */
+type ColumnAccount =
+  | { status: "ok"; account: AdAccount }
+  | { status: "missing"; name: string; accountNo: string | null }
+  | { status: "bad" };
+
+export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog, options: ParseOptions = {}): ParsedWorkbook {
   const issues: ImportIssue[] = [];
   const notes: string[] = [];
-  const staffByName = new Map<string, AdsStaff[]>();
-  for (const p of catalog.staff.filter((s) => !s.deleted_at)) {
-    const key = nameKey(p.full_name);
-    staffByName.set(key, [...(staffByName.get(key) ?? []), p]);
-  }
-  const accountByName = new Map(catalog.accounts.filter((a) => !a.deleted_at).map((a) => [nameKey(a.name), a]));
+  const liveStaff = catalog.staff.filter((s) => !s.deleted_at);
+  const staffByName = new Map(liveStaff.map((p) => [nameKey(p.full_name), p]));
+  const liveAccounts = catalog.accounts.filter((a) => !a.deleted_at);
+  const accountByName = new Map(liveAccounts.map((a) => [nameKey(a.name), a]));
+  const accountByNo = new Map(liveAccounts.flatMap((a) => (a.account_id ? [[a.account_id, a] as const] : [])));
   const assignments = catalog.assignments.filter((x) => !x.deleted_at);
   const ownerOn = (accountId: string, day: string) =>
     assignments.find((x) => x.ad_account_id === accountId && x.from_date <= day && (!x.to_date || x.to_date >= day))
       ?.ads_staff_id ?? null;
   const staffName = (id: string) => catalog.staff.find((s) => s.id === id)?.full_name ?? "người khác";
 
-  const findStaff = (sheet: string, row: number | null, name: string) => {
-    const found = staffByName.get(nameKey(name)) ?? [];
-    if (found.length === 1) return found[0];
-    issues.push({
-      sheet,
-      row,
-      message:
-        found.length > 1
-          ? `Có ${found.length} nhân viên Ads cùng tên "${name}" — đổi tên cho khác nhau ở Marketing → Nhân viên Ads`
-          : `Không có nhân viên Ads tên "${name}" trong phần mềm — ghi đúng tên như ở Marketing → Nhân viên Ads`,
-    });
+  const staffMismatches = new Map<string, StaffMismatch>();
+  const accountMismatches = new Map<string, AccountMismatch>();
+  const ownerMismatches = new Map<string, OwnerMismatch>();
+  const matched = { byId: new Set<string>(), byName: new Set<string>() };
+  const addSheet = (list: string[], sheet: string) => {
+    if (!list.includes(sheet)) list.push(sheet);
+  };
+
+  /** Nhân viên Ads của một tên trong file: người dùng đã chọn → đúng tên → chưa khớp (ghi gợi ý). */
+  const findStaff = (sheet: string, name: string) => {
+    const key = nameKey(name);
+    const mapped = options.staffMap?.[key];
+    const person = (mapped ? liveStaff.find((s) => s.id === mapped) : undefined) ?? staffByName.get(key);
+    if (person) return person;
+    const entry = staffMismatches.get(key) ?? { kind: "staff", key, name, sheets: [], suggestions: similarStaff(name, liveStaff) };
+    addSheet(entry.sheets, sheet);
+    staffMismatches.set(key, entry);
     return null;
   };
 
@@ -318,7 +412,7 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog): 
 
     // ---- Tab "Doanh thu tháng" ----
     if (name.includes("doanh thu thang")) {
-      const header = headerRow(data, "thang");
+      const header = rowStartingWith(data, ["thang"]);
       if (header < 0) {
         notes.push(`Bỏ qua tab "${sheet}": không thấy dòng tiêu đề bắt đầu bằng ô "Tháng".`);
         continue;
@@ -337,7 +431,6 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog): 
         const amount = toNumber(row[amountCol]);
         const month = toMonth(row[monthCol]);
         const who = cellText(row[staffCol] ?? null);
-        if (amount === null && month === null && who === "") continue;
         if (amount === null || amount === 0) continue; // trống / 0 = dùng doanh thu theo ngày
         if (amount === "bad" || amount < 0 || !Number.isInteger(amount) || amount > REVENUE_MAX) {
           issues.push({ sheet, row: rowNo, message: `Doanh thu "${cellText(row[amountCol] ?? null)}" không phải số tiền hợp lệ` });
@@ -352,7 +445,7 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog): 
           continue;
         }
         const unassigned = who === "" || ["chua ro", "chua ro nhan vien"].includes(fold(who));
-        const person = unassigned ? null : findStaff(sheet, rowNo, who);
+        const person = unassigned ? null : findStaff(sheet, who);
         if (!unassigned && !person) continue;
         const key = `${month}|${person?.id ?? ""}`;
         const before = seenMonth.get(key);
@@ -371,7 +464,7 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog): 
     }
 
     // ---- Tab của một nhân viên Ads ----
-    const header = headerRow(data, "ngay");
+    const header = rowStartingWith(data, ["ngay"]);
     if (header < 0) {
       notes.push(`Bỏ qua tab "${sheet}": không thấy dòng tiêu đề bắt đầu bằng ô "Ngày" (dùng đúng file mẫu).`);
       continue;
@@ -379,24 +472,65 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog): 
     const titles = data[header] ?? [];
     const roles = titles.map(columnRole);
     const dayCol = roles.indexOf("day");
-    const colOf = (role: Role) => roles.indexOf(role);
-    const messagesCol = colOf("messages");
-    const dataCol = colOf("data");
-    const revenueCol = colOf("revenue");
+    const messagesCol = roles.indexOf("messages");
+    const dataCol = roles.indexOf("data");
+    const revenueCol = roles.indexOf("revenue");
     const accountCols = roles.flatMap((role, c) => (role === "account" ? [c] : []));
-    const who = staffNameAbove(data, header) ?? sheet;
-    const staff = findStaff(sheet, null, who);
-    if (!staff) continue;
+    const staff = findStaff(sheet, staffNameAbove(data, header) ?? sheet);
+    if (!staff) continue; // khớp nhân viên trước, rồi mới kiểm tra được TKQC của người đó
     if (messagesCol < 0) notes.push(`Tab "${sheet}" không có cột "Mess" — mess được tính là 0.`);
     if (dataCol < 0) notes.push(`Tab "${sheet}" không có cột "Data" — data được tính là 0.`);
 
     const person = people.get(staff.id) ?? { staff, sheets: [], days: [] };
-    if (!person.sheets.includes(sheet)) person.sheets.push(sheet);
+    addSheet(person.sheets, sheet);
     people.set(staff.id, person);
 
-    const unknownAccounts = new Map<number, number>(); // cột → số ô có số
-    const noOwner = new Map<string, string[]>(); // TKQC → các ngày chưa ai phụ trách
-    const otherOwner = new Map<string, { owner: string; days: string[] }>(); // `${TKQC}|${người}` → các ngày
+    // TKQC của từng cột: theo ID ở dòng "ID TKQC" (nếu có), không có ID thì theo tên ở dòng tiêu đề.
+    const idRowIndex = rowStartingWith(data, ID_ROW_LABELS, header);
+    const idRow = idRowIndex >= 0 ? (data[idRowIndex] ?? []) : [];
+    const columnAccount = new Map<number, ColumnAccount>();
+    const usedBy = new Map<string, number>();
+    for (const c of accountCols) {
+      const title = cellText(titles[c] ?? null);
+      const no = toAccountNo(idRow[c]);
+      let found: AdAccount | undefined;
+      if (no === "bad") {
+        // Chỉ báo khi cột có số (cột trống không nhập gì).
+        columnAccount.set(c, { status: "bad" });
+        if (data.slice(header + 1).some((row) => toNumber(row?.[c]) !== null)) {
+          issues.push({
+            sheet,
+            row: idRowIndex + 1,
+            message: `Ô ${columnName(c)}${idRowIndex + 1}: ID TKQC "${cellText(idRow[c] ?? null)}" không hợp lệ — ID chỉ gồm chữ số, vd 123456789012345`,
+          });
+        }
+        continue;
+      }
+      if (no) {
+        found = accountByNo.get(no);
+        if (found) {
+          matched.byId.add(found.id);
+          if (nameKey(found.name) !== nameKey(title)) {
+            notes.push(`Tab "${sheet}", cột "${title}": khớp theo ID ${no} với TKQC "${found.name}" trong phần mềm.`);
+          }
+        }
+      } else {
+        found = accountByName.get(nameKey(title));
+        if (found) matched.byName.add(found.id);
+      }
+      if (!found) {
+        columnAccount.set(c, { status: "missing", name: title, accountNo: no });
+        continue;
+      }
+      const other = usedBy.get(found.id);
+      if (other !== undefined) {
+        issues.push({ sheet, row: header + 1, message: `Cột ${columnName(other)} và cột ${columnName(c)} cùng là TKQC "${found.name}"` });
+        columnAccount.set(c, { status: "bad" });
+        continue;
+      }
+      usedBy.set(found.id, c);
+      columnAccount.set(c, { status: "ok", account: found });
+    }
 
     for (let r = header + 1; r < data.length; r++) {
       const row = data[r] ?? [];
@@ -462,27 +596,49 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog): 
 
       const spends: DayRow["spends"] = [];
       for (const c of accountCols) {
-        const raw = toNumber(row[c]);
-        if (raw === null) continue;
-        const account = accountByName.get(nameKey(cellText(titles[c] ?? null)));
-        if (!account) {
-          unknownAccounts.set(c, (unknownAccounts.get(c) ?? 0) + 1);
+        if (toNumber(row[c]) === null) continue;
+        const col = columnAccount.get(c);
+        if (!col || col.status === "bad") {
           ok = false;
           continue;
         }
+        if (col.status === "missing") {
+          const key = `${col.accountNo ?? nameKey(col.name)}|${staff.id}`;
+          const entry = accountMismatches.get(key) ?? {
+            kind: "account",
+            key,
+            name: col.name,
+            accountNo: col.accountNo,
+            staffId: staff.id,
+            staffName: staff.full_name,
+            sheets: [],
+            days: [],
+          };
+          addSheet(entry.sheets, sheet);
+          entry.days.push(day);
+          accountMismatches.set(key, entry);
+          ok = false;
+          continue;
+        }
+        const { account } = col;
         const spend = number(c, `chi tiêu ${account.name}`, SPEND_MAX, false);
         if (spend === null) continue;
         const owner = ownerOn(account.id, day);
-        if (owner === null) {
-          noOwner.set(account.name, [...(noOwner.get(account.name) ?? []), day]);
-          ok = false;
-          continue;
-        }
         if (owner !== staff.id) {
-          const key = `${account.name}|${owner}`;
-          const entry = otherOwner.get(key) ?? { owner, days: [] };
+          const key = `${account.id}|${staff.id}|${owner ?? ""}`;
+          const entry = ownerMismatches.get(key) ?? {
+            kind: "owner",
+            key,
+            accountName: account.name,
+            accountNo: account.account_id,
+            staffName: staff.full_name,
+            ownerName: owner === null ? null : staffName(owner),
+            sheets: [],
+            days: [],
+          };
+          addSheet(entry.sheets, sheet);
           entry.days.push(day);
-          otherOwner.set(key, entry);
+          ownerMismatches.set(key, entry);
           ok = false;
           continue;
         }
@@ -497,33 +653,15 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog): 
       }
       if (ok) person.days.push({ sheet, row: rowNo, day, spends, messages, data: dataCount, revenue });
     }
-
-    for (const [c, count] of unknownAccounts) {
-      issues.push({
-        sheet,
-        row: header + 1,
-        message: `Cột ${columnName(c)} "${cellText(titles[c] ?? null)}" (${count} ô có số): không có TKQC tên này trong phần mềm — vào Marketing → TKQC & Page tạo TKQC rồi chọn lại file`,
-      });
-    }
-    for (const [account, days] of noOwner) {
-      issues.push({
-        sheet,
-        row: null,
-        message: `TKQC "${account}" chưa có người phụ trách ngày ${dayRanges(days)} — vào Marketing → TKQC & Page thêm ngày phụ trách cho ${staff.full_name}`,
-      });
-    }
-    for (const [key, { owner, days }] of otherOwner) {
-      issues.push({
-        sheet,
-        row: null,
-        message: `TKQC "${key.split("|")[0]}" ngày ${dayRanges(days)} do ${staffName(owner)} phụ trách, không phải ${staff.full_name}`,
-      });
-    }
   }
 
   const list = [...people.values()].filter((p) => p.days.length > 0);
+  const blocked = new Set([
+    ...issues.map((i) => i.sheet),
+    ...[...accountMismatches.values(), ...ownerMismatches.values()].flatMap((m) => m.sheets),
+  ]);
   for (const p of people.values()) {
-    if (p.days.length === 0 && !issues.some((i) => p.sheets.includes(i.sheet))) {
+    if (p.days.length === 0 && !p.sheets.some((s) => blocked.has(s))) {
       notes.push(`Tab "${p.sheets.join('", "')}" của ${p.staff.full_name} chưa có số nào.`);
     }
   }
@@ -532,12 +670,17 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog): 
   return {
     people: list,
     months,
+    mismatches: [...staffMismatches.values(), ...accountMismatches.values(), ...ownerMismatches.values()],
     issues,
     notes,
+    matchedAccounts: { byId: matched.byId.size, byName: [...matched.byName].filter((id) => !matched.byId.has(id)).length },
     dayRange: allDays.length > 0 ? { from: allDays[0], to: allDays[allDays.length - 1] } : null,
     monthRange: allMonths.length > 0 ? { from: allMonths[0], to: allMonths[allMonths.length - 1] } : null,
   };
 }
+
+/** Đã khớp hết (không còn chỗ chưa khớp, không còn lỗi số liệu) → được tải lên. */
+export const isMatched = (parsed: ParsedWorkbook) => parsed.mismatches.length === 0 && parsed.issues.length === 0;
 
 // ---------------------------------------------------------------------------
 // Tính trước những gì sẽ thêm
@@ -627,9 +770,9 @@ const bold = (value: string) => ({ value, fontWeight: "bold" as const });
 const text = (value: string) => ({ value, type: String });
 
 /**
- * Nội dung file mẫu của một tháng (yyyy-MM): tab Hướng dẫn, mỗi nhân viên Ads một tab (dòng tiêu đề Ngày | các
- * TKQC | Mess | Data | Doanh thu, mỗi ngày đã qua một dòng), tab Doanh thu tháng. Ngày ghi dạng chữ dd/mm/yyyy để
- * Excel / Google Sheet không tự đổi kiểu.
+ * Nội dung file mẫu của một tháng (yyyy-MM): tab Hướng dẫn, mỗi nhân viên Ads một tab (dòng ID TKQC, dòng tiêu đề
+ * Ngày | các TKQC | Mess | Data | Doanh thu, mỗi ngày đã qua một dòng), tab Doanh thu tháng. Ngày và ID ghi dạng
+ * chữ để Excel / Google Sheet không tự đổi kiểu hay làm tròn số dài.
  */
 export function templateSheets(month: string, catalog: ImportCatalog): TemplateSheet[] {
   const label = showMonth(month);
@@ -642,38 +785,40 @@ export function templateSheets(month: string, catalog: ImportCatalog): TemplateS
   const guide = [
     `NHẬP SỐ LIỆU QUẢNG CÁO CŨ — FILE MẪU THÁNG ${label}`,
     "",
-    "1. Mỗi tab là một nhân viên Ads. Tên ở ô B1 phải đúng tên trong phần mềm (Marketing → Nhân viên Ads).",
-    "2. Mỗi dòng là một ngày. Cột mang tên TKQC: ghi số tiền đã chi của TKQC đó (đồng). Ô trống = TKQC không chạy hôm đó.",
-    "3. Mess: tổng mess cả ngày — phần mềm ghi vào TKQC chi nhiều nhất hôm đó. Data: data xin được cả ngày. Doanh thu: không bắt buộc.",
-    "4. Dán số dạng 1.526.706 hay 1526706 đều được. Ngày ghi dạng ngày/tháng/năm, vd 01/10/2026.",
-    "5. Thiếu cột TKQC: vào Marketing → TKQC & Page tạo TKQC và ngày phụ trách trước, rồi tải lại file mẫu.",
+    "1. Mỗi tab là một nhân viên Ads. Tên ở ô B1 phải đúng tên trong phần mềm (Marketing → Nhân viên Ads) — chưa đúng thì bước Khớp dữ liệu sẽ gợi ý.",
+    "2. Dòng \"ID TKQC\": ID tài khoản quảng cáo của từng cột. Phần mềm khớp TKQC theo ID này (ô ID trống thì khớp theo tên cột).",
+    "   Thêm cột TKQC mới: ghi tên ở dòng tiêu đề và ID ở dòng ID TKQC. Ghi ID dạng chữ (gõ dấu ' phía trước) để Excel không làm tròn số dài.",
+    "3. Mỗi dòng là một ngày. Cột TKQC: ghi số tiền đã chi của TKQC đó (đồng). Ô trống = TKQC không chạy hôm đó.",
+    "4. Mess: tổng mess cả ngày — phần mềm ghi vào TKQC chi nhiều nhất hôm đó. Data: data xin được cả ngày. Doanh thu: không bắt buộc.",
+    "5. Dán số dạng 1.526.706 hay 1526706 đều được. Ngày ghi dạng ngày/tháng/năm, vd 01/10/2026.",
     "6. Ngày đã có số trong phần mềm được giữ nguyên, không bị ghi đè.",
     '7. Tab "Doanh thu tháng": chỉ điền khi có doanh thu cả tháng của từng người. Để trống thì phần mềm cộng "Doanh thu theo ngày".',
-    "8. Thêm được tab cho tháng khác (giữ dòng tiêu đề bắt đầu bằng ô Ngày).",
-    "9. Lưu dạng .xlsx. Google Sheet: Tệp → Tải xuống → Microsoft Excel (.xlsx).",
+    "8. Thêm được tab cho tháng khác (giữ dòng ID TKQC và dòng tiêu đề bắt đầu bằng ô Ngày).",
+    "9. Lưu dạng .xlsx (Google Sheet: Tệp → Tải xuống → Microsoft Excel). Ở phần mềm: chọn file → Khớp dữ liệu → Tải lên.",
   ];
   const sheets: TemplateSheet[] = [
-    { sheet: "Hướng dẫn", data: guide.map((line, i) => [i === 0 ? bold(line) : line]), columns: [{ width: 120 }] },
+    { sheet: "Hướng dẫn", data: guide.map((line, i) => [i === 0 ? bold(line) : line]), columns: [{ width: 130 }] },
   ];
   const used = new Set(["hướng dẫn", "doanh thu tháng"]);
   const tabs = templateTabs(month, catalog);
+  const head = (title: string) => ({ ...bold(title), backgroundColor: "#E8F1FB" });
   for (const { staff, accounts } of tabs) {
     const base = safeSheetName(staff.full_name) || "Nhân viên";
     let name = base;
     for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base.slice(0, 26)} (${n})`;
     used.add(name.toLowerCase());
-    const header = ["Ngày", ...accounts.map((a) => a.name), "Mess", "Data", "Doanh thu"];
     sheets.push({
       sheet: name,
       data: [
         [bold("Nhân viên Ads:"), bold(staff.full_name)],
         ["Tháng:", text(label)],
         [{ value: "Cột TKQC: số tiền đã chi (đồng). Mess, Data: cả ngày. Doanh thu: không bắt buộc. Ô trống = không có số.", textColor: "#666666" }],
-        header.map((title) => ({ ...bold(title), backgroundColor: "#E8F1FB" })),
+        [{ value: "ID TKQC:", textColor: "#666666" }, ...accounts.map((a) => ({ value: a.account_id ?? "", type: String, textColor: "#666666" }))],
+        [head("Ngày"), ...accounts.map((a) => head(a.name)), head("Mess"), head("Data"), head("Doanh thu")],
         ...days.map((day) => [text(day)]),
       ],
-      columns: [{ width: 13 }, ...accounts.map(() => ({ width: 18 })), { width: 9 }, { width: 9 }, { width: 16 }],
-      stickyRowsCount: 4,
+      columns: [{ width: 13 }, ...accounts.map(() => ({ width: 20 })), { width: 9 }, { width: 9 }, { width: 16 }],
+      stickyRowsCount: 5,
     });
   }
   sheets.push({

@@ -134,7 +134,7 @@ const firstYearOf = (accounts: AdAccount[], fallback: number) =>
   Math.min(fallback, ...accounts.map((a) => (a.created_at ? Number(a.created_at.slice(0, 4)) : fallback)));
 
 function OverviewBody() {
-  const { catalogs } = useCatalogs();
+  const { catalogs, reload: reloadCatalogs } = useCatalogs();
   const staff = useCurrentStaff();
   const scope = useAdsScope();
   const today = useTodayVn();
@@ -313,7 +313,8 @@ function OverviewBody() {
       </div>
       {importOpen && (
         <ImportDialog
-          catalog={{ staff: catalogs.adsStaff, accounts: catalogs.adAccounts, assignments: catalogs.assignments, today }}
+          today={today}
+          onCatalogChanged={() => void reloadCatalogs()}
           onClose={() => setImportOpen(false)}
           // Số mới nằm rải nhiều tháng / nhiều người → tải lại cả trang cho chắc.
           onImported={() => window.location.reload()}

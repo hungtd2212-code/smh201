@@ -89,6 +89,24 @@ e = await errOf(U.ads2, `insert into public.ad_revenue (month, ads_staff_id, amo
 ok(e !== null, "nhân viên Ads không thêm được doanh thu tháng", e);
 
 // ---------------------------------------------------------------------------
+section("Nút gợi ý ở bước Khớp dữ liệu: tạo nhân viên Ads, tạo TKQC");
+const trung = (await as(U.mm, `insert into public.ads_staff (full_name, is_active) values ('Trung', false) returning id, user_id, is_active`))[0];
+ok(trung && trung.user_id === null && trung.is_active === false, "Trưởng Marketing tạo nhân viên Ads (đã nghỉ, chưa có tài khoản đăng nhập)", trung);
+e = await errOf(U.mm, `insert into public.ads_staff (full_name, is_active) values ('trung', true)`);
+ok(/duplicate key|unique/.test(e ?? ""), "trùng tên (không phân biệt hoa thường) → từ chối", e);
+e = await errOf(U.ads1, `insert into public.ads_staff (full_name, is_active) values ('Hằng', true)`);
+ok(e !== null, "nhân viên Ads không tạo được nhân viên Ads", e);
+const t1 = (await as(U.mm, `select public.add_ad_account('Trung 01', 'act_4444 444444', 'rented', 'personal', $1) as id`, [trung.id]))[0].id;
+const t1row = await one(`select a.account_id, x.ads_staff_id, x.from_date::text as f, x.to_date from public.ad_accounts a join public.ad_account_assignments x on x.ad_account_id = a.id where a.id = $1`, [t1]);
+ok(t1row.account_id === "4444444444" && t1row.ads_staff_id === trung.id && t1row.f === "2020-01-01" && t1row.to_date === null, "tạo TKQC cho người ở tab đó: ID chuẩn hoá, phụ trách từ trước tới nay", t1row);
+await as(U.mm, `update public.ad_accounts set is_active = false where id = $1`, [t1]);
+ok((await one(`select is_active from public.ad_accounts where id = $1`, [t1])).is_active === false, "chuyển TKQC đã ngừng chạy sang Ngừng dùng");
+e = await errOf(U.mm, `insert into public.ad_daily_reports (report_date, ad_account_id, spend, messages) values ('${D[42]}', '${t1}', 700000, 4)`);
+ok(e === null, "TKQC ngừng dùng vẫn nhập được số ngày cũ", e);
+e = await errOf(U.mm, `select public.add_ad_account('Trùng ID', '4444444444', 'rented', 'personal', $1)`, [an]);
+ok(/đã được khai báo/.test(e ?? ""), "ID TKQC đã có → từ chối (ID là khoá chung)", e);
+
+// ---------------------------------------------------------------------------
 section("Nhập nhiều dòng không bị tự khoá tài khoản");
 await db.exec(`update public.app_settings set value = '20'::jsonb where key = 'anomaly_max_changes_per_hour'`);
 const many = [];
@@ -98,7 +116,7 @@ ok(e === null, "thêm 60 dòng một lượt (ngưỡng cảnh báo hạ còn 20
 const mm = await one(`select locked_at from public.staff where user_id = $1`, [U.mm]);
 ok(mm.locked_at === null && (await count("security_alerts")) === 0, "thêm mới không tính là sửa / xoá → không cảnh báo, không khoá", mm);
 const logged = (await one(`select count(*)::int n from public.audit_log where table_name = 'ad_daily_reports' and action = 'insert' and actor_id = $1`, [U.mm])).n;
-ok(logged === 3 + 60, "mỗi dòng nhập đều vào nhật ký", logged);
+ok(logged === 3 + 1 + 60, "mỗi dòng nhập đều vào nhật ký", logged);
 ok((await all(`select 1 from public.ad_daily_reports where report_date = $1`, [D[1]])).length === 0, "không đụng ngày khác");
 
 finish();
