@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useCatalogs } from "@/components/catalog-provider";
 import { managesMarketingRole, useCurrentStaff } from "@/hooks/use-current-staff";
+import { adsRunners } from "@/lib/catalog/ads-runners";
 import type { AdAccountAssignment } from "@/lib/catalog/types";
 import { useTodayVn } from "./shared";
 
@@ -46,6 +47,8 @@ export function useAdsScope() {
     return {
       managesMarketing,
       isAdsStaff,
+      /** Người chạy quảng cáo có tài khoản (Nhân viên quảng cáo, Lead Ads) — để quản lý chọn khi nhập thay / thêm TKQC. */
+      runners: adsRunners(catalogs.adsStaff, catalogs.staff),
       /** Được thêm / sửa chiến dịch thuộc TKQC này. */
       canEditAccount,
       /** Được thêm / sửa bài post thuộc chiến dịch này. */

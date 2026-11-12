@@ -350,7 +350,8 @@ function AccountsBody() {
         </li>
         <li>
           • Vị trí quyết định được đọc / sửa dữ liệu gì: COO = Quản trị, Lead Ads = quản lý Marketing, Nhân viên quảng cáo
-          = chỉ TKQC của mình, Trực page = nhập lead. Thêm / sửa người ở vị trí COO chỉ Quản trị cấp cao làm được.
+          = chỉ TKQC của mình, Trực page = nhập lead, Trưởng Telesale = quản lý lead và chia lead, Telesale = gọi và
+          cập nhật lead. Thêm / sửa người ở vị trí COO chỉ Quản trị cấp cao làm được.
         </li>
         <li>
           • <Lock className="inline size-3.5" /> khoá đang đóng = cấm đăng nhập; <LockOpen className="inline size-3.5" />{" "}

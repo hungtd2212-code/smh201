@@ -1,6 +1,6 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isNotMigrated } from "@/lib/supabase/errors";
-import type { Position } from "./positions";
+import { POSITION_MIGRATION, type Position } from "./positions";
 
 /**
  * Danh sách cơ sở và quản lý tài khoản người dùng (supabase/008_staff_accounts.sql). Mọi kiểm tra quyền
@@ -19,6 +19,16 @@ function fail(error: QueryError, duplicate?: string, file = "008_staff_accounts.
     throw new Error("Bạn không có quyền làm việc này.");
   }
   throw new Error(error.message);
+}
+
+/**
+ * Lỗi khi thêm / sửa người. Vị trí thêm sau file 008 mà cơ sở dữ liệu chưa biết ("Chọn vị trí" /
+ * "Vị trí không hợp lệ") → báo tên file SQL cần chạy.
+ */
+function failAccount(error: QueryError, position: Position | null): never {
+  const file = position ? POSITION_MIGRATION[position] : undefined;
+  if (file && /^(Chọn vị trí|Vị trí không hợp lệ)$/.test(error.message)) throw new Error(notReady(file));
+  fail(error);
 }
 
 export type Branch = {
@@ -70,7 +80,7 @@ export async function createStaffAccount(values: {
     p_position: values.position,
     p_branch_id: values.branchId,
   });
-  if (error) fail(error);
+  if (error) failAccount(error, values.position);
   return data as string;
 }
 
@@ -85,7 +95,7 @@ export async function updateStaffAccount(
     p_position: values.position,
     p_branch_id: values.branchId,
   });
-  if (error) fail(error);
+  if (error) failAccount(error, values.position);
 }
 
 export async function resetStaffPassword(userId: string, password: string): Promise<void> {

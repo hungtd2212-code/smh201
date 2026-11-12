@@ -109,11 +109,16 @@ function EntryBody() {
         ) &&
         (account.is_active || reportsOfDay.some((r) => r.ad_account_id === account.id)),
     );
-  // Quản trị / Trưởng Marketing không cầm TKQC nào → chọn nhân viên để nhập thay.
-  const people = scope.managesMarketing ? catalogs.adsStaff : me ? [me] : [];
+  // Quản lý chọn người để nhập thay: chỉ người có tài khoản ở vị trí Nhân viên quảng cáo hoặc Lead Ads.
+  const people = scope.managesMarketing ? scope.runners : me ? [me] : [];
+  // Lead Ads cũng chạy quảng cáo: có TKQC của mình thì mở sẵn tên mình.
+  const myUserId = staff.status === "ok" ? staff.userId : null;
+  const self = scope.managesMarketing ? people.find((p) => p.user_id === myUserId) : undefined;
   const person = scope.managesMarketing
     ? (people.find((p) => p.id === pickedStaff) ??
+      (self && accountsOf(self).length > 0 ? self : undefined) ??
       people.find((p) => p.is_active && accountsOf(p).length > 0) ??
+      self ??
       people[0])
     : me;
   // TKQC tạm ẩn khỏi bảng nhập (không chạy lúc này) — nhớ theo từng người.
@@ -195,7 +200,7 @@ function EntryBody() {
                   để khai báo các TKQC bạn đang chạy.
                 </>
               ) : (
-                "Chưa có nhân viên quảng cáo nào."
+                "Chưa có tài khoản nào ở vị trí Nhân viên quảng cáo hoặc Lead Ads. Thêm người ở Cài đặt → Tài khoản & Phân quyền."
               )}
             </ReadOnlyNote>
           ) : accounts.length === 0 ? (

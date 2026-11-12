@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { adsRunners } from "@/lib/catalog/ads-runners";
 import { addAdAccount, removeAdAccount } from "@/lib/catalog/repo";
 import {
   ACCOUNT_KIND_LABELS,
@@ -56,6 +57,8 @@ export function AccountSetup({ isManager, me }: { isManager: boolean; me: AdsSta
   }
 
   const names = new Map(catalogs.adsStaff.map((p) => [p.id, p.full_name]));
+  // Ô chọn nhân viên (lọc, thêm TKQC): chỉ người có tài khoản ở vị trí Nhân viên quảng cáo hoặc Lead Ads.
+  const runners = adsRunners(catalogs.adsStaff, catalogs.staff);
   // TKQC đang dùng: nhân viên chỉ thấy của mình; quản lý thấy tất cả.
   const mine = catalogs.adAccounts.filter(
     (a) => a.is_active && (isManager || (me !== undefined && ownerOf(a.id) === me.id)),
@@ -97,7 +100,7 @@ export function AccountSetup({ isManager, me }: { isManager: boolean; me: AdsSta
       {adding && (
         <AddForm
           isManager={isManager}
-          people={catalogs.adsStaff.filter((p) => p.is_active)}
+          people={runners.filter((p) => p.is_active)}
           defaultStaff={staffFilter === ALL ? null : staffFilter}
           onCancel={() => setAdding(false)}
           onSaved={async (name) => {
@@ -122,7 +125,7 @@ export function AccountSetup({ isManager, me }: { isManager: boolean; me: AdsSta
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL}>Tất cả nhân viên quảng cáo</SelectItem>
-              {catalogs.adsStaff.map((p) => (
+              {runners.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.full_name}
                 </SelectItem>

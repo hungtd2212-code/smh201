@@ -169,8 +169,8 @@ export type StaffMember = {
   can_export: boolean;
   /** Tên đăng nhập (null = tài khoản cũ đăng nhập bằng email). Các cột dưới do file 008 thêm vào. */
   username: string | null;
-  /** Vị trí: coo | lead_ads | ads_staff | page; null = tài khoản tạo trước khi có vị trí. */
-  position: "coo" | "lead_ads" | "ads_staff" | "page" | null;
+  /** Vị trí (xem src/lib/staff/positions.ts); null = tài khoản tạo trước khi có vị trí. */
+  position: "coo" | "lead_ads" | "ads_staff" | "page" | "lead_telesale" | "telesale" | null;
   /** Nơi làm việc (branches.id). */
   branch_id: string | null;
   /** Trang được xem; null = menu theo vai trò như trước. */

@@ -241,4 +241,75 @@ await as(U.adm, UPDATE, [linh, "lê thảo", null, hq]);
 ok((await one(`select full_name from public.ads_staff where user_id = $1`, [linh])).full_name === "lê thảo (2)", "trùng tên một nhân viên Ads khác → thêm (2) cho khỏi trùng");
 ok((await one(`select full_name from public.ads_staff where id = $1`, [freeName])).full_name === "Lê Thảo", "… nhân viên Ads kia giữ nguyên tên");
 
+// ---------------------------------------------------------------------------
+section("015: thêm 2 vị trí Telesale");
+// 015 chỉ dựa vào 008 (cột staff.position và hàm role_of_position) nên chạy thẳng ở đây.
+e = await createErr(U.adm, "tele.truoc", "telesale");
+ok(/Chọn vị trí/.test(e ?? ""), "(trước 015) vị trí Telesale chưa dùng được", e);
+const positionChecks = `select count(*)::int n from pg_constraint
+  where conrelid = 'public.staff'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%lead_ads%'`;
+const staffBefore015 = JSON.stringify(await all(`select to_jsonb(s) j from public.staff s order by user_id`));
+await db.exec(read("015_telesale_positions.sql"));
+ok(true, "015 chạy không lỗi");
+await db.exec(read("015_telesale_positions.sql"));
+ok(true, "chạy lại 015 lần hai không lỗi");
+ok(JSON.stringify(await all(`select to_jsonb(s) j from public.staff s order by user_id`)) === staffBefore015, "015 không đổi dòng nhân sự nào đang có");
+ok((await one(positionChecks)).n === 1, "chỉ còn đúng một ràng buộc danh sách vị trí");
+
+const tele = await create(U.adm, "tele.mot", "telesale", hq, "Telesale Một");
+row = await one(`select role, position, page_access from public.staff where user_id = $1`, [tele]);
+ok(row.role === "sale" && row.position === "telesale" && row.page_access.length === 0, "vị trí Telesale → vai trò Telesale, chưa có quyền xem trang nào", row);
+const teleLead = await create(U.adm, "truong.tele", "lead_telesale", hq, "Trưởng Telesale");
+ok((await one(`select role from public.staff where user_id = $1`, [teleLead])).role === "lead", "vị trí Trưởng Telesale → vai trò Trưởng Telesale");
+await as(U.adm, UPDATE, [tele, "Telesale Một", "lead_telesale", hq]);
+row = await one(`select role, position from public.staff where user_id = $1`, [tele]);
+ok(row.role === "lead" && row.position === "lead_telesale", "đổi vị trí Telesale → Trưởng Telesale: vai trò đổi theo", row);
+await as(U.adm, UPDATE, [tele, "Telesale Một", "page", hq]);
+ok((await one(`select role from public.staff where user_id = $1`, [tele])).role === "page", "4 vị trí cũ vẫn dùng được như trước");
+e = await createErr(U.adm, "bac.si", "bac_si");
+ok(/Chọn vị trí/.test(e ?? ""), "vị trí chưa khai báo → bị từ chối", e);
+e = await errOf(U.adm, UPDATE, [tele, "Telesale Một", "bac_si", hq]);
+ok(/Vị trí không hợp lệ/.test(e ?? ""), "sửa sang vị trí chưa khai báo → bị từ chối", e);
+let checkErr = null;
+try {
+  await db.query(`update public.staff set position = 'bac_si' where user_id = $1`, [tele]);
+} catch (err) {
+  checkErr = err.message;
+}
+ok(/staff_position_check/.test(checkErr ?? ""), "cột vị trí chỉ nhận 6 vị trí đã khai báo", checkErr);
+e = await createErr(U.mm, "tele.hai", "telesale");
+ok(/Chỉ Quản trị được thêm người/.test(e ?? ""), "Trưởng Marketing thêm Telesale → bị từ chối", e);
+
+// ---------------------------------------------------------------------------
+section("016: Lead Ads cũng là người chạy quảng cáo");
+const adsRow = (uid) => one(`select id, full_name from public.ads_staff where user_id = $1 and deleted_at is null`, [uid]);
+const adsCount = async () => (await one(`select count(*)::int n from public.ads_staff`)).n;
+ok(!(await adsRow(leadAds)), "(trước 016) tài khoản Lead Ads chưa có tên trong danh sách nhân viên Ads");
+const adsBefore016 = await adsCount();
+await db.exec(read("016_lead_ads_runs_ads.sql"));
+ok(true, "016 chạy không lỗi");
+ok((await adsRow(leadAds))?.full_name === "Lead Ads", "tài khoản Lead Ads đang có → được thêm tên vào danh sách nhân viên Ads");
+ok(Boolean(await adsRow(U.mm)), "… kể cả tài khoản Trưởng Marketing tạo từ trước khi có vị trí");
+ok((await adsCount()) === adsBefore016 + 2, "… mỗi người đúng một dòng, không đụng tới dòng nào khác");
+await db.exec(read("016_lead_ads_runs_ads.sql"));
+ok((await adsCount()) === adsBefore016 + 2, "chạy lại 016 lần hai không tạo trùng");
+
+const lead2 = await create(U.adm, "lead.ads2", "lead_ads", hq, "Lead Ads Hai");
+ok((await adsRow(lead2))?.full_name === "Lead Ads Hai", "thêm người ở vị trí Lead Ads → tự có tên trong danh sách nhân viên Ads");
+await as(U.adm, UPDATE, [teleLead, "Trưởng Telesale", "lead_ads", hq]);
+ok(Boolean(await adsRow(teleLead)), "đổi người sang vị trí Lead Ads → cũng được thêm tên");
+ok(!(await adsRow(tele)), "vị trí khác (Trực page) không có tên trong danh sách nhân viên Ads");
+const ads3 = await create(U.adm, "ads.ba", "ads_staff", hq, "Nhân viên Ads Ba");
+ok(Boolean(await adsRow(ads3)), "vị trí Nhân viên quảng cáo vẫn tự có tên như trước");
+
+// Lead Ads khai báo TKQC cho chính mình, rồi cho một nhân viên.
+const ADD_ACCOUNT = `select public.add_ad_account($1, $2, $3, $4, $5) as id`;
+const ownerOfAccount = async (id) =>
+  (await one(`select ads_staff_id from public.ad_account_assignments where ad_account_id = $1 and deleted_at is null`, [id])).ads_staff_id;
+const leadRow = await adsRow(lead2);
+const leadAccount = (await as(lead2, ADD_ACCOUNT, ["LEAD 01", "900000000000001", "rented", "company_card", leadRow.id]))[0].id;
+ok((await ownerOfAccount(leadAccount)) === leadRow.id, "Lead Ads thêm được TKQC đứng tên chính mình");
+const staffAccount = (await as(lead2, ADD_ACCOUNT, ["ADS BA 01", "900000000000002", "self_built", "personal", (await adsRow(ads3)).id]))[0].id;
+ok((await ownerOfAccount(staffAccount)) === (await adsRow(ads3)).id, "Lead Ads thêm được TKQC cho một Nhân viên quảng cáo");
+
 finish();
