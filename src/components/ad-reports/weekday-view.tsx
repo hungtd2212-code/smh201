@@ -74,7 +74,7 @@ export function WeekdayView({
           </p>
         </div>
         <div className="overflow-x-auto rounded-xl border bg-card">
-          <table className="w-full border-collapse text-sm">
+          <table className="table-pin w-full border-collapse text-sm">
             <thead>
               <tr className="border-b">
                 <th className={FIRST_TH}>Chỉ số</th>

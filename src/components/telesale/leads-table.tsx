@@ -233,7 +233,95 @@ export function LeadsTable({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border bg-card">
+      {/* Điện thoại: mỗi lead một thẻ (bấm số để gọi). Màn hình rộng: bảng đầy đủ cột. */}
+      <div className="grid gap-2 md:hidden">
+        {loading ? (
+          Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-36 w-full rounded-xl" />)
+        ) : rows.length === 0 ? (
+          <p className="rounded-xl border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+            {leads.length === 0 ? "Chưa có lead nào trong khoảng thời gian này" : "Không tìm thấy lead phù hợp"}
+          </p>
+        ) : (
+          rows.map((lead) => (
+            <article
+              key={lead.id}
+              className={cn("grid gap-2 rounded-xl border bg-card p-3", selected.has(lead.id) && "border-primary/60 bg-primary/5")}
+            >
+              <div className="flex items-start gap-2.5">
+                {canDelete && (
+                  <input
+                    type="checkbox"
+                    className="mt-1 size-4 shrink-0 accent-primary"
+                    aria-label={`Chọn lead ${lead.full_name}`}
+                    checked={selected.has(lead.id)}
+                    onChange={() => toggle(lead.id)}
+                  />
+                )}
+                <div className="grid min-w-0 flex-1 gap-0.5">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate font-medium">{lead.full_name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {format(new Date(lead.created_at), "dd/MM HH:mm")}
+                    </span>
+                  </div>
+                  <a href={`tel:${lead.phone}`} className="w-fit text-sm font-medium text-primary tabular-nums underline-offset-2 hover:underline">
+                    {lead.phone}
+                  </a>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {[lead.service, names.channel(lead.channel_id) ?? lead.source, lead.page_id ? names.page(lead.page_id) : null]
+                      .filter(Boolean)
+                      .join(" · ") || "—"}
+                  </span>
+                  {(lead.recontacted_at || lead.invalid_phone || lead.reopened_at) && (
+                    <div className="mt-0.5 flex flex-wrap gap-1 text-xs">
+                      {lead.recontacted_at && (
+                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">Nhắn lại</span>
+                      )}
+                      {lead.reopened_at && (
+                        <span className="rounded bg-sky-100 px-1.5 py-0.5 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200">Mở lại</span>
+                      )}
+                      {lead.invalid_phone && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-red-800 dark:bg-red-900/50 dark:text-red-200">Số sai</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={lead.status} onValueChange={(v) => changeStatus(lead, v as LeadStatusKey)}>
+                  <SelectTrigger className="h-9 min-w-0 flex-1" aria-label={`Trạng thái của ${lead.full_name}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LEAD_STATUSES.map((s) => (
+                      <SelectItem key={s.key} value={s.key}>
+                        <StatusDot status={s.key} />
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="icon" className="size-9 shrink-0" aria-label={`Sửa lead ${lead.full_name}`} onClick={() => onEdit(lead)}>
+                  <Pencil />
+                </Button>
+              </div>
+              {(lead.assignee || lead.appointment_at || lead.note) && (
+                <div className="grid gap-0.5 text-xs text-muted-foreground">
+                  {(lead.assignee || lead.appointment_at) && (
+                    <span>
+                      {lead.assignee ?? "Chưa giao"}
+                      {lead.appointment_at && ` · Hẹn ${format(new Date(lead.appointment_at), "dd/MM HH:mm")}`}
+                    </span>
+                  )}
+                  {lead.note && <span className="line-clamp-2">{lead.note}</span>}
+                </div>
+              )}
+            </article>
+          ))
+        )}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-xl border bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">

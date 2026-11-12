@@ -145,6 +145,76 @@ function AccountsBody() {
     await reload();
   }
 
+  /** Nút thao tác của một người — dùng chung cho bảng (máy tính) và thẻ (điện thoại). */
+  const actionsOf = (member: (typeof people)[number], manageable: boolean, locked: boolean) => (
+    <>
+      {member.role === "super_admin" ? (
+        member.user_id === userId ? (
+          <div className="flex items-center justify-end gap-1">
+            <span className="text-xs text-muted-foreground">Toàn quyền</span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Sửa thông tin của bạn"
+              title="Sửa tên, tên đăng nhập, mật khẩu"
+              onClick={() => setEditingSelf(member)}
+            >
+              <Pencil />
+            </Button>
+          </div>
+        ) : (
+          <p className="px-1 text-right text-xs text-muted-foreground">Toàn quyền</p>
+        )
+      ) : (
+        <div className="flex items-center justify-end gap-0.5">
+          <Button
+            variant="outline"
+            size="sm"
+            className="mr-1"
+            disabled={!manageable}
+            onClick={() => setPermissionFor(member.user_id)}
+          >
+            <ShieldCheck />
+            Phân quyền
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Sửa ${member.full_name}`}
+            title="Sửa"
+            disabled={!manageable}
+            onClick={() => setEditing(member)}
+          >
+            <Pencil />
+          </Button>
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Xoá ${member.full_name}`}
+              title="Xoá"
+              disabled={!manageable}
+              onClick={() => setRemoving(member)}
+            >
+              <Trash2 />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={locked ? `Mở khoá ${member.full_name}` : `Khoá ${member.full_name}`}
+            title={locked ? "Đang khoá — bấm để mở khoá" : "Đang hoạt động — bấm để khoá"}
+            disabled={!manageable}
+            onClick={() => setLocking(member)}
+            className={locked ? "text-red-600 dark:text-red-400" : undefined}
+          >
+            {locked ? <Lock /> : <LockOpen />}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <section className="grid gap-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -216,7 +286,47 @@ function AccountsBody() {
         />
       )}
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
+      {/* Điện thoại: mỗi người một thẻ. Màn hình rộng: bảng đầy đủ cột. */}
+      <div className="grid gap-2 md:hidden">
+        {people.length === 0 ? (
+          <p className="rounded-xl border bg-card px-4 py-8 text-center text-sm text-muted-foreground">Không có nhân sự nào khớp bộ lọc.</p>
+        ) : (
+          people.map((member) => {
+            const manageable = canManage(member);
+            const locked = Boolean(member.locked_at);
+            return (
+              <article key={member.user_id} className="grid gap-2.5 rounded-xl border bg-card p-3">
+                <div className="flex items-center gap-2.5">
+                  <StaffAvatar name={member.full_name} url={member.avatar_url} />
+                  <div className="grid min-w-0 flex-1">
+                    <span className="truncate font-medium">
+                      {member.full_name}
+                      {member.user_id === userId && <span className="ml-1.5 text-xs font-normal text-muted-foreground">(bạn)</span>}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {loginOf(member)} · {positionLabel(member.position, member.role)}
+                    </span>
+                  </div>
+                  <span
+                    className={cn(
+                      "inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap",
+                      locked
+                        ? "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200"
+                        : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+                    )}
+                    title={locked ? (member.locked_reason ?? undefined) : undefined}
+                  >
+                    {locked ? "Đang khoá" : "Hoạt động"}
+                  </span>
+                </div>
+                <div className="border-t pt-2 [&_p]:text-left [&>div]:justify-start">{actionsOf(member, manageable, locked)}</div>
+              </article>
+            );
+          })
+        )}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-xl border bg-card md:block">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b bg-muted text-left">
@@ -271,70 +381,7 @@ function AccountsBody() {
                       </span>
                     </td>
                     <td className="px-2 py-1">
-                      {member.role === "super_admin" ? (
-                        member.user_id === userId ? (
-                          <div className="flex items-center justify-end gap-1">
-                            <span className="text-xs text-muted-foreground">Toàn quyền</span>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label="Sửa thông tin của bạn"
-                              title="Sửa tên, tên đăng nhập, mật khẩu"
-                              onClick={() => setEditingSelf(member)}
-                            >
-                              <Pencil />
-                            </Button>
-                          </div>
-                        ) : (
-                          <p className="px-1 text-right text-xs text-muted-foreground">Toàn quyền</p>
-                        )
-                      ) : (
-                        <div className="flex items-center justify-end gap-0.5">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="mr-1"
-                            disabled={!manageable}
-                            onClick={() => setPermissionFor(member.user_id)}
-                          >
-                            <ShieldCheck />
-                            Phân quyền
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={`Sửa ${member.full_name}`}
-                            title="Sửa"
-                            disabled={!manageable}
-                            onClick={() => setEditing(member)}
-                          >
-                            <Pencil />
-                          </Button>
-                          {canDelete && (
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={`Xoá ${member.full_name}`}
-                              title="Xoá"
-                              disabled={!manageable}
-                              onClick={() => setRemoving(member)}
-                            >
-                              <Trash2 />
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={locked ? `Mở khoá ${member.full_name}` : `Khoá ${member.full_name}`}
-                            title={locked ? "Đang khoá — bấm để mở khoá" : "Đang hoạt động — bấm để khoá"}
-                            disabled={!manageable}
-                            onClick={() => setLocking(member)}
-                            className={locked ? "text-red-600 dark:text-red-400" : undefined}
-                          >
-                            {locked ? <Lock /> : <LockOpen />}
-                          </Button>
-                        </div>
-                      )}
+                      {actionsOf(member, manageable, locked)}
                     </td>
                   </tr>
                 );

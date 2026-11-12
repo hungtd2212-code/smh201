@@ -373,13 +373,14 @@ function EntryForm({
       />
 
       {!nothingLeft && (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button size="lg" disabled={!ready || saving} onClick={submit}>
+        // Điện thoại: thanh gửi dính đáy màn hình, nút rộng cả hàng — không phải cuộn xuống cuối mới thấy.
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 max-md:sticky max-md:bottom-0 max-md:z-20 max-md:-mx-4 max-md:border-t max-md:bg-background/95 max-md:px-4 max-md:pt-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:backdrop-blur">
+          <Button size="lg" className="max-md:h-11 max-md:w-full" disabled={!ready || saving} onClick={submit}>
             <Send />
             {saving ? "Đang gửi…" : "Gửi báo cáo"}
           </Button>
           {!ready && (
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm text-muted-foreground max-md:w-full max-md:text-center max-md:text-xs">
               Điền đủ tất cả các ô (không có thì nhập 0) để gửi.
             </span>
           )}

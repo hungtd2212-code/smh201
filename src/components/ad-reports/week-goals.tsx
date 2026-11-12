@@ -156,14 +156,31 @@ const OUTLINE: Record<Tone, string> = {
 };
 
 /** Số điện thoại / mục tiêu gọn: "12/34", tuần chưa tới: "cần 238". */
-function DataText({ r }: { r: Result }) {
+/** `compact`: ô ngày trên điện thoại (rộng ~40px) chỉ hiện số đạt được; mục tiêu xem khi bấm / rê chuột. */
+function DataText({ r, compact = false }: { r: Result; compact?: boolean }) {
+  const narrowHidden = compact ? "max-sm:hidden" : undefined;
   if (r.phase === "future") {
-    return <span className="text-muted-foreground">{r.goal.data ? `cần ${formatNumber(r.goal.data)}` : "—"}</span>;
+    return (
+      <span className="text-muted-foreground tabular-nums">
+        {r.goal.data ? (
+          <>
+            <span className={narrowHidden}>cần </span>
+            {formatNumber(r.goal.data)}
+          </>
+        ) : (
+          "—"
+        )}
+      </span>
+    );
   }
   return (
     <span className="tabular-nums">
       <span className="font-semibold">{formatNumber(r.totals.data)}</span>
-      {r.goal.data ? <span className="text-muted-foreground">/{formatNumber(r.goal.data)}</span> : <span className="text-muted-foreground"> số</span>}
+      {r.goal.data ? (
+        <span className={cn("text-muted-foreground", narrowHidden)}>/{formatNumber(r.goal.data)}</span>
+      ) : (
+        <span className={cn("text-muted-foreground", narrowHidden)}> số</span>
+      )}
     </span>
   );
 }
@@ -212,7 +229,7 @@ function DayCell({ day, r, name, selected, onClick }: { day: string; r: Result; 
       onClick={onClick}
       title={describe(name, `ngày ${formatDay(day)}`, r)}
       className={cn(
-        "glass-soft grid h-[3.6rem] content-between rounded-xl px-1.5 pt-1 pb-1.5 text-left outline-1 -outline-offset-1 transition-transform hover:-translate-y-px",
+        "glass-soft grid h-[3.3rem] w-full content-between rounded-lg px-1 pt-1 pb-1.5 text-left outline-1 -outline-offset-1 transition-transform hover:-translate-y-px sm:h-[3.6rem] sm:rounded-xl sm:px-1.5",
         OUTLINE[r.tone],
         selected && "outline-2 outline-sky-500",
         r.phase === "future" && "opacity-55",
@@ -223,7 +240,7 @@ function DayCell({ day, r, name, selected, onClick }: { day: string; r: Result; 
         <StatusIcon tone={r.tone} phase={r.phase} />
       </span>
       <span className="truncate text-xs">
-        <DataText r={r} />
+        <DataText r={r} compact />
       </span>
       <GlassBar size="sm" fill={r.fill} tone={r.tone} label={`Ngày ${formatDay(day)}`} />
     </button>
@@ -263,14 +280,14 @@ function DayCalendar({
 
   return (
     <div className="grid gap-2">
-      <div className="overflow-x-auto pb-1">
-        <div className="grid min-w-[36rem] grid-cols-[repeat(7,minmax(0,1fr))_minmax(6.5rem,1.3fr)] gap-1.5">
+      <div className="pb-1 sm:overflow-x-auto">
+        <div className="grid grid-cols-7 gap-1 sm:min-w-[36rem] sm:grid-cols-[repeat(7,minmax(0,1fr))_minmax(6.5rem,1.3fr)] sm:gap-1.5">
           {WEEKDAYS.map((d, i) => (
             <div key={d} className="text-center text-[11px] font-medium text-muted-foreground" style={{ gridRow: 1, gridColumn: i + 1 }}>
               {d}
             </div>
           ))}
-          <div className="text-center text-[11px] font-medium text-muted-foreground" style={{ gridRow: 1, gridColumn: 8 }}>
+          <div className="hidden text-center text-[11px] font-medium text-muted-foreground sm:block" style={{ gridRow: 1, gridColumn: 8 }}>
             Cả tuần
           </div>
           {dayResults.map(({ day, r }) => (
@@ -288,7 +305,7 @@ function DayCalendar({
             const first = rowOf.get(w.from) ?? 0;
             const span = (rowOf.get(w.to) ?? first) - first + 1;
             return (
-              <div key={w.index} className="grid" style={{ gridRow: `${first + 2} / span ${span}`, gridColumn: 8 }}>
+              <div key={w.index} className="hidden sm:grid" style={{ gridRow: `${first + 2} / span ${span}`, gridColumn: 8 }}>
                 <ResultCell
                   r={r}
                   title={describe(line.name, `tuần ${w.index} (${weekSpan(w)})`, r, plan)}
@@ -305,6 +322,24 @@ function DayCalendar({
             );
           })}
         </div>
+      </div>
+      {/* Điện thoại: cột "Cả tuần" nằm dưới lịch, hai ô một hàng. */}
+      <div className="grid grid-cols-2 gap-1.5 sm:hidden">
+        {weekResults.map(({ w, r, plan }) => (
+          <ResultCell
+            key={w.index}
+            r={r}
+            title={describe(line.name, `tuần ${w.index} (${weekSpan(w)})`, r, plan)}
+            selected={sameRange(range, w.from, w.to)}
+            onClick={() => onPickRange(sameRange(range, w.from, w.to) ? null : { from: w.from, to: w.to })}
+            extra={
+              <span className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground tabular-nums">
+                Tuần {w.index} · {weekSpan(w)}
+                <CarryBadge plan={plan} />
+              </span>
+            }
+          />
+        ))}
       </div>
       <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
         <span>
@@ -444,14 +479,17 @@ export function WeekGoals({
             </span>
             Về đích theo tuần & ngày — {who} · {monthLabel(month).toLowerCase()}
           </h2>
-          <p className="max-w-3xl text-[11px] text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground sm:hidden">
+            Mục tiêu chia đều từng ngày; tuần không đạt thì dồn phần thiếu. Bấm một tuần hay một ngày để lọc cả trang.
+          </p>
+          <p className="hidden max-w-3xl text-[11px] text-muted-foreground sm:block">
             Đầu tháng mục tiêu chia đều cho từng ngày; tuần (thứ Hai → Chủ nhật) = cộng các ngày. Tuần đã qua mà chưa đủ số
             thì phần thiếu được dồn tiếp theo cách quản lý đã chốt (bên phải). Về đích = đủ số điện thoại và giá số, giá mess không vượt
             mức tối đa (vượt ngân sách chỉ nhắc). Rê chuột để xem chi tiết; bấm một tuần hay một ngày để lọc cả trang.
           </p>
         </div>
-        <div className="grid justify-items-end gap-1.5">
-          <span className="glass-soft rounded-full px-3 py-1 text-[11px] font-medium italic">
+        <div className="grid gap-1.5 sm:justify-items-end">
+          <span className="glass-soft w-fit rounded-full px-3 py-1 text-[11px] font-medium italic">
             Cá nhân về đích → tổ chức về đích · Ngày về đích → tuần về đích → tháng về đích
           </span>
           <div className="glass-soft flex flex-wrap items-center gap-1.5 rounded-full py-1 pr-1 pl-3 text-[11px]">
@@ -493,7 +531,10 @@ export function WeekGoals({
           <table className="w-full border-separate border-spacing-1.5">
             <thead>
               <tr>
-                <th className="px-1 text-left text-[11px] font-medium text-muted-foreground">Bấm tên để xem từng ngày</th>
+                <th className="px-1 text-left text-[11px] font-medium text-muted-foreground max-sm:sticky max-sm:left-0 max-sm:z-10">
+                  <span className="max-sm:hidden">Bấm tên để xem từng ngày</span>
+                  <span className="sm:hidden">Bấm tên xem ngày</span>
+                </th>
                 {weeks.map((w) => (
                   <th key={w.index} className="px-1 text-left text-[11px] font-medium text-muted-foreground">
                     <button
@@ -536,7 +577,7 @@ export function WeekGoals({
                 const whole = resultOf(line, monthDays, today, line.baseGoals);
                 return (
                   <tr key={line.key}>
-                    <td className="min-w-36">
+                    <td className="min-w-32 rounded-xl max-sm:sticky max-sm:left-0 max-sm:z-10 max-sm:bg-background/85 max-sm:backdrop-blur-sm sm:min-w-36">
                       <button
                         type="button"
                         onClick={() => setFocus(line.key)}

@@ -54,18 +54,18 @@ function StatCard({
   return (
     <div
       className={cn(
-        "flex items-start justify-between rounded-xl border bg-linear-to-br to-card p-5",
+        "flex items-start justify-between gap-2 rounded-xl border bg-linear-to-br to-card p-3.5 sm:p-5",
         t.card,
       )}
     >
       <div className="grid gap-1.5">
-        <span className="text-sm text-muted-foreground">{label}</span>
-        <span className={cn("text-3xl font-bold tabular-nums", t.value)}>
+        <span className="text-xs text-muted-foreground sm:text-sm">{label}</span>
+        <span className={cn("text-2xl font-bold tabular-nums sm:text-3xl", t.value)}>
           {value.toLocaleString("vi-VN")}
         </span>
         <span className={cn("text-xs", t.sub)}>{sub}</span>
       </div>
-      <span className={cn("flex size-10 items-center justify-center rounded-lg", t.icon)}>
+      <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg sm:size-10", t.icon)}>
         <Icon className="size-5" />
       </span>
     </div>
@@ -74,7 +74,7 @@ function StatCard({
 
 export function StatCards({ stats }: { stats: LeadStats }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
       <StatCard
         tone="cyan"
         icon={Phone}

@@ -70,6 +70,8 @@ export function NumberInput({
           id={id}
           type="text"
           inputMode="numeric"
+          enterKeyHint="next"
+          data-number-input=""
           autoComplete="off"
           placeholder="Nhập liệu"
           aria-label={label}
@@ -81,8 +83,20 @@ export function NumberInput({
             apply(el, el.value, el.selectionStart ?? el.value.length);
           }}
           onKeyDown={(event) => {
-            // Xoá lùi ngay sau dấu chấm → xoá luôn chữ số đứng trước dấu chấm.
             const el = event.currentTarget;
+            // Nút "Tiếp" / Enter trên bàn phím điện thoại → sang ô số kế tiếp; ô cuối thì đóng bàn phím.
+            if (event.key === "Enter") {
+              event.preventDefault();
+              const scope = el.closest("[role=dialog]") ?? document;
+              const inputs = [...scope.querySelectorAll<HTMLInputElement>("input[data-number-input]")].filter(
+                (input) => !input.disabled && input.offsetParent !== null,
+              );
+              const next = inputs[inputs.indexOf(el) + 1];
+              if (next) next.focus();
+              else el.blur();
+              return;
+            }
+            // Xoá lùi ngay sau dấu chấm → xoá luôn chữ số đứng trước dấu chấm.
             const at = el.selectionStart;
             if (at === null || at !== el.selectionEnd) return;
             if (event.key === "Backspace" && at > 0 && el.value[at - 1] === ".") el.setSelectionRange(at - 1, at - 1);

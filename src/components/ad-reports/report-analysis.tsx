@@ -272,17 +272,24 @@ function AnalysisBody() {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-3">
-        <div role="tablist" className="flex w-fit flex-wrap gap-1 rounded-lg bg-muted p-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        {/* Điện thoại: một hàng vuốt ngang thay vì 9 nút xếp thành khối cao nửa màn hình. */}
+        <div
+          role="tablist"
+          className="-mx-4 flex w-[calc(100%+2rem)] gap-1 overflow-x-auto bg-muted p-1 [scrollbar-width:none] md:mx-0 md:w-fit md:max-w-full md:flex-wrap md:rounded-lg [&::-webkit-scrollbar]:hidden"
+        >
           {modes.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               type="button"
               role="tab"
               aria-selected={mode === key}
-              onClick={() => setMode(key)}
+              onClick={(event) => {
+                setMode(key);
+                event.currentTarget.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+              }}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                "flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
                 mode === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -293,7 +300,7 @@ function AnalysisBody() {
         </div>
         {scope.managesMarketing && mode !== "staff" && (
           <Select value={person ? person.id : ALL} onValueChange={setStaffFilter}>
-            <SelectTrigger className="w-60" aria-label="Lọc theo nhân viên quảng cáo">
+            <SelectTrigger className="w-full sm:w-60" aria-label="Lọc theo nhân viên quảng cáo">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -922,7 +929,7 @@ function SameMonthGrid({
       actions={metricTabs}
     >
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full border-collapse text-sm">
+        <table className="table-pin w-full border-collapse text-sm">
           <thead>
             <tr className="border-b">
               <th className={FIRST_TH}>Tháng</th>

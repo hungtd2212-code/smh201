@@ -1,7 +1,7 @@
 "use client";
 
 import { Target } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -116,6 +116,8 @@ export function GoalTrackingSection({
   const year = today.slice(0, 4);
   const { state } = useAdReports(`${year}-01-01`, today);
   const { state: revenue } = useRevenue(`${year}-01`, today.slice(0, 7));
+  // Điện thoại: mỗi lần xem một bảng (tháng / quý / năm) thay vì xếp chồng cả ba. Máy tính: luôn đủ ba cột.
+  const [shown, setShown] = useState<TrackPeriod["key"]>("month");
   const byDay = useMemo(
     () =>
       state.status === "ready"
@@ -193,8 +195,33 @@ export function GoalTrackingSection({
         </p>
       ) : (
         <div className="grid gap-3 md:grid-cols-3">
+          <div role="tablist" aria-label="Kỳ theo dõi" className="glass-soft grid grid-cols-3 gap-1 rounded-full p-1 md:hidden">
+            {columns.map(({ period }) => (
+              <button
+                key={period.key}
+                type="button"
+                role="tab"
+                aria-selected={shown === period.key}
+                onClick={() => setShown(period.key)}
+                className={cn(
+                  "flex h-9 items-center justify-center gap-1.5 rounded-full text-[13px] font-medium whitespace-nowrap transition-colors",
+                  shown === period.key ? "bg-foreground text-background shadow-sm" : "text-muted-foreground",
+                )}
+              >
+                <span className={cn("size-2 shrink-0 rounded-full bg-linear-to-br", DOT[period.key])} />
+                {period.key === "month" ? `Tháng ${Number(period.from.slice(5, 7))}` : periodName(period)}
+              </button>
+            ))}
+          </div>
           {columns.map(({ period, elapsed, items }) => (
-            <div key={period.key} className={cn("glass grid content-start rounded-2xl px-3.5 pt-3 pb-3", TINT[period.key])}>
+            <div
+              key={period.key}
+              className={cn(
+                "glass content-start rounded-2xl px-3.5 pt-3 pb-3 md:grid",
+                shown === period.key ? "grid" : "hidden",
+                TINT[period.key],
+              )}
+            >
               <div className="grid gap-0.5 border-b border-slate-900/5 pb-2 dark:border-white/10">
                 <span className="flex items-center gap-2 text-sm font-semibold whitespace-nowrap">
                   <span className={cn("size-2.5 shrink-0 rounded-full bg-linear-to-br shadow-sm", DOT[period.key])} />

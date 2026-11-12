@@ -308,7 +308,7 @@ function CompareTable({ rows, group }: { rows: EntityValue[]; group: Totals }) {
   const ranks = new Map(METRICS.map((m) => [m.key, ranking(m, rows.map((r) => m.value(r.totals)))]));
   return (
     <div className="overflow-x-auto rounded-xl border bg-card">
-      <table className="w-full border-collapse text-sm">
+      <table className="table-pin w-full border-collapse text-sm">
         <thead>
           <tr className="border-b">
             <th className={FIRST_TH}>Nhân viên</th>

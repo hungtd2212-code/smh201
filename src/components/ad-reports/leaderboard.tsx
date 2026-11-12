@@ -101,7 +101,8 @@ const pct = (n: number | null, digits = 1) => (n === null ? "–" : `${n.toLocal
 
 function Stats({ s, row }: { s: BoardScore; row: BoardRow }) {
   return (
-    <dl className="grid w-full grid-cols-3 gap-1 text-center text-[11px]">
+    // Cột bục trên điện thoại chỉ rộng ~100px → xếp dọc từng chỉ số; màn hình rộng mới xếp ba cột.
+    <dl className="grid w-full gap-1.5 text-center text-[11px] leading-tight lg:grid-cols-3 lg:gap-1">
       <div>
         <dt className="text-muted-foreground">Ads / DT</dt>
         <dd className="font-semibold tabular-nums">{pct(s.adRevenuePct)}</dd>

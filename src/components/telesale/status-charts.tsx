@@ -16,6 +16,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { LEAD_STATUSES } from "@/lib/leads/status";
 import { formatPercent, type StatusCount } from "@/lib/leads/stats";
 
@@ -30,8 +31,46 @@ const STATUS_CONFIG: ChartConfig = {
 const toChartData = (byStatus: StatusCount[]) =>
   byStatus.map((s) => ({ ...s, fill: s.color }));
 
-/** Cột: số lead theo từng trạng thái. */
+/** Cột: số lead theo từng trạng thái. Điện thoại: thanh nằm ngang, tên trạng thái đọc được (không xoay chữ). */
 export function StatusBarChart({ byStatus }: { byStatus: StatusCount[] }) {
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <ChartContainer config={STATUS_CONFIG} className="aspect-auto w-full" style={{ height: byStatus.length * 28 + 16 }}>
+        <BarChart
+          accessibilityLayer
+          layout="vertical"
+          data={toChartData(byStatus)}
+          margin={{ top: 4, right: 32, bottom: 4, left: 0 }}
+        >
+          <XAxis type="number" hide allowDecimals={false} />
+          <YAxis
+            type="category"
+            dataKey="label"
+            width={118}
+            interval={0}
+            tickLine={false}
+            axisLine={false}
+            tick={{ fontSize: 11 }}
+          />
+          <ChartTooltip
+            cursor={{ fill: "var(--muted)", opacity: 0.6 }}
+            content={<ChartTooltipContent nameKey="key" hideLabel />}
+          />
+          <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={18}>
+            <LabelList
+              dataKey="count"
+              position="right"
+              offset={6}
+              className="fill-foreground"
+              fontSize={11}
+              fontWeight={600}
+            />
+          </Bar>
+        </BarChart>
+      </ChartContainer>
+    );
+  }
   return (
     <ChartContainer config={STATUS_CONFIG} className="aspect-auto h-80 w-full">
       <BarChart

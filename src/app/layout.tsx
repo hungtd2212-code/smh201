@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { ThemeScript } from "@/components/theme-script";
 import { Toaster } from "@/components/ui/sonner";
@@ -15,6 +15,17 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: { default: APP.name, template: `%s · ${APP.name}` },
   description: `Hệ thống quản lý phòng khám nha khoa — ${APP.tagline}`,
+  // iPhone: "Thêm vào MH chính" mở như ứng dụng riêng, tên ngắn dưới biểu tượng.
+  appleWebApp: { capable: true, title: APP.name, statusBarStyle: "default" },
+  formatDetection: { telephone: false },
+};
+
+// Thanh trạng thái / thanh địa chỉ trên điện thoại cùng màu nền trang (sáng / tối).
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f6f9fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#111827" },
+  ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

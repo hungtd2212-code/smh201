@@ -82,7 +82,7 @@ export function AccountRanking({
           </p>
         </div>
         <div className="overflow-x-auto rounded-xl border bg-card">
-          <table className="w-full border-collapse text-sm">
+          <table className="table-pin w-full border-collapse text-sm">
             <thead>
               <tr className="border-b">
                 <th className={cn(FIRST_TH, "w-10 text-right")}>#</th>

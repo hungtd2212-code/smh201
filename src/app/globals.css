@@ -238,3 +238,22 @@
   opacity: 0.55;
   transform: translateX(-50%);
 }
+
+/*
+ * Bảng số liệu rộng: khi vuốt ngang (nhất là trên điện thoại) cột đầu tiên (tên nhân viên, TKQC, ngày…) đứng yên
+ * và không xuống dòng. Đặt trong lớp components để màu nền riêng của từng dòng (bg-accent, bg-muted…) vẫn được ưu tiên.
+ */
+@layer components {
+  .table-pin :where(th, td):first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    white-space: nowrap;
+  }
+  .table-pin :where(tbody td):first-child {
+    background-color: var(--card);
+  }
+  .table-pin :where(thead th):first-child {
+    background-color: var(--muted);
+  }
+}

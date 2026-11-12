@@ -659,10 +659,10 @@ function StaffSection({
           </p>
         </div>
         <div className="overflow-x-auto rounded-xl border bg-card">
-          <table className="w-full border-collapse text-sm">
+          <table className="table-pin w-full border-collapse text-sm">
             <thead>
               <tr className="border-b">
-                <th className="bg-muted px-3 py-2 text-left text-xs font-medium">Nhân viên</th>
+                <th className="sticky left-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium">Nhân viên</th>
                 <th className={cn(TH, "bg-muted")}>Số TKQC</th>
                 <th className={cn(TH, ORANGE)}>{oneMonth ? "Tổng chi tiêu tháng" : "Tổng chi tiêu"}</th>
                 <MetricHeads />
@@ -670,7 +670,7 @@ function StaffSection({
             </thead>
             <tbody>
               <tr className="border-b bg-accent font-semibold text-accent-foreground">
-                <td className="px-3 py-2">Tổng</td>
+                <td className="sticky left-0 z-10 bg-accent px-3 py-2">Tổng</td>
                 <td className={TD}>{formatNumber(rows.reduce((s, r) => s + r.accounts, 0))}</td>
                 <td className={TD}>{formatNumber(total.spend)}</td>
                 <MetricCells totals={total} />
@@ -684,7 +684,7 @@ function StaffSection({
               ) : (
                 rows.map(({ person, totals, accounts }) => (
                   <tr key={person.id} className="border-b last:border-0 hover:bg-muted/50">
-                    <td className="px-3 py-2">
+                    <td className="sticky left-0 z-10 bg-card px-3 py-2 whitespace-nowrap">
                       <button
                         type="button"
                         className="font-medium underline-offset-2 hover:underline"
@@ -702,7 +702,7 @@ function StaffSection({
               )}
               {unowned && (
                 <tr className="border-b text-muted-foreground last:border-0">
-                  <td className="px-3 py-2" title="Báo cáo của TKQC không có người phụ trách vào ngày đó">
+                  <td className="sticky left-0 z-10 bg-card px-3 py-2 whitespace-nowrap" title="Báo cáo của TKQC không có người phụ trách vào ngày đó">
                     Chưa có người phụ trách
                   </td>
                   <td className={TD} />
@@ -944,7 +944,7 @@ function MonthTable({
 
   return (
     <div className="overflow-x-auto rounded-xl border bg-card">
-      <table className="w-full border-collapse text-sm">
+      <table className="table-pin w-full border-collapse text-sm">
         <thead>
           <tr>
             <th rowSpan={2} className="sticky left-0 z-10 border-b bg-muted px-3 py-2 text-left align-bottom font-medium">

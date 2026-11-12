@@ -69,7 +69,7 @@ export const config = {
     {
       // Bỏ qua file tĩnh và ảnh.
       source:
-        "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+        "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest)$).*)",
       // Bỏ qua các lượt tải trước (prefetch) của menu: chúng chỉ chứa khung trang,
       // không chứa dữ liệu — dữ liệu luôn được Supabase kiểm tra quyền riêng.
       missing: [
