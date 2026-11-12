@@ -11,7 +11,8 @@ const MENU_PAGES = new Set(NAV_PAGES.map((page) => page.href));
 
 /**
  * Chặn mở thẳng (gõ địa chỉ) một trang trên menu mà tài khoản chưa được tick quyền xem.
- * Trang chủ đưa tới trang đầu tiên người đó được xem. Quyền dữ liệu vẫn do Supabase kiểm soát.
+ * "Về trang của bạn" mở trang chủ "/", nơi chọn màn hình đầu tiên theo vị trí (src/lib/staff/home.ts) — luôn là
+ * một trang người đó được xem. Quyền dữ liệu vẫn do Supabase kiểm soát.
  */
 export function PageAccessGate({ children }: { children: React.ReactNode }) {
   const staff = useCurrentStaff();
@@ -23,9 +24,10 @@ export function PageAccessGate({ children }: { children: React.ReactNode }) {
   const blocked = restricted && MENU_PAGES.has(pathname) && !allowed.includes(pathname);
   const firstAllowed = allowed[0];
 
-  // Vào trang chủ (mặc định là Leads) mà không được xem Leads → chuyển tới trang đầu tiên được xem.
+  // Mở Leads (địa chỉ cũ đã lưu) mà không được xem Leads → về màn hình làm việc của người đó.
+  // (Có ít nhất một trang được xem thì trang chủ không bao giờ đưa ngược lại Leads → không lặp.)
   useEffect(() => {
-    if (blocked && firstAllowed && pathname === "/telesale/leads") router.replace(firstAllowed);
+    if (blocked && firstAllowed && pathname === "/telesale/leads") router.replace("/");
   }, [blocked, firstAllowed, pathname, router]);
 
   if (!blocked) return <>{children}</>;
@@ -37,7 +39,7 @@ export function PageAccessGate({ children }: { children: React.ReactNode }) {
           <>
             <p>Bạn chưa được cấp quyền xem trang này.</p>
             <p>
-              <Link href={firstAllowed} className="font-medium underline underline-offset-2">
+              <Link href="/" className="font-medium underline underline-offset-2">
                 Về trang của bạn
               </Link>
             </p>

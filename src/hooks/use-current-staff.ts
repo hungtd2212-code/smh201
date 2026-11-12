@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { Position } from "@/lib/staff/positions";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { MISSING_COLUMN } from "@/lib/supabase/errors";
@@ -79,7 +80,7 @@ export type CurrentStaff =
       /** Tên đăng nhập (null = tài khoản cũ đăng nhập bằng email). */
       username: string | null;
       /** Vị trí công việc (COO, Lead Ads…); null = tài khoản tạo trước khi có vị trí. */
-      position: "coo" | "lead_ads" | "ads_staff" | "page" | null;
+      position: Position | null;
       /**
        * Các trang được xem (hiện ở menu trái). null = tài khoản cũ: menu theo vai trò như trước.
        * Quản trị cấp cao luôn thấy mọi trang.
@@ -102,7 +103,7 @@ type OwnStaffRow = {
   can_delete?: boolean;
   can_export?: boolean;
   username?: string | null;
-  position?: "coo" | "lead_ads" | "ads_staff" | "page" | null;
+  position?: Position | null;
   page_access?: string[] | null;
   avatar_url?: string | null;
 };
