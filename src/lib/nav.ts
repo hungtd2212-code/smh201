@@ -2,11 +2,14 @@ import {
   Banknote,
   CalendarDays,
   ChartColumn,
+  ChartLine,
+  ClipboardPenLine,
   CreditCard,
   FlaskConical,
   House,
   Inbox,
   Landmark,
+  LayoutDashboard,
   Megaphone,
   MessageCircleHeart,
   Package,
@@ -34,6 +37,8 @@ export type NavPage = {
   hint?: string;
   /** Chỉ các vai trò này thấy mục này trong menu; bỏ trống = ai cũng thấy. */
   roles?: StaffRole[];
+  /** Biểu tượng nhỏ cạnh tên trang trong menu (không bắt buộc). */
+  icon?: React.ComponentType<{ className?: string }>;
 };
 
 /** Người gửi và xem báo cáo ads hằng ngày: Quản trị, Trưởng Marketing và Nhân viên Ads. */
@@ -72,10 +77,11 @@ export const NAV_SECTIONS: NavSection[] = [
         title: "Marketing",
         icon: Megaphone,
         pages: [
-          // Tạm thời chỉ có 2 mục này (chủ phòng khám, 11/11/2026). Các trang Chiến dịch & Bài post,
+          // Tạm thời chỉ có 3 mục này (chủ phòng khám, 11–12/11/2026). Các trang Chiến dịch & Bài post,
           // TKQC & Page, Nhân viên Ads vẫn mở được bằng đường dẫn — quản lý có lối vào từ màn Nhập liệu.
-          { title: "Nhập liệu", href: "/marketing/nhap-lieu", roles: ADS_PEOPLE },
-          { title: "Tổng quan", href: "/marketing/tong-quan", roles: ADS_PEOPLE },
+          { title: "Nhập liệu", href: "/marketing/nhap-lieu", roles: ADS_PEOPLE, icon: ClipboardPenLine },
+          { title: "Tổng quan", href: "/marketing/tong-quan", roles: ADS_PEOPLE, icon: LayoutDashboard },
+          { title: "Phân tích", href: "/marketing/phan-tich", roles: ADS_PEOPLE, icon: ChartLine },
         ],
       },
       {

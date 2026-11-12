@@ -29,6 +29,7 @@ import {
 } from "@/lib/ad-reports/types";
 import type { AdAccount, AdsStaff } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
+import { AccountPicker, useHiddenAccounts } from "./account-picker";
 import { AccountSetup } from "./account-setup";
 import { SingleDayFilter } from "./date-filters";
 import { useAdReports } from "./hooks";
@@ -59,7 +60,6 @@ export function ReportEntry() {
 }
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
-const ALL = "__all";
 type Tab = "entry" | "setup";
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -89,7 +89,6 @@ function EntryBody() {
   const [tab, setTab] = useState<Tab>(params.get("tab") === "cai-dat" ? "setup" : "entry");
   const [picked, setPicked] = useState<string | null>(dayParam && ISO_DAY.test(dayParam) ? dayParam : null);
   const [pickedStaff, setPickedStaff] = useState<string | null>(params.get("nv"));
-  const [pickedAccount, setPickedAccount] = useState(ALL);
 
   // Không cho ngày chưa tới, kể cả khi gõ thẳng vào địa chỉ trang.
   const day = picked && today && picked <= today ? picked : today;
@@ -117,6 +116,8 @@ function EntryBody() {
       people.find((p) => p.is_active && accountsOf(p).length > 0) ??
       people[0])
     : me;
+  // TKQC tạm ẩn khỏi bảng nhập (không chạy lúc này) — nhớ theo từng người.
+  const [hidden, setHidden] = useHiddenAccounts(person?.id);
 
   if (!catalogs.marketingReady) return <MarketingNotReady what="Màn Nhập liệu" />;
   if (staff.status === "loading") return <Skeleton className="h-64 w-full rounded-xl" />;
@@ -129,7 +130,10 @@ function EntryBody() {
   }
 
   const accounts = person ? accountsOf(person) : [];
-  const shown = accounts.filter((a) => pickedAccount === ALL || a.id === pickedAccount);
+  // TKQC đã gửi số ngày này thì luôn hiện (kể cả đang tạm ẩn) để thấy đủ số đã gửi.
+  const shown = accounts.filter(
+    (a) => !hidden.has(a.id) || reportsOfDay.some((r) => r.ad_account_id === a.id && r.report_date === day),
+  );
   const numbers = new Map(accounts.map((a, i) => [a.id, i + 1]));
 
   return (
@@ -157,13 +161,7 @@ function EntryBody() {
             {scope.managesMarketing && person && (
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 Nhập thay cho
-                <Select
-                  value={person.id}
-                  onValueChange={(value) => {
-                    setPickedStaff(value);
-                    setPickedAccount(ALL);
-                  }}
-                >
+                <Select value={person.id} onValueChange={setPickedStaff}>
                   <SelectTrigger className="w-52" aria-label="Nhân viên quảng cáo">
                     <SelectValue />
                   </SelectTrigger>
@@ -181,19 +179,7 @@ function EntryBody() {
             {accounts.length > 0 && (
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 Tài khoản quảng cáo
-                <Select value={shown.length > 0 ? pickedAccount : ALL} onValueChange={setPickedAccount}>
-                  <SelectTrigger className="w-56" aria-label="Tài khoản quảng cáo">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>Tất cả TKQC ({accounts.length})</SelectItem>
-                    {accounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <AccountPicker accounts={accounts} hidden={hidden} onChange={setHidden} />
               </label>
             )}
           </div>
@@ -221,6 +207,8 @@ function EntryBody() {
               </button>{" "}
               để thêm TKQC.
             </ReadOnlyNote>
+          ) : shown.length === 0 ? (
+            <ReadOnlyNote>Hãy tick ít nhất một TKQC ở ô “Tài khoản quảng cáo” để nhập số.</ReadOnlyNote>
           ) : state.status === "error" ? (
             <StatsError message={state.message} />
           ) : state.status === "ready" ? (
@@ -228,7 +216,7 @@ function EntryBody() {
               key={`${day}:${person.id}`}
               day={day}
               today={today}
-              accounts={shown.length > 0 ? shown : accounts}
+              accounts={shown}
               numbers={numbers}
               personId={person.id}
               reports={state.reports}

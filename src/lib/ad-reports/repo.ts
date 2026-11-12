@@ -57,18 +57,25 @@ export async function fetchReports(from: string, to: string): Promise<AdDailyRep
  * file 010.
  */
 export async function fetchDailyData(from: string, to: string): Promise<AdDailyData[] | null> {
-  const { data, error } = await getSupabaseBrowserClient()
-    .from("ads_daily_data")
-    .select("id, report_date, ads_staff_id, data_count, user_id, submitted_at, updated_at, updated_by")
-    .gte("report_date", from)
-    .lte("report_date", to)
-    .order("report_date", { ascending: false })
-    .limit(5000);
-  if (error) {
-    if (isNotMigrated(error)) return null;
-    throw reportError(error);
+  const supabase = getSupabaseBrowserClient();
+  const rows: AdDailyData[] = [];
+  // Xem nhiều tháng / nhiều năm có thể quá 1000 dòng → đọc từng trang.
+  for (let start = 0; ; start += PAGE) {
+    const { data, error } = await supabase
+      .from("ads_daily_data")
+      .select("id, report_date, ads_staff_id, data_count, user_id, submitted_at, updated_at, updated_by")
+      .gte("report_date", from)
+      .lte("report_date", to)
+      .order("report_date", { ascending: false })
+      .order("id")
+      .range(start, start + PAGE - 1);
+    if (error) {
+      if (isNotMigrated(error)) return null;
+      throw reportError(error);
+    }
+    rows.push(...(data as AdDailyData[]));
+    if (data.length < PAGE) return rows;
   }
-  return data as AdDailyData[];
 }
 
 /** Gửi "Data xin được" chung của một ngày. */

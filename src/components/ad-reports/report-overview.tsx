@@ -1,6 +1,6 @@
 "use client";
 
-import { ChartColumn, Lock, Pencil } from "lucide-react";
+import { LayoutDashboard, Lock, Pencil } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
@@ -27,6 +27,20 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentStaff } from "@/hooks/use-current-staff";
 import {
+  add,
+  entriesOf,
+  firstDayOf,
+  isEmpty,
+  lastDayOf,
+  metricOf,
+  totalsByDay,
+  totalsByMonth,
+  totalsByStaff,
+  zero,
+  type MetricKey,
+  type Totals,
+} from "@/lib/ad-reports/aggregate";
+import {
   durationText,
   editDeadline,
   formatClock,
@@ -41,29 +55,33 @@ import { updateDailyData, updateReport } from "@/lib/ad-reports/repo";
 import type { AdDailyData, AdDailyReport, ReportValues } from "@/lib/ad-reports/types";
 import type { AdAccount, AdAccountAssignment, AdsStaff } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
-import { MonthFilter } from "./date-filters";
+import { ChartCard, MetricTabs, StaffChart, TrendChart } from "./charts";
 import { useAdReports, useNow } from "./hooks";
+import { MonthsPicker, monthsLabel, yearOptions } from "./period-picker";
+import { LIME, ORANGE, PeriodTable, TD, TH, YELLOW, type PeriodRow } from "./period-table";
 import { ReportFields, allFilled, fieldKey, toNumbers, type FieldItem } from "./report-fields";
 import { NotReady, StatsError } from "./shared";
 
 const ALL = "__all";
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** "Tháng 11/2026" → "tháng 11/2026" (chỉ chữ đầu, để "T11" vẫn viết hoa). */
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
 /**
- * Marketing → Tổng quan: bảng số liệu ads theo tháng.
- *   • Nhân viên Ads: bảng cả tháng của mình — mỗi dòng một ngày, chi tiêu từng TK ADS, tổng chi tiêu ngày,
- *     tổng mess, giá mess, data, giá data, tỉ lệ xin số (như sheet "bảng dữ liệu quảng cáo theo tháng").
- *     Sửa được trong 24 giờ kể từ lúc gửi.
- *   • Quản trị / Trưởng Marketing: chọn "Tất cả nhân viên" để xem tổng cả tháng của mọi người, hoặc chọn
- *     một người để xem bảng của người đó; sửa bất kỳ lúc nào.
+ * Marketing → Tổng quan: số liệu ads theo tháng, nhiều tháng, cả năm hoặc nhiều năm, kèm biểu đồ.
+ *   • Chọn MỘT tháng: bảng cả tháng — mỗi dòng một ngày, chi tiêu từng TK ADS, tổng chi tiêu ngày, tổng mess,
+ *     giá mess, data, giá data, tỉ lệ xin số (như sheet "bảng dữ liệu quảng cáo theo tháng"). Nhân viên sửa
+ *     được trong 24 giờ kể từ lúc gửi; quản lý sửa bất kỳ lúc nào.
+ *   • Chọn NHIỀU tháng (hoặc cả năm, nhiều năm): mỗi dòng một tháng, có tổng từng năm.
+ *   • Quản trị / Trưởng Marketing: "Tất cả nhân viên" (tổng của mọi người + so sánh từng người) hoặc một người.
  */
 export function ReportOverview() {
   return (
     <div className="grid gap-5">
       <PageHeader
-        icon={ChartColumn}
+        icon={LayoutDashboard}
         title="Tổng quan"
-        description="Số liệu quảng cáo theo tháng: chi tiêu từng TK ADS, mess, data và các chỉ số tính ra."
+        description="Số liệu quảng cáo theo tháng, nhiều tháng hoặc cả năm: chi tiêu, mess, data, các chỉ số và biểu đồ."
       />
       <CatalogGate>
         <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
@@ -74,20 +92,16 @@ export function ReportOverview() {
   );
 }
 
-/** Các số cộng dồn của một ngày / một người / cả tháng. */
-type Totals = { spend: number; messages: number; data: number };
-const zero = (): Totals => ({ spend: 0, messages: 0, data: 0 });
-const add = (a: Totals, b: Totals): Totals => ({
-  spend: a.spend + b.spend,
-  messages: a.messages + b.messages,
-  data: a.data + b.data,
-});
 /** Giá mess = chi tiêu / mess; giá data = chi tiêu / data; tỉ lệ xin số = data / mess. Chia cho 0 → "–". */
 const metrics = (t: Totals) => ({
   costPerMessage: ratio(t.spend, t.messages),
   costPerData: ratio(t.spend, t.data),
   dataRate: ratio(t.data, t.messages),
 });
+
+/** Năm đầu tiên có TKQC trong hệ thống (để biết cho chọn từ năm nào). */
+const firstYearOf = (accounts: AdAccount[], fallback: number) =>
+  Math.min(fallback, ...accounts.map((a) => (a.created_at ? Number(a.created_at.slice(0, 4)) : fallback)));
 
 function OverviewBody() {
   const { catalogs } = useCatalogs();
@@ -97,12 +111,23 @@ function OverviewBody() {
   const params = useSearchParams();
   // Mở từ màn Nhập liệu ("Đi tới Tổng quan") → đúng tháng, đúng người, tô sáng ngày đó.
   const focusDay = ISO_DAY.test(params.get("ngay") ?? "") ? params.get("ngay") : null;
-  const [pickedMonth, setPickedMonth] = useState<string | null>(focusDay ? focusDay.slice(0, 7) : null);
+  const [pickedMonths, setPickedMonths] = useState<string[] | null>(focusDay ? [focusDay.slice(0, 7)] : null);
   const [staffFilter, setStaffFilter] = useState(params.get("nv") ?? ALL);
+  const [metricKey, setMetricKey] = useState<MetricKey>("spend");
 
-  const month = pickedMonth ?? today.slice(0, 7);
-  const days = useMemo(() => (month ? monthDays(month) : []), [month]);
-  const { state, reload } = useAdReports(days[0] ?? "", days.at(-1) ?? "");
+  const months = useMemo(() => pickedMonths ?? (today ? [today.slice(0, 7)] : []), [pickedMonths, today]);
+  const from = months.length > 0 ? firstDayOf(months[0]) : "";
+  const to = months.length > 0 ? lastDayOf(months.at(-1) ?? months[0]) : "";
+  const { state, reload } = useAdReports(from, to);
+  const thisYear = Number((today || "2026").slice(0, 4));
+  const years = yearOptions(thisYear, firstYearOf(catalogs.adAccounts, thisYear));
+
+  const entries = useMemo(
+    () => (state.status === "ready" ? entriesOf(state.reports, state.data ?? [], catalogs.assignments) : []),
+    [state, catalogs.assignments],
+  );
+  const monthSet = useMemo(() => new Set(months), [months]);
+  const keep = useMemo(() => (day: string) => monthSet.has(day.slice(0, 7)), [monthSet]);
 
   const me =
     scope.isAdsStaff && staff.status === "ok"
@@ -121,10 +146,14 @@ function OverviewBody() {
   }
   if (state.status === "not-migrated") return <NotReady />;
 
+  const single = months.length === 1 ? months[0] : null;
+  const metricTabs = <MetricTabs value={metricKey} onChange={setMetricKey} />;
+  const periodName = single ? monthLabel(single) : monthsLabel(months, today);
+
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
-        {month && <MonthFilter value={month} today={today} onChange={setPickedMonth} />}
+        <MonthsPicker value={months} today={today} years={years} onChange={setPickedMonths} />
         {scope.managesMarketing && (
           <Select value={person ? person.id : ALL} onValueChange={setStaffFilter}>
             <SelectTrigger className="w-60" aria-label="Lọc theo nhân viên quảng cáo">
@@ -141,6 +170,11 @@ function OverviewBody() {
             </SelectContent>
           </Select>
         )}
+        {single && today && single !== today.slice(0, 7) && (
+          <Button variant="ghost" onClick={() => setPickedMonths([today.slice(0, 7)])}>
+            Về tháng này
+          </Button>
+        )}
       </div>
 
       {scope.isAdsStaff && !me ? (
@@ -149,13 +183,12 @@ function OverviewBody() {
         </ReadOnlyNote>
       ) : state.status === "error" ? (
         <StatsError message={state.message} />
-      ) : state.status !== "ready" || !month ? (
+      ) : state.status !== "ready" || months.length === 0 ? (
         <Skeleton className="h-64 w-full rounded-xl" />
-      ) : person ? (
+      ) : single && person ? (
         <PersonMonth
           person={person}
-          month={month}
-          days={days}
+          month={single}
           today={today}
           reports={state.reports}
           dailyData={state.data}
@@ -165,23 +198,40 @@ function OverviewBody() {
           showEntryStaff={scope.managesMarketing}
           focusDay={focusDay}
           onSaved={reload}
+          metricTabs={metricTabs}
+          metricKey={metricKey}
         />
       ) : (
-        <AllStaffMonth
-          month={month}
-          people={catalogs.adsStaff}
-          reports={state.reports}
-          dailyData={state.data ?? []}
-          assignments={catalogs.assignments}
-          onPick={setStaffFilter}
-        />
+        <>
+          <PeriodSummary
+            title={`${single ? "Tổng " + lowerFirst(periodName) : periodName} — ${person ? person.full_name : "tất cả nhân viên"}`}
+            single={single}
+            months={months}
+            byDay={totalsByDay(entries, person ? person.id : null, keep)}
+            metricTabs={metricTabs}
+            metricKey={metricKey}
+            onPickMonth={(month) => setPickedMonths([month])}
+          />
+          {!person && (
+            <StaffSection
+              periodName={periodName}
+              months={months}
+              people={catalogs.adsStaff}
+              byStaff={totalsByStaff(entries, keep)}
+              assignments={catalogs.assignments}
+              metricTabs={metricTabs}
+              metricKey={metricKey}
+              onPick={setStaffFilter}
+            />
+          )}
+        </>
       )}
     </>
   );
 }
 
 /* ------------------------------------------------------------------------------------------------ */
-/* Thẻ tổng của tháng                                                                                */
+/* Thẻ tổng + biểu đồ + bảng theo tháng                                                            */
 /* ------------------------------------------------------------------------------------------------ */
 
 function Tile({ label, value }: { label: string; value: string }) {
@@ -193,13 +243,13 @@ function Tile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MonthTiles({ totals, title }: { totals: Totals; title: string }) {
+function Tiles({ totals, title, oneMonth }: { totals: Totals; title: string; oneMonth: boolean }) {
   const m = metrics(totals);
   return (
     <section className="grid gap-2">
       <h2 className="font-medium">{title}</h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <Tile label="Tổng chi tiêu tháng" value={`${formatNumber(totals.spend)}đ`} />
+        <Tile label={oneMonth ? "Tổng chi tiêu tháng" : "Tổng chi tiêu"} value={`${formatNumber(totals.spend)}đ`} />
         <Tile label="Tổng mess" value={formatNumber(totals.messages)} />
         <Tile label="Giá mess" value={m.costPerMessage === null ? "–" : `${formatNumber(m.costPerMessage)}đ`} />
         <Tile label="Data" value={formatNumber(totals.data)} />
@@ -210,143 +260,197 @@ function MonthTiles({ totals, title }: { totals: Totals; title: string }) {
   );
 }
 
-const head = "px-2.5 py-2 text-right text-xs font-medium whitespace-nowrap";
-const cell = "px-2.5 py-2 text-right whitespace-nowrap tabular-nums";
-const dash = <span className="text-muted-foreground/60">–</span>;
-const num = (value: number | null) => (value === null ? dash : formatNumber(value));
-const yellow = "bg-yellow-100 text-yellow-950 dark:bg-yellow-900/40 dark:text-yellow-50";
-const lime = "bg-lime-100 text-lime-950 dark:bg-lime-900/40 dark:text-lime-50";
-const orange = "bg-orange-100 text-orange-950 dark:bg-orange-900/40 dark:text-orange-50";
+const shortMonth = (month: string, withYear: boolean) =>
+  withYear ? `T${Number(month.slice(5))}/${month.slice(2, 4)}` : `T${Number(month.slice(5))}`;
 
-/** 5 ô chỉ số (Tổng mess, Giá mess, Data, Giá data, Tỉ lệ xin số) của một dòng. */
-function MetricCells({ totals, empty = false }: { totals: Totals; empty?: boolean }) {
-  const m = metrics(totals);
-  if (empty) {
-    return (
-      <>
-        {Array.from({ length: 5 }, (_, i) => (
-          <td key={i} className={cn(cell, i === 0 && "border-l")}>
-            {dash}
-          </td>
-        ))}
-      </>
-    );
-  }
-  return (
-    <>
-      <td className={cn(cell, "border-l")}>{formatNumber(totals.messages)}</td>
-      <td className={cell}>{num(m.costPerMessage)}</td>
-      <td className={cell}>{formatNumber(totals.data)}</td>
-      <td className={cell}>{num(m.costPerData)}</td>
-      <td className={cell}>{formatPercent(m.dataRate)}</td>
-    </>
-  );
-}
-
-/** Tiêu đề 5 cột chỉ số; `rowSpan` = 2 khi bảng có thêm dòng tên TK ADS. */
-function MetricHeads({ rowSpan = 1 }: { rowSpan?: number }) {
-  const base = cn(head, rowSpan > 1 && "border-b align-bottom");
-  return (
-    <>
-      <th rowSpan={rowSpan} className={cn(base, "border-l", yellow)}>
-        Tổng mess
-      </th>
-      <th rowSpan={rowSpan} className={cn(base, lime)}>
-        Giá mess
-      </th>
-      <th rowSpan={rowSpan} className={cn(base, yellow)}>
-        Data
-      </th>
-      <th rowSpan={rowSpan} className={cn(base, lime)}>
-        Giá data
-      </th>
-      <th rowSpan={rowSpan} className={cn(base, yellow)}>
-        Tỉ lệ xin số
-      </th>
-    </>
-  );
-}
-
-/* ------------------------------------------------------------------------------------------------ */
-/* Quản lý: tổng cả tháng của tất cả nhân viên                                                       */
-/* ------------------------------------------------------------------------------------------------ */
-
-const NO_OWNER = "__no_owner";
-
-function AllStaffMonth({
+/** Biểu đồ theo ngày của một tháng. */
+function DailyChart({
   month,
-  people,
-  reports,
-  dailyData,
-  assignments,
-  onPick,
+  byDay,
+  metricTabs,
+  metricKey,
 }: {
   month: string;
+  byDay: Map<string, Totals>;
+  metricTabs: React.ReactNode;
+  metricKey: MetricKey;
+}) {
+  const metric = metricOf(metricKey);
+  const points = monthDays(month).map((day) => ({
+    key: day,
+    label: String(Number(day.slice(8))),
+    title: formatDay(day),
+    totals: byDay.get(day) ?? zero(),
+  }));
+  return (
+    <ChartCard title={`${metric.label} theo ngày — ${monthLabel(month).toLowerCase()}`} actions={metricTabs}>
+      <TrendChart points={points} metric={metric} height="h-64" />
+    </ChartCard>
+  );
+}
+
+/**
+ * Tổng của cả khoảng đã chọn: thẻ tổng, biểu đồ (theo ngày nếu một tháng, theo tháng nếu nhiều tháng) và —
+ * khi nhiều tháng — bảng mỗi dòng một tháng (có tổng từng năm nếu chọn nhiều năm).
+ */
+function PeriodSummary({
+  title,
+  single,
+  months,
+  byDay,
+  metricTabs,
+  metricKey,
+  onPickMonth,
+}: {
+  title: string;
+  single: string | null;
+  months: string[];
+  byDay: Map<string, Totals>;
+  metricTabs: React.ReactNode;
+  metricKey: MetricKey;
+  onPickMonth: (month: string) => void;
+}) {
+  const metric = metricOf(metricKey);
+  const byMonth = totalsByMonth(byDay);
+  const total = [...byMonth.values()].reduce(add, zero());
+  const years = [...new Set(months.map((m) => m.slice(0, 4)))];
+  const manyYears = years.length > 1;
+
+  const rows: PeriodRow[] = [{ key: "total", label: "Tổng", totals: total, kind: "total" }];
+  for (const year of years) {
+    const inYear = months.filter((m) => m.startsWith(year));
+    for (const month of inYear) {
+      rows.push({
+        key: month,
+        label: (
+          <button
+            type="button"
+            className="underline-offset-2 hover:underline"
+            title="Xem bảng từng ngày của tháng này"
+            onClick={() => onPickMonth(month)}
+          >
+            {monthLabel(month)}
+          </button>
+        ),
+        totals: byMonth.get(month) ?? zero(),
+      });
+    }
+    if (manyYears) {
+      rows.push({
+        key: `year-${year}`,
+        label: inYear.length === 12 ? `Cả năm ${year}` : `Tổng ${year} (${inYear.length} tháng)`,
+        totals: inYear.map((m) => byMonth.get(m) ?? zero()).reduce(add, zero()),
+        kind: "subtotal",
+      });
+    }
+  }
+
+  return (
+    <>
+      <Tiles totals={total} title={title} oneMonth={single !== null} />
+      {single ? (
+        <DailyChart month={single} byDay={byDay} metricTabs={metricTabs} metricKey={metricKey} />
+      ) : (
+        <>
+          <ChartCard title={`${metric.label} theo tháng`} actions={metricTabs}>
+            <TrendChart
+              metric={metric}
+              points={months.map((month) => ({
+                key: month,
+                label: shortMonth(month, manyYears),
+                title: monthLabel(month),
+                totals: byMonth.get(month) ?? zero(),
+              }))}
+            />
+          </ChartCard>
+          <section className="grid gap-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-medium">Theo tháng</h2>
+              <p className="text-sm text-muted-foreground">
+                Mũi tên: tăng / giảm so với tháng ở dòng trên. Bấm tên tháng để xem từng ngày.
+              </p>
+            </div>
+            <PeriodTable firstHead="Tháng" rows={rows} showChange />
+          </section>
+        </>
+      )}
+      {isEmpty(total) && (
+        <p className="text-sm text-muted-foreground">Khoảng thời gian này chưa có báo cáo nào.</p>
+      )}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+/* Quản lý: tổng của từng nhân viên trong khoảng đã chọn                                             */
+/* ------------------------------------------------------------------------------------------------ */
+
+function StaffSection({
+  periodName,
+  months,
+  people,
+  byStaff,
+  assignments,
+  metricTabs,
+  metricKey,
+  onPick,
+}: {
+  periodName: string;
+  months: string[];
   people: AdsStaff[];
-  reports: AdDailyReport[];
-  dailyData: AdDailyData[];
+  byStaff: Map<string | null, Totals>;
   assignments: AdAccountAssignment[];
+  metricTabs: React.ReactNode;
+  metricKey: MetricKey;
   onPick: (staffId: string) => void;
 }) {
-  const byStaff = useMemo(() => {
-    const ownerOf = (accountId: string, day: string) =>
-      assignments.find((x) => x.ad_account_id === accountId && coversDay(x, day))?.ads_staff_id ?? NO_OWNER;
-    const result = new Map<string, Totals>();
-    const bump = (id: string, t: Totals) => result.set(id, add(result.get(id) ?? zero(), t));
-    const dataDays = new Set(dailyData.map((d) => `${d.report_date}:${d.ads_staff_id}`));
-    for (const r of reports) {
-      const owner = ownerOf(r.ad_account_id, r.report_date);
-      // Data nhập theo từng TKQC ở báo cáo cũ chỉ tính khi ngày đó chưa có dòng Data chung.
-      const legacy = dataDays.has(`${r.report_date}:${owner}`) ? 0 : r.data_count;
-      bump(owner, { spend: r.spend, messages: r.messages, data: legacy });
-    }
-    for (const d of dailyData) bump(d.ads_staff_id, { spend: 0, messages: 0, data: d.data_count });
-    return result;
-  }, [reports, dailyData, assignments]);
-
-  // Người có TKQC trong tháng hoặc đã có số; người đã nghỉ mà không có số thì bỏ.
-  const days = monthDays(month);
+  const metric = metricOf(metricKey);
+  // Người có TKQC trong khoảng đã chọn hoặc đã có số; người đã nghỉ mà không có số thì bỏ.
+  const from = firstDayOf(months[0]);
+  const to = lastDayOf(months.at(-1) ?? months[0]);
   const accountCount = (id: string) =>
     new Set(
       assignments
-        .filter((x) => x.ads_staff_id === id && days.some((d) => coversDay(x, d)))
+        .filter((x) => x.ads_staff_id === id && x.from_date <= to && (!x.to_date || x.to_date >= from))
         .map((x) => x.ad_account_id),
     ).size;
   const rows = people
     .map((p) => ({ person: p, totals: byStaff.get(p.id) ?? zero(), accounts: accountCount(p.id) }))
-    .filter((row) => row.accounts > 0 || row.totals.spend + row.totals.messages + row.totals.data > 0);
-  const unowned = byStaff.get(NO_OWNER);
+    .filter((row) => row.accounts > 0 || !isEmpty(row.totals));
+  const unowned = byStaff.get(null);
   const total = [...byStaff.values()].reduce(add, zero());
+  const oneMonth = months.length === 1;
 
   return (
     <>
-      <MonthTiles totals={total} title={`Tổng ${monthLabel(month).toLowerCase()} — tất cả nhân viên`} />
       <section className="grid gap-2">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium">Theo nhân viên</h2>
-          <p className="text-sm text-muted-foreground">Bấm vào tên để xem bảng cả tháng của người đó.</p>
+          <h2 className="font-medium">Theo nhân viên — {lowerFirst(periodName)}</h2>
+          <p className="text-sm text-muted-foreground">
+            Bấm vào tên để xem {oneMonth ? "bảng cả tháng" : "số liệu"} của người đó.
+          </p>
         </div>
         <div className="overflow-x-auto rounded-xl border bg-card">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b bg-muted">
-                <th className="px-3 py-2 text-left text-xs font-medium">Nhân viên</th>
-                <th className={head}>Số TKQC</th>
-                <th className={cn(head, "border-l", orange)}>Tổng chi tiêu tháng</th>
+              <tr className="border-b">
+                <th className="bg-muted px-3 py-2 text-left text-xs font-medium">Nhân viên</th>
+                <th className={cn(TH, "bg-muted")}>Số TKQC</th>
+                <th className={cn(TH, ORANGE)}>{oneMonth ? "Tổng chi tiêu tháng" : "Tổng chi tiêu"}</th>
                 <MetricHeads />
               </tr>
             </thead>
             <tbody>
               <tr className="border-b bg-accent font-semibold text-accent-foreground">
                 <td className="px-3 py-2">Tổng</td>
-                <td className={cell}>{formatNumber(rows.reduce((s, r) => s + r.accounts, 0))}</td>
-                <td className={cn(cell, "border-l")}>{formatNumber(total.spend)}</td>
+                <td className={TD}>{formatNumber(rows.reduce((s, r) => s + r.accounts, 0))}</td>
+                <td className={TD}>{formatNumber(total.spend)}</td>
                 <MetricCells totals={total} />
               </tr>
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="h-20 text-center text-muted-foreground">
-                    Tháng này chưa có nhân viên nào có TKQC.
+                    Khoảng thời gian này chưa có nhân viên nào có TKQC.
                   </td>
                 </tr>
               ) : (
@@ -362,8 +466,8 @@ function AllStaffMonth({
                       </button>
                       {!person.is_active && <span className="ml-1.5 text-xs text-muted-foreground">(đã nghỉ)</span>}
                     </td>
-                    <td className={cell}>{formatNumber(accounts)}</td>
-                    <td className={cn(cell, "border-l font-medium")}>{formatNumber(totals.spend)}</td>
+                    <td className={TD}>{formatNumber(accounts)}</td>
+                    <td className={cn(TD, "font-medium")}>{formatNumber(totals.spend)}</td>
                     <MetricCells totals={totals} />
                   </tr>
                 ))
@@ -373,8 +477,8 @@ function AllStaffMonth({
                   <td className="px-3 py-2" title="Báo cáo của TKQC không có người phụ trách vào ngày đó">
                     Chưa có người phụ trách
                   </td>
-                  <td className={cell} />
-                  <td className={cn(cell, "border-l")}>{formatNumber(unowned.spend)}</td>
+                  <td className={TD} />
+                  <td className={TD}>{formatNumber(unowned.spend)}</td>
                   <MetricCells totals={unowned} />
                 </tr>
               )}
@@ -382,6 +486,66 @@ function AllStaffMonth({
           </table>
         </div>
       </section>
+      {rows.length > 1 && (
+        <ChartCard title={`${metric.label} theo nhân viên`} actions={metricTabs}>
+          <StaffChart
+            metric={metric}
+            rows={rows.map(({ person, totals }) => ({ key: person.id, name: person.full_name, totals }))}
+          />
+        </ChartCard>
+      )}
+    </>
+  );
+}
+
+const dash = <span className="text-muted-foreground/60">–</span>;
+const num = (value: number | null) => (value === null ? dash : formatNumber(value));
+
+/** 5 ô chỉ số (Tổng mess, Giá mess, Data, Giá data, Tỉ lệ xin số) của một dòng. */
+function MetricCells({ totals, empty = false }: { totals: Totals; empty?: boolean }) {
+  const m = metrics(totals);
+  if (empty) {
+    return (
+      <>
+        {Array.from({ length: 5 }, (_, i) => (
+          <td key={i} className={TD}>
+            {dash}
+          </td>
+        ))}
+      </>
+    );
+  }
+  return (
+    <>
+      <td className={TD}>{formatNumber(totals.messages)}</td>
+      <td className={TD}>{num(m.costPerMessage)}</td>
+      <td className={TD}>{formatNumber(totals.data)}</td>
+      <td className={TD}>{num(m.costPerData)}</td>
+      <td className={TD}>{formatPercent(m.dataRate)}</td>
+    </>
+  );
+}
+
+/** Tiêu đề 5 cột chỉ số; `rowSpan` = 2 khi bảng có thêm dòng tên TK ADS. */
+function MetricHeads({ rowSpan = 1 }: { rowSpan?: number }) {
+  const base = cn(TH, rowSpan > 1 && "border-b align-bottom");
+  return (
+    <>
+      <th rowSpan={rowSpan} className={cn(base, YELLOW)}>
+        Tổng mess
+      </th>
+      <th rowSpan={rowSpan} className={cn(base, LIME)}>
+        Giá mess
+      </th>
+      <th rowSpan={rowSpan} className={cn(base, YELLOW)}>
+        Data
+      </th>
+      <th rowSpan={rowSpan} className={cn(base, LIME)}>
+        Giá data
+      </th>
+      <th rowSpan={rowSpan} className={cn(base, YELLOW)}>
+        Tỉ lệ xin số
+      </th>
     </>
   );
 }
@@ -427,7 +591,8 @@ function buildGroup(
   const mine = assignments.filter((x) => x.ads_staff_id === person.id);
   // Trước ngày TKQC được khai báo trong hệ thống thì không coi là "chưa gửi" (trừ khi đã có báo cáo).
   const createdDay = new Map(accounts.map((a) => [a.id, a.created_at ? dayOf(a.created_at) : ""]));
-  const used = new Set<string>();
+  const assigned = new Set<string>();
+  const reported = new Set<string>();
   const rows = days.map((day) => {
     const cells = new Map<string, AdDailyReport | null>();
     for (const x of mine) {
@@ -435,7 +600,8 @@ function buildGroup(
       const report = byKey.get(`${day}:${x.ad_account_id}`) ?? null;
       if (!report && day < (createdDay.get(x.ad_account_id) ?? "")) continue;
       cells.set(x.ad_account_id, report);
-      used.add(x.ad_account_id);
+      assigned.add(x.ad_account_id);
+      if (report) reported.add(x.ad_account_id);
     }
     const sent = [...cells.values()].filter((r): r is AdDailyReport => r !== null);
     return {
@@ -446,13 +612,15 @@ function buildGroup(
       legacyData: sent.reduce((s, r) => s + r.data_count, 0),
     };
   });
+  // Chỉ hiện cột các TKQC có chạy (đã gửi số) trong tháng — người cầm nhiều TKQC nhưng chỉ chạy vài cái.
+  // Cả tháng chưa gửi gì thì hiện mọi TKQC đang cầm.
+  const used = reported.size > 0 ? reported : assigned;
   return { person, accounts: accounts.filter((a) => used.has(a.id)), rows };
 }
 
 function PersonMonth({
   person,
   month,
-  days,
   today,
   reports,
   dailyData,
@@ -462,10 +630,11 @@ function PersonMonth({
   showEntryStaff,
   focusDay,
   onSaved,
+  metricTabs,
+  metricKey,
 }: {
   person: AdsStaff;
   month: string;
-  days: string[];
   today: string;
   reports: AdDailyReport[];
   /** null = chưa chạy file 010. */
@@ -477,18 +646,23 @@ function PersonMonth({
   showEntryStaff: boolean;
   focusDay: string | null;
   onSaved: () => Promise<void>;
+  metricTabs: React.ReactNode;
+  metricKey: MetricKey;
 }) {
+  const days = useMemo(() => monthDays(month), [month]);
   const group = useMemo(
     () => buildGroup(person, days, reports, dailyData ?? [], accounts, assignments),
     [person, days, reports, dailyData, accounts, assignments],
   );
   const [editing, setEditing] = useState<Row | null>(null);
   const total = group.rows.map(rowTotals).reduce(add, zero());
+  const byDay = useMemo(() => new Map(group.rows.map((row) => [row.day, rowTotals(row)])), [group]);
 
   return (
     <>
-      <MonthTiles totals={total} title={`${monthLabel(month)} — ${person.full_name}`} />
-      {group.accounts.length === 0 && total.spend + total.messages + total.data === 0 ? (
+      <Tiles totals={total} title={`${monthLabel(month)} — ${person.full_name}`} oneMonth />
+      <DailyChart month={month} byDay={byDay} metricTabs={metricTabs} metricKey={metricKey} />
+      {group.accounts.length === 0 && isEmpty(total) ? (
         <ReadOnlyNote>
           {monthLabel(month)} {person.full_name} không có TKQC nào nên chưa có số liệu.
         </ReadOnlyNote>
@@ -557,14 +731,14 @@ function MonthTable({
                 TK ADS {i + 1}
               </th>
             ))}
-            <th rowSpan={2} className={cn(head, "border-b border-l align-bottom", orange)}>
+            <th rowSpan={2} className={cn(TH, "border-b align-bottom", ORANGE)}>
               Tổng chi tiêu ngày
             </th>
             <MetricHeads rowSpan={2} />
             <th rowSpan={2} className="border-b border-l bg-muted px-3 py-2 text-left align-bottom text-xs font-medium">
               Gửi lúc
             </th>
-            <th rowSpan={2} className="border-b bg-muted px-3 py-2 text-left align-bottom text-xs font-medium">
+            <th rowSpan={2} className="border-b border-l bg-muted px-3 py-2 text-left align-bottom text-xs font-medium">
               Thao tác
             </th>
           </tr>
@@ -583,22 +757,22 @@ function MonthTable({
           <tr className="border-b bg-accent font-semibold text-accent-foreground">
             <td className="sticky left-0 z-10 bg-accent px-3 py-2 text-left whitespace-nowrap">Tổng tháng</td>
             {group.accounts.map((account) => (
-              <td key={account.id} className={cn(cell, "border-l")}>
+              <td key={account.id} className={TD}>
                 {formatNumber(spendTotal(account))}
               </td>
             ))}
-            <td className={cn(cell, "border-l")}>{formatNumber(total.spend)}</td>
+            <td className={TD}>{formatNumber(total.spend)}</td>
             <MetricCells totals={total} />
             <td className="border-l" />
-            <td />
+            <td className="border-l" />
           </tr>
           {group.rows.map((row) => {
             const sent = sentOf(row);
             const future = Boolean(today) && row.day > today;
             const assigned = row.cells.size > 0;
-            const missing = [...row.cells.values()].filter((r) => r === null).length;
+            // Không nhắc "thiếu TK ADS": nhân viên chỉ gửi số các TKQC đang chạy (tick chọn ở Nhập liệu).
             const missingData = dataReady && assigned && !row.data && row.legacyData === 0;
-            const missingText = [missing > 0 && `${missing} TK ADS`, missingData && "Data"].filter(Boolean).join(", ");
+            const missingText = missingData ? "Data" : "";
             const firstSent = sent.map((r) => r.submitted_at).sort()[0];
             const lastEdit = sent.filter(wasEdited).map((r) => r.updated_at).sort().at(-1);
             // Nhân viên: sửa được những gì còn trong 24 giờ kể từ lúc gửi; quản lý: luôn sửa được.
@@ -626,12 +800,12 @@ function MonthTable({
                 {group.accounts.map((account) => {
                   const report = row.cells.get(account.id);
                   return (
-                    <td key={account.id} className={cn(cell, "border-l")}>
+                    <td key={account.id} className={TD}>
                       {!row.cells.has(account.id) ? "" : report ? formatNumber(report.spend) : dash}
                     </td>
                   );
                 })}
-                <td className={cn(cell, "border-l font-medium")}>{sent.length > 0 ? formatNumber(totals.spend) : dash}</td>
+                <td className={cn(TD, "font-medium")}>{sent.length > 0 ? formatNumber(totals.spend) : dash}</td>
                 <MetricCells totals={totals} empty={sent.length === 0} />
                 <td className="border-l px-3 py-2 align-top text-xs whitespace-nowrap">
                   {firstSent ? (
@@ -650,7 +824,7 @@ function MonthTable({
                     </span>
                   ) : null}
                 </td>
-                <td className="px-3 py-1.5 align-top whitespace-nowrap">
+                <td className="border-l px-3 py-1.5 align-top whitespace-nowrap">
                   {sent.length === 0 ? (
                     assigned && !future ? (
                       <Button asChild variant="outline" size="sm">

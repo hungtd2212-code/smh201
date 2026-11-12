@@ -108,6 +108,7 @@ export function AppSidebar() {
                                   className="h-auto min-h-7 py-1 [&>span:last-child]:whitespace-normal"
                                 >
                                   <Link href={page.href} title={page.title}>
+                                    {page.icon && <page.icon />}
                                     <span>{page.title}</span>
                                   </Link>
                                 </SidebarMenuSubButton>
