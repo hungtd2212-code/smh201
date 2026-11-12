@@ -522,43 +522,90 @@ export const periodElapsed = (period: TrackPeriod, today: string) => {
 
 const pctText = (value: number) => `${Math.round(Math.abs(value) * 100)}%`;
 
+/** Mục tiêu cộng dồn của một kỳ: tổng mục tiêu các tháng, và phần "kỳ vọng" tới hôm nay. */
+export type Goal = { goal: number; expected: number };
+
+/** Kế hoạch của một kỳ (tháng / quý / năm) dựng từ mục tiêu từng tháng. */
+export type Plan = {
+  budget: Goal | null;
+  data: Goal | null;
+  revenue: Goal | null;
+  maxCostPerData: number | null;
+  maxCostPerMessage: number | null;
+  maxAdRevenuePct: number | null;
+};
+
 /**
- * So số thực đạt của một kỳ với mục tiêu (mục tiêu tháng × số tháng của kỳ cho ngân sách / data / doanh thu;
- * giá và tỉ lệ thì giữ nguyên). `elapsed`: phần kỳ đã qua — để biết "kỳ vọng tới hôm nay".
+ * Kế hoạch của một kỳ: ngân sách / số điện thoại / doanh thu = cộng mục tiêu của từng tháng trong kỳ; "kỳ vọng tới
+ * hôm nay" = tháng đã qua tính đủ, tháng này tính theo số ngày đã qua, tháng sau chưa tính. Giá tối đa và tỉ lệ
+ * ads / doanh thu lấy của tháng hiện tại (kỳ đã qua hết thì của tháng cuối kỳ). `targetOf(tháng)` trả mục tiêu
+ * của tháng đó (null = chưa đặt).
  */
-export function trackGoals(
-  actual: Totals,
-  revenue: number,
-  target: TargetValues | null,
-  months: number,
-  elapsed: number,
-): TrackItem[] {
-  const progress = (key: TrackKey, label: string, unit: TrackItem["unit"], value: number, monthly: number | null | undefined): TrackItem => {
-    if (!monthly) return { key, label, unit, actual: value, goal: null, kind: "progress", status: "none", note: "Chưa đặt mục tiêu", fill: 0 };
-    const goal = monthly * months;
-    const expected = goal * elapsed;
-    const fill = value / goal;
-    if (value >= goal) return { key, label, unit, actual: value, goal, kind: "progress", status: "good", note: "Đã đạt mục tiêu 🎉", fill };
-    if (expected <= 0) return { key, label, unit, actual: value, goal, kind: "progress", status: "none", note: "Kỳ chưa bắt đầu", fill };
-    const perf = value / expected - 1;
-    if (perf > 0.05) return { key, label, unit, actual: value, goal, kind: "progress", status: "good", note: `Tốt hơn kỳ vọng ${pctText(perf)}`, fill };
-    if (perf >= -0.05) return { key, label, unit, actual: value, goal, kind: "progress", status: "good", note: "Đúng kỳ vọng", fill };
-    return { key, label, unit, actual: value, goal, kind: "progress", status: perf < -0.15 ? "bad" : "warning", note: `Kém hơn kỳ vọng ${pctText(perf)}`, fill };
+export function planFor(period: TrackPeriod, today: string, targetOf: (month: string) => TargetValues | null): Plan {
+  const thisMonth = today.slice(0, 7);
+  const months = monthsBetween(period.from.slice(0, 7), period.to.slice(0, 7));
+  const sums = { budget: zeroGoal(), data: zeroGoal(), revenue: zeroGoal() };
+  const has = { budget: false, data: false, revenue: false };
+  for (const month of months) {
+    const t = targetOf(month);
+    if (!t) continue;
+    const elapsed = monthElapsed(month, today);
+    const parts: [keyof typeof sums, number | null | undefined][] = [
+      ["budget", t.monthly_budget],
+      ["data", t.monthly_data],
+      ["revenue", t.monthly_revenue],
+    ];
+    for (const [key, value] of parts) {
+      if (!value) continue;
+      has[key] = true;
+      sums[key].goal += value;
+      sums[key].expected += value * elapsed;
+    }
+  }
+  const capMonth = months.includes(thisMonth) ? thisMonth : (months.filter((m) => m < thisMonth).at(-1) ?? months[0]);
+  const caps = targetOf(capMonth);
+  return {
+    budget: has.budget ? sums.budget : null,
+    data: has.data ? sums.data : null,
+    revenue: has.revenue ? sums.revenue : null,
+    maxCostPerData: caps?.max_cost_per_data ?? null,
+    maxCostPerMessage: caps?.max_cost_per_message ?? null,
+    maxAdRevenuePct: caps?.max_ad_revenue_pct ?? null,
   };
-  const cap = (key: TrackKey, label: string, unit: TrackItem["unit"], value: number | null, limit: number | null | undefined, empty: string): TrackItem => {
+}
+const zeroGoal = (): Goal => ({ goal: 0, expected: 0 });
+
+/**
+ * So số thực đạt của một kỳ với kế hoạch. Thanh tiến độ (`fill`): phần tô màu = đã hoàn thành, phần trắng = chưa.
+ *   • Số điện thoại, doanh thu: đã đạt / mục tiêu; so với "kỳ vọng tới hôm nay" để báo tốt / kém hơn bao nhiêu %.
+ *   • Ngân sách: đã tiêu / ngân sách; tiêu nhanh hơn nhịp thì nhắc, vượt thì đỏ.
+ *   • Giá số, giá mess, ads / doanh thu (không được cao hơn mức tối đa): trong mức → đầy thanh (đạt); vượt → thanh
+ *     chỉ tô tới (mức tối đa ÷ thực tế), phần trắng là phần còn phải giảm.
+ */
+export function trackGoals(actual: Totals, revenue: number, plan: Plan): TrackItem[] {
+  const progress = (key: TrackKey, label: string, unit: TrackItem["unit"], value: number, g: Goal | null): TrackItem => {
+    if (!g) return { key, label, unit, actual: value, goal: null, kind: "progress", status: "none", note: "Chưa đặt mục tiêu", fill: 0 };
+    const fill = value / g.goal;
+    const base = { key, label, unit, actual: value, goal: g.goal, kind: "progress" as const, fill };
+    if (value >= g.goal) return { ...base, status: "good", note: "Đã đạt mục tiêu 🎉" };
+    if (g.expected <= 0) return { ...base, status: "none", note: "Kỳ chưa bắt đầu" };
+    const perf = value / g.expected - 1;
+    if (perf > 0.05) return { ...base, status: "good", note: `Tốt hơn kỳ vọng ${pctText(perf)}` };
+    if (perf >= -0.05) return { ...base, status: "good", note: "Đúng kỳ vọng" };
+    return { ...base, status: perf < -0.15 ? "bad" : "warning", note: `Kém hơn kỳ vọng ${pctText(perf)}` };
+  };
+  const cap = (key: TrackKey, label: string, unit: TrackItem["unit"], value: number | null, limit: number | null, empty: string): TrackItem => {
     if (!limit) return { key, label, unit, actual: value, goal: null, kind: "cap", status: "none", note: "Chưa đặt mục tiêu", fill: 0 };
     if (value === null) return { key, label, unit, actual: null, goal: limit, kind: "cap", status: "none", note: empty, fill: 0 };
-    const fill = value / limit;
-    if (value > limit) return { key, label, unit, actual: value, goal: limit, kind: "cap", status: "bad", note: `Vượt mục tiêu ${pctText(fill - 1)}`, fill };
-    if (fill > 0.9) return { key, label, unit, actual: value, goal: limit, kind: "cap", status: "warning", note: "Sát mức tối đa", fill };
-    return { key, label, unit, actual: value, goal: limit, kind: "cap", status: "good", note: `Tốt hơn mục tiêu ${pctText(1 - fill)}`, fill };
+    const base = { key, label, unit, actual: value, goal: limit, kind: "cap" as const };
+    if (value > limit) return { ...base, status: "bad", note: `Vượt mục tiêu ${pctText(value / limit - 1)}`, fill: limit / value };
+    if (value / limit > 0.9) return { ...base, status: "warning", note: "Sát mức tối đa", fill: 1 };
+    return { ...base, status: "good", note: `Tốt hơn mục tiêu ${pctText(1 - value / limit)}`, fill: 1 };
   };
 
   const items: TrackItem[] = [];
-  // Ngân sách: không vượt; tiêu nhanh hơn nhịp thì nhắc.
-  if (target?.monthly_budget) {
-    const goal = target.monthly_budget * months;
-    const expected = goal * elapsed;
+  if (plan.budget) {
+    const { goal, expected } = plan.budget;
     const fill = actual.spend / goal;
     const perf = expected > 0 ? actual.spend / expected - 1 : 0;
     const [status, note]: [TrackStatus, string] =
@@ -573,14 +620,34 @@ export function trackGoals(
   } else {
     items.push({ key: "budget", label: "Ngân sách", unit: "money", actual: actual.spend, goal: null, kind: "budget", status: "none", note: "Chưa đặt mục tiêu", fill: 0 });
   }
-  items.push(progress("data", "Số điện thoại", "count", actual.data, target?.monthly_data));
-  items.push(cap("costPerData", "Giá số", "money", ratio(actual.spend, actual.data), target?.max_cost_per_data, "Chưa có data"));
-  items.push(cap("costPerMessage", "Giá mess", "money", ratio(actual.spend, actual.messages), target?.max_cost_per_message, "Chưa có mess"));
-  items.push(progress("revenue", "Doanh thu", "money", revenue, target?.monthly_revenue));
+  items.push(progress("data", "Số điện thoại", "count", actual.data, plan.data));
+  items.push(cap("costPerData", "Giá số", "money", ratio(actual.spend, actual.data), plan.maxCostPerData, "Chưa có data"));
+  items.push(cap("costPerMessage", "Giá mess", "money", ratio(actual.spend, actual.messages), plan.maxCostPerMessage, "Chưa có mess"));
+  items.push(progress("revenue", "Doanh thu", "money", revenue, plan.revenue));
   items.push(
-    cap("adRevenue", "Ads / doanh thu", "percent", revenue > 0 ? (actual.spend / revenue) * 100 : null, target?.max_ad_revenue_pct, "Chưa có doanh thu"),
+    cap("adRevenue", "Ads / doanh thu", "percent", revenue > 0 ? (actual.spend / revenue) * 100 : null, plan.maxAdRevenuePct, "Chưa có doanh thu"),
   );
   return items;
+}
+
+/**
+ * Chia một tổng cho nhiều người theo trọng số (trọng số đều 0 → chia đều), làm tròn theo `step` (vd 1.000đ) và dồn
+ * phần lẻ cho người có phần dư lớn nhất — tổng sau khi chia luôn đúng bằng `total`.
+ */
+export function splitTotal(total: number, weights: number[], step = 1): number[] {
+  if (weights.length === 0) return [];
+  const sum = weights.reduce((a, b) => a + b, 0);
+  const w = sum > 0 ? weights : weights.map(() => 1);
+  const wSum = sum > 0 ? sum : weights.length;
+  const raw = w.map((x) => (total * x) / wSum);
+  const parts = raw.map((x) => Math.floor(x / step) * step);
+  let left = Math.round((total - parts.reduce((a, b) => a + b, 0)) / step);
+  const order = raw.map((x, i) => ({ i, rest: x - parts[i] })).sort((a, b) => b.rest - a.rest);
+  for (let k = 0; left > 0 && order.length > 0; k = (k + 1) % order.length, left--) parts[order[k].i] += step;
+  // Nếu tổng không chia hết cho step, phần lẻ cuối cùng cộng vào người đầu tiên.
+  const diff = total - parts.reduce((a, b) => a + b, 0);
+  if (diff !== 0) parts[order[0].i] += diff;
+  return parts;
 }
 
 /* ------------------------------------------------------------------------------------------------ */

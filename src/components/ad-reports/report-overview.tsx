@@ -182,7 +182,7 @@ function OverviewBody() {
 
   // Mục tiêu tháng (chỉ khi xem một tháng) và cảnh báo.
   const targets = targetsState.status === "ready" ? targetsState.targets : null;
-  const target = targets && single ? targetFor(targets, staffId) : null;
+  const target = targets && single ? targetFor(targets, staffId, single) : null;
   const elapsed = single ? monthElapsed(single, today) : 0;
   const alerts: Alert[] = [];
   if (single === thisMonth) {
@@ -191,7 +191,7 @@ function OverviewBody() {
       // Xem tất cả: nhắc từng người đang vượt ngân sách / giá tối đa của mình.
       const byStaff = totalsByStaff(entries, keep);
       for (const p of catalogs.adsStaff) {
-        const t = targetFor(targets, p.id);
+        const t = targetFor(targets, p.id, thisMonth);
         const totals = byStaff.get(p.id);
         if (!t || !totals) continue;
         for (const item of checkTargets(totals, t, elapsed)) {
@@ -269,6 +269,8 @@ function OverviewBody() {
           onClose={() => setTargetsOpen(false)}
           people={catalogs.adsStaff}
           targets={targets}
+          assignments={catalogs.assignments}
+          today={today}
           onSaved={reloadTargets}
         />
       )}
@@ -284,14 +286,6 @@ function OverviewBody() {
       ) : (
         <>
           <AlertsPanel alerts={alerts} />
-          <KpiCards
-            title={`${single ? "Tổng " + lowerFirst(periodName) : periodName} — ${person ? person.full_name : "tất cả nhân viên"}`}
-            current={current}
-            previous={previous}
-            compareLabel={prev?.label}
-            spark={spark}
-            oneMonth={single !== null}
-          />
           {months.includes(thisMonth) && (
             <GoalTrackingSection
               staffId={staffId}
@@ -302,6 +296,14 @@ function OverviewBody() {
               onEditTargets={editTargets ? () => setTargetsOpen(true) : undefined}
             />
           )}
+          <KpiCards
+            title={`${single ? "Tổng " + lowerFirst(periodName) : periodName} — ${person ? person.full_name : "tất cả nhân viên"}`}
+            current={current}
+            previous={previous}
+            compareLabel={prev?.label}
+            spark={spark}
+            oneMonth={single !== null}
+          />
           {single ? (
             <DailyChart
               month={single}

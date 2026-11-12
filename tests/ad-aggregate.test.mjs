@@ -4,7 +4,7 @@ import {
   METRICS, change, checkTargets, compactMetric, daysBetween, entriesOf, formatMetric, funnelCounts, lastDayOf,
   metricOf, monthElapsed, monthsBetween, previousOf, shiftDay, shiftMonth, spikeAlerts, sumDays, totalsByAccount,
   totalsByDay, totalsByMonth, totalsByStaff, totalsByWeekday, weekdayOf, trackPeriods, periodElapsed, trackGoals,
-  scoreBoard,
+  scoreBoard, planFor, splitTotal,
 } from "../src/lib/ad-reports/aggregate.ts";
 
 let passed = 0;
@@ -142,17 +142,37 @@ const periods = trackPeriods("2026-11-12");
 ok(periods[1].from === "2026-10-01" && periods[1].to === "2026-12-31" && periods[2].months === 12, "quý 4, năm 2026", periods);
 ok(Math.abs(periodElapsed(periods[0], "2026-11-12") - 12 / 30) < 1e-9, "tháng 11 đã qua 12/30");
 const goals = { monthly_budget: 100, monthly_data: 30, max_cost_per_message: 2, max_cost_per_data: 5, monthly_revenue: 1000, max_ad_revenue_pct: 20 };
-let tg = Object.fromEntries(trackGoals({ spend: 60, messages: 40, data: 15 }, 300, goals, 1, 0.5).map((i) => [i.key, i]));
-ok(tg.budget.status === "warning" && /nhanh hơn/.test(tg.budget.note), "tiêu 60% khi qua 50% tháng → nhanh hơn kế hoạch", tg.budget);
-ok(tg.data.status === "good" && tg.data.note === "Đúng kỳ vọng", "data 15/30 khi qua nửa tháng → đúng kỳ vọng", tg.data);
-ok(tg.costPerData.status === "good" && tg.costPerData.actual === 4, "giá số 4 ≤ 5 → tốt", tg.costPerData);
-ok(tg.costPerMessage.status === "good", "giá mess 1,5 ≤ 2");
+// Tháng 11 đã qua 15/30 ngày.
+let plan = planFor(trackPeriods("2026-11-15")[0], "2026-11-15", () => goals);
+ok(plan.budget.goal === 100 && plan.budget.expected === 50 && plan.maxCostPerData === 5, "kế hoạch tháng: mục tiêu + kỳ vọng nửa tháng", plan);
+let tg = Object.fromEntries(trackGoals({ spend: 60, messages: 40, data: 15 }, 300, plan).map((i) => [i.key, i]));
+ok(tg.budget.status === "warning" && /nhanh hơn/.test(tg.budget.note) && tg.budget.fill === 0.6, "tiêu 60% khi qua 50% tháng → nhanh hơn kế hoạch, thanh tô 60%", tg.budget);
+ok(tg.data.status === "good" && tg.data.note === "Đúng kỳ vọng" && tg.data.fill === 0.5, "data 15/30 khi qua nửa tháng → đúng kỳ vọng, thanh tô 50%", tg.data);
+ok(tg.costPerData.status === "good" && tg.costPerData.actual === 4 && tg.costPerData.fill === 1, "giá số 4 ≤ 5 → đạt, thanh đầy", tg.costPerData);
 ok(tg.revenue.status === "bad" && /Kém hơn kỳ vọng 40%/.test(tg.revenue.note), "doanh thu 300 / kỳ vọng 500 → kém 40%", tg.revenue);
 ok(tg.adRevenue.status === "warning" && tg.adRevenue.actual === 20, "ads / doanh thu 20% = đúng mức tối đa → chưa vượt nhưng sát mức", tg.adRevenue);
-tg = Object.fromEntries(trackGoals({ spend: 60, messages: 40, data: 15 }, 0, goals, 3, 0.5).map((i) => [i.key, i]));
-ok(tg.data.goal === 90 && tg.budget.goal === 300, "quý: mục tiêu × 3 tháng");
+tg = Object.fromEntries(trackGoals({ spend: 80, messages: 10, data: 10 }, 0, plan).map((i) => [i.key, i]));
+ok(tg.costPerData.status === "bad" && Math.abs(tg.costPerData.fill - 5 / 8) < 1e-9, "giá số 8 > 5 → vượt, thanh chỉ tô 5/8 (phần trắng = còn phải giảm)", tg.costPerData);
 ok(tg.adRevenue.status === "none" && tg.adRevenue.note === "Chưa có doanh thu", "chưa có doanh thu → chưa tính tỉ lệ");
-ok(trackGoals({ spend: 1, messages: 1, data: 1 }, 0, null, 1, 0.5).every((i) => i.status === "none"), "chưa đặt mục tiêu → không chấm");
+// Quý 4: tháng 10 mục tiêu 20 data, tháng 11 30, tháng 12 chưa đặt (dùng của tháng 11 — do targetOf quyết định).
+const byMonth = { "2026-10": { ...goals, monthly_data: 20 }, "2026-11": goals, "2026-12": goals };
+plan = planFor(trackPeriods("2026-11-15")[1], "2026-11-15", (m) => byMonth[m] ?? null);
+ok(plan.data.goal === 80 && plan.data.expected === 20 + 15, "quý = cộng mục tiêu từng tháng; kỳ vọng = tháng 10 đủ + nửa tháng 11", plan.data);
+plan = planFor(trackPeriods("2026-11-15")[2], "2026-11-15", (m) => byMonth[m] ?? null);
+ok(plan.data.goal === 80 && plan.budget.goal === 300, "năm: tháng chưa đặt mục tiêu không tính");
+ok(trackGoals({ spend: 1, messages: 1, data: 1 }, 0, planFor(trackPeriods("2026-11-15")[0], "2026-11-15", () => null)).every((i) => i.status === "none"), "chưa đặt mục tiêu → không chấm");
+
+console.log("\n== Tự động phân bổ");
+let parts = splitTotal(300000000, [1, 1, 1], 1000);
+ok(JSON.stringify(parts) === JSON.stringify([100000000, 100000000, 100000000]), "chia đều 300 triệu cho 3 người", parts);
+parts = splitTotal(1000, [1, 1, 1], 1);
+ok(parts.reduce((a, b) => a + b, 0) === 1000 && Math.max(...parts) - Math.min(...parts) <= 1, "1.000 số chia 3 → 334 / 333 / 333", parts);
+parts = splitTotal(100000000, [17000000, 3000000, 0], 1000);
+ok(parts[0] === 85000000 && parts[1] === 15000000 && parts[2] === 0, "theo tỉ trọng tháng trước", parts);
+parts = splitTotal(500, [0, 0], 1);
+ok(parts[0] === 250 && parts[1] === 250, "tháng trước chưa có số → chia đều", parts);
+parts = splitTotal(1001500, [1, 1], 1000);
+ok(parts.reduce((a, b) => a + b, 0) === 1001500, "tổng không chia hết bước làm tròn → vẫn khớp tổng", parts);
 
 console.log("\n== Vinh danh");
 const board = scoreBoard([

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, CircleAlert, Target } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleAlert, Copy, Split, Target } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,9 +12,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { Alert, Status, TargetItem, TargetValues } from "@/lib/ad-reports/aggregate";
-import { fetchTargets, saveTarget, type AdTarget } from "@/lib/ad-reports/targets";
-import type { AdsStaff } from "@/lib/catalog/types";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  monthsBetween,
+  shiftMonth,
+  splitTotal,
+  type Alert,
+  type Status,
+  type TargetItem,
+  type TargetValues,
+} from "@/lib/ad-reports/aggregate";
+import {
+  fetchTargetHistory,
+  fetchTargets,
+  saveTarget,
+  type AdTarget,
+  type TargetHistoryEntry,
+} from "@/lib/ad-reports/targets";
+import type { AdAccountAssignment, AdsStaff } from "@/lib/catalog/types";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { cn } from "@/lib/utils";
 import { NumberInput } from "./number-input";
@@ -162,116 +178,423 @@ export function AlertsPanel({ alerts }: { alerts: Alert[] }) {
 /* ------------------------------------------------------------------------------------------------ */
 
 type Draft = Record<keyof TargetValues, string>;
-const FIELDS: { key: keyof TargetValues; label: string; suffix?: string; digits: number }[] = [
-  { key: "monthly_budget", label: "Ngân sách / tháng", suffix: "đ", digits: 13 },
-  { key: "monthly_data", label: "Số điện thoại (data) / tháng", digits: 7 },
+const FIELDS: { key: keyof TargetValues; label: string; suffix?: string; digits: number; total?: boolean }[] = [
+  { key: "monthly_budget", label: "Ngân sách / tháng", suffix: "đ", digits: 13, total: true },
+  { key: "monthly_data", label: "Số điện thoại (data) / tháng", digits: 7, total: true },
   { key: "max_cost_per_data", label: "Giá số tối đa", suffix: "đ", digits: 9 },
   { key: "max_cost_per_message", label: "Giá mess tối đa", suffix: "đ", digits: 9 },
-  { key: "monthly_revenue", label: "Doanh thu / tháng", suffix: "đ", digits: 13 },
+  { key: "monthly_revenue", label: "Doanh thu / tháng", suffix: "đ", digits: 13, total: true },
   { key: "max_ad_revenue_pct", label: "Ads / doanh thu tối đa", suffix: "%", digits: 3 },
 ];
+const FIELD_LABEL = new Map(FIELDS.map((f) => [f.key as string, f]));
 const toDraft = (t: TargetValues | undefined): Draft =>
   Object.fromEntries(FIELDS.map((f) => [f.key, t?.[f.key] == null ? "" : String(t[f.key])])) as Draft;
 const fromDraft = (d: Draft): TargetValues =>
   Object.fromEntries(FIELDS.map((f) => [f.key, d[f.key] === "" ? null : Number(d[f.key])])) as TargetValues;
+const emptyDraft = (d: Draft) => FIELDS.every((f) => d[f.key] === "");
+const monthText = (month: string) => `tháng ${Number(month.slice(5, 7))}/${month.slice(0, 4)}`;
+const fieldValue = (key: string, value: unknown) => {
+  if (value === null || value === undefined || value === "") return "trống";
+  const f = FIELD_LABEL.get(key);
+  const n = Number(value);
+  return `${n.toLocaleString("vi-VN")}${f?.suffix ?? ""}`;
+};
 
 export function TargetsDialog({
   open,
   onClose,
   people,
   targets,
+  assignments,
+  today,
   onSaved,
 }: {
   open: boolean;
   onClose: () => void;
   people: AdsStaff[];
   targets: AdTarget[];
+  assignments: AdAccountAssignment[];
+  today: string;
   onSaved: () => Promise<void>;
 }) {
-  const idPrefix = useId();
-  const rows: { key: string; staffId: string | null; name: string; existing?: AdTarget }[] = [
-    { key: "team", staffId: null, name: "Cả nhóm", existing: targets.find((t) => t.ads_staff_id === null) },
-    ...people
-      .filter((p) => p.is_active || targets.some((t) => t.ads_staff_id === p.id))
-      .map((p) => ({ key: p.id, staffId: p.id, name: p.full_name, existing: targets.find((t) => t.ads_staff_id === p.id) })),
-  ];
-  const [drafts, setDrafts] = useState<Record<string, Draft>>(() =>
-    Object.fromEntries(rows.map((r) => [r.key, toDraft(r.existing)])),
-  );
-  const [saving, setSaving] = useState(false);
-  const changed = rows.filter((r) => JSON.stringify(drafts[r.key]) !== JSON.stringify(toDraft(r.existing)));
-
-  async function save() {
-    setSaving(true);
-    try {
-      for (const row of changed) {
-        await saveTarget(row.existing?.id ?? null, row.staffId, fromDraft(drafts[row.key]));
-      }
-      toast.success("Đã lưu mục tiêu");
-      onClose();
-    } catch (error) {
-      toast.error("Không lưu được", { description: error instanceof Error ? error.message : String(error) });
-    } finally {
-      setSaving(false);
-      await onSaved();
-    }
-  }
+  const thisMonth = today.slice(0, 7);
+  const [month, setMonth] = useState(thisMonth);
+  const [tab, setTab] = useState<"edit" | "history">("edit");
+  const options = monthsBetween(shiftMonth(thisMonth, -3), shiftMonth(thisMonth, 2));
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && !saving && onClose()}>
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-6xl">
         <DialogHeader>
           <DialogTitle>Mục tiêu quảng cáo</DialogTitle>
           <DialogDescription>
-            Mục tiêu theo tháng (quý = 3 tháng, năm = 12 tháng). Ô để trống = không đặt. Giá tối đa và tỉ lệ ads /
-            doanh thu của nhân viên để trống thì dùng của cả nhóm. Ngân sách, data, doanh thu của cả nhóm là mục tiêu
-            chung của công ty.
+            Đặt từ đầu mỗi tháng: nhập dòng “Cả nhóm” (mục tiêu chung của công ty) rồi bấm “Tự động phân bổ” để chia xuống
+            từng nhân viên, sau đó sửa lại tuỳ ý. Ô trống = không đặt. Giá tối đa / tỉ lệ ads / doanh thu của nhân viên để
+            trống thì dùng của cả nhóm. Mọi lần đặt / sửa đều được ghi lại (ai, lúc nào, số cũ → số mới).
           </DialogDescription>
         </DialogHeader>
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b bg-muted">
-                <th className="px-3 py-2 text-left text-xs font-medium">Áp cho</th>
-                {FIELDS.map((f) => (
-                  <th key={f.key} className="border-l px-2 py-2 text-left text-xs font-medium whitespace-nowrap">
-                    {f.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.key} className={cn("border-b last:border-0", row.staffId === null && "bg-accent/50")}>
-                  <td className="px-3 py-2 font-medium whitespace-nowrap">{row.name}</td>
-                  {FIELDS.map((f) => (
-                    <td key={f.key} className="min-w-36 border-l px-2 py-1.5">
-                      <NumberInput
-                        id={`${idPrefix}-${row.key}-${f.key}`}
-                        value={drafts[row.key][f.key]}
-                        onValueChange={(digits) =>
-                          setDrafts((prev) => ({ ...prev, [row.key]: { ...prev[row.key], [f.key]: digits } }))
-                        }
-                        maxDigits={f.digits}
-                        suffix={f.suffix}
-                        label={`${f.label} — ${row.name}`}
-                      />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div role="tablist" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
+          {(
+            [
+              ["edit", "Đặt mục tiêu"],
+              ["history", "Lịch sử chỉnh sửa"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                tab === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>
-            Huỷ
-          </Button>
-          <Button onClick={save} disabled={saving || changed.length === 0}>
-            {saving ? "Đang lưu…" : `Lưu${changed.length > 0 ? ` (${changed.length} dòng)` : ""}`}
-          </Button>
-        </DialogFooter>
+        {tab === "edit" ? (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground">Tháng</span>
+              <div className="flex flex-wrap gap-1">
+                {options.map((m) => (
+                  <Button key={m} size="sm" variant={m === month ? "default" : "outline"} onClick={() => setMonth(m)}>
+                    T{Number(m.slice(5))}/{m.slice(2, 4)}
+                    {m === thisMonth && " (này)"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <TargetsForm
+              key={month}
+              month={month}
+              people={people}
+              targets={targets}
+              assignments={assignments}
+              onClose={onClose}
+              onSaved={onSaved}
+            />
+          </>
+        ) : (
+          <TargetHistory people={people} targets={targets} />
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function TargetsForm({
+  month,
+  people,
+  targets,
+  assignments,
+  onClose,
+  onSaved,
+}: {
+  month: string;
+  people: AdsStaff[];
+  targets: AdTarget[];
+  assignments: AdAccountAssignment[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const idPrefix = useId();
+  const exact = (staffId: string | null) =>
+    targets.find((t) => t.ads_staff_id === staffId && (!t.month || t.month.slice(0, 7) === month));
+  const from = `${month}-01`;
+  const to = `${month}-31`;
+  // Người được phân bổ: đang làm và có TKQC trong tháng này.
+  const running = people.filter(
+    (p) => p.is_active && assignments.some((x) => x.ads_staff_id === p.id && x.from_date <= to && (!x.to_date || x.to_date >= from)),
+  );
+  const rows: { key: string; staffId: string | null; name: string; existing?: AdTarget; runs: boolean }[] = [
+    { key: "team", staffId: null, name: "Cả nhóm (chung)", existing: exact(null), runs: false },
+    ...people
+      .filter((p) => p.is_active || exact(p.id))
+      .map((p) => ({ key: p.id, staffId: p.id, name: p.full_name, existing: exact(p.id), runs: running.includes(p) })),
+  ];
+  const initial = Object.fromEntries(rows.map((r) => [r.key, toDraft(r.existing)])) as Record<string, Draft>;
+  const [drafts, setDrafts] = useState<Record<string, Draft>>(initial);
+  const [method, setMethod] = useState<"equal" | "last-month">("equal");
+  const [busy, setBusy] = useState(false);
+  const changed = rows.filter(
+    (r) => JSON.stringify(drafts[r.key]) !== JSON.stringify(initial[r.key]) && !(emptyDraft(drafts[r.key]) && !r.existing),
+  );
+  // Tháng này chưa đặt dòng nào → gợi ý chép từ tháng gần nhất đã đặt.
+  const source = rows.every((r) => !r.existing)
+    ? targets
+        .filter((t) => t.month && t.month.slice(0, 7) < month)
+        .map((t) => (t.month ?? "").slice(0, 7))
+        .sort()
+        .at(-1)
+    : undefined;
+  const staffRows = rows.filter((r) => r.staffId !== null);
+  const eligible = staffRows.filter((r) => r.runs).length > 0 ? staffRows.filter((r) => r.runs) : staffRows;
+
+  function copyFrom(sourceMonth: string) {
+    setDrafts((prev) => {
+      const next = { ...prev };
+      for (const r of rows) {
+        const t = targets.find((x) => x.ads_staff_id === r.staffId && x.month?.slice(0, 7) === sourceMonth);
+        if (t) next[r.key] = toDraft(t);
+      }
+      return next;
+    });
+    toast.info(`Đã chép mục tiêu ${monthText(sourceMonth)} — kiểm tra rồi bấm Lưu`);
+  }
+
+  async function allocate() {
+    const team = drafts.team;
+    if (FIELDS.filter((f) => f.total).every((f) => team[f.key] === "")) {
+      toast.error("Hãy nhập dòng “Cả nhóm” trước (ngân sách, số điện thoại hoặc doanh thu).");
+      return;
+    }
+    let weights = eligible.map(() => ({ spend: 1, data: 1, revenue: 1 }));
+    if (method === "last-month") {
+      setBusy(true);
+      const { data, error } = await getSupabaseBrowserClient().rpc("ads_leaderboard", { p_month: `${shiftMonth(month, -1)}-01` });
+      setBusy(false);
+      if (error) {
+        toast.error("Không lấy được kết quả tháng trước", { description: error.message });
+        return;
+      }
+      const last = new Map((data as { ads_staff_id: string; spend: number; data_count: number; revenue: number }[]).map((r) => [r.ads_staff_id, r]));
+      weights = eligible.map((r) => {
+        const x = last.get(r.staffId ?? "");
+        return { spend: Number(x?.spend ?? 0), data: Number(x?.data_count ?? 0), revenue: Number(x?.revenue ?? x?.spend ?? 0) };
+      });
+    }
+    const plan: [keyof TargetValues, "spend" | "data" | "revenue", number][] = [
+      ["monthly_budget", "spend", 1000],
+      ["monthly_data", "data", 1],
+      ["monthly_revenue", "revenue", 1000],
+    ];
+    setDrafts((prev) => {
+      const next = { ...prev };
+      for (const r of eligible) next[r.key] = { ...next[r.key] };
+      for (const [field, weightKey, step] of plan) {
+        if (team[field] === "") continue;
+        const parts = splitTotal(Number(team[field]), weights.map((w) => w[weightKey]), step);
+        eligible.forEach((r, i) => {
+          next[r.key][field] = String(parts[i]);
+        });
+      }
+      // Giá tối đa / tỉ lệ: nhân viên chưa có thì lấy theo cả nhóm.
+      for (const f of FIELDS.filter((x) => !x.total)) {
+        if (team[f.key] === "") continue;
+        for (const r of eligible) if (next[r.key][f.key] === "") next[r.key][f.key] = team[f.key];
+      }
+      return next;
+    });
+    toast.success(`Đã phân bổ cho ${eligible.length} nhân viên — sửa lại nếu cần rồi bấm Lưu`);
+  }
+
+  async function save() {
+    setBusy(true);
+    try {
+      for (const row of changed) {
+        await saveTarget(row.existing?.id ?? null, row.staffId, month, fromDraft(drafts[row.key]));
+      }
+      toast.success(`Đã lưu mục tiêu ${monthText(month)}`);
+      await onSaved();
+      onClose();
+    } catch (error) {
+      toast.error("Không lưu được", { description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const staffSum = (key: keyof TargetValues) => staffRows.reduce((s, r) => s + Number(drafts[r.key][key] || 0), 0);
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+        <span className="text-sm font-medium">Tự động phân bổ từ dòng “Cả nhóm” cho {eligible.length} nhân viên đang có TKQC:</span>
+        <select
+          className="h-8 rounded-md border bg-background px-2 text-sm"
+          value={method}
+          onChange={(e) => setMethod(e.target.value as "equal" | "last-month")}
+          aria-label="Cách phân bổ"
+        >
+          <option value="equal">Chia đều</option>
+          <option value="last-month">Theo kết quả tháng trước</option>
+        </select>
+        <Button size="sm" onClick={allocate} disabled={busy}>
+          <Split />
+          Tự động phân bổ
+        </Button>
+        {source && (
+          <Button size="sm" variant="outline" className="ml-auto" onClick={() => copyFrom(source)}>
+            <Copy />
+            Chép từ {monthText(source)}
+          </Button>
+        )}
+      </div>
+      {source && (
+        <p className="text-sm text-amber-700 dark:text-amber-300">
+          {monthText(month)[0].toUpperCase() + monthText(month).slice(1)} chưa đặt mục tiêu — màn hình đang tạm dùng mục tiêu{" "}
+          {monthText(source)}.
+        </p>
+      )}
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b bg-muted">
+              <th className="px-3 py-2 text-left text-xs font-medium">Áp cho</th>
+              {FIELDS.map((f) => (
+                <th key={f.key} className="border-l px-2 py-2 text-left text-xs font-medium whitespace-nowrap">
+                  {f.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} className={cn("border-b", row.staffId === null && "bg-accent/60 font-medium")}>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {row.name}
+                  {row.staffId !== null && !row.runs && <span className="ml-1 text-xs text-muted-foreground">(chưa có TKQC)</span>}
+                </td>
+                {FIELDS.map((f) => (
+                  <td key={f.key} className="min-w-36 border-l px-2 py-1.5">
+                    <NumberInput
+                      id={`${idPrefix}-${row.key}-${f.key}`}
+                      value={drafts[row.key][f.key]}
+                      onValueChange={(digits) =>
+                        setDrafts((prev) => ({ ...prev, [row.key]: { ...prev[row.key], [f.key]: digits } }))
+                      }
+                      maxDigits={f.digits}
+                      suffix={f.suffix}
+                      label={`${f.label} — ${row.name}`}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+            <tr className="bg-muted/60 text-xs">
+              <td className="px-3 py-2 font-medium">Tổng các nhân viên</td>
+              {FIELDS.map((f) => {
+                if (!f.total) return <td key={f.key} className="border-l" />;
+                const sum = staffSum(f.key);
+                const team = Number(drafts.team[f.key] || 0);
+                const off = drafts.team[f.key] !== "" && sum !== team;
+                return (
+                  <td key={f.key} className={cn("border-l px-3 py-2 text-right tabular-nums", off && "font-semibold text-amber-700 dark:text-amber-300")}>
+                    {sum.toLocaleString("vi-VN")}
+                    {f.suffix ?? ""}
+                    {off && <div className="font-normal">lệch {(sum - team).toLocaleString("vi-VN")} so với chung</div>}
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose} disabled={busy}>
+          Huỷ
+        </Button>
+        <Button onClick={save} disabled={busy || changed.length === 0}>
+          {busy ? "Đang lưu…" : `Lưu ${monthText(month)}${changed.length > 0 ? ` (${changed.length} dòng)` : ""}`}
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+/* Lịch sử chỉnh sửa mục tiêu                                                                        */
+/* ------------------------------------------------------------------------------------------------ */
+
+type HistoryState =
+  | { status: "loading" }
+  | { status: "ready"; entries: TargetHistoryEntry[] }
+  | { status: "not-migrated" }
+  | { status: "error"; message: string };
+
+const when = new Intl.DateTimeFormat("vi-VN", {
+  timeZone: "Asia/Ho_Chi_Minh",
+  hour: "2-digit",
+  minute: "2-digit",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+function TargetHistory({ people, targets }: { people: AdsStaff[]; targets: AdTarget[] }) {
+  const [state, setState] = useState<HistoryState>({ status: "loading" });
+  useEffect(() => {
+    let cancelled = false;
+    fetchTargetHistory()
+      .then((entries) => {
+        if (!cancelled) setState(entries ? { status: "ready", entries } : { status: "not-migrated" });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setState({ status: "error", message: error instanceof Error ? error.message : String(error) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (state.status === "loading") return <Skeleton className="h-48 w-full rounded-lg" />;
+  if (state.status === "not-migrated") {
+    return <p className="text-sm text-muted-foreground">Lịch sử chỉnh sửa cần chạy file supabase/014_monthly_targets.sql trước.</p>;
+  }
+  if (state.status === "error") return <p className="text-sm text-destructive">{state.message}</p>;
+  if (state.entries.length === 0) {
+    return <p className="py-6 text-center text-sm text-muted-foreground">Chưa có lần đặt / sửa mục tiêu nào.</p>;
+  }
+
+  // Số lúc đặt lần đầu = số hiện tại, lùi ngược qua các lần sửa (nhật ký chỉ ghi phần thay đổi).
+  const values = new Map(targets.map((t) => [t.id, { ...t } as Record<string, unknown>]));
+  const initialOf = new Map<number, Record<string, unknown>>();
+  for (const e of state.entries) {
+    const current = e.target_id ? values.get(e.target_id) : undefined;
+    if (!current) continue;
+    if (e.action === "update" && e.old_data) Object.assign(current, e.old_data);
+    if (e.action === "insert") initialOf.set(e.id, { ...current });
+  }
+  const nameOf = (staffId: string | null) =>
+    staffId === null ? "Cả nhóm" : (people.find((p) => p.id === staffId)?.full_name ?? "Nhân viên đã xoá");
+
+  return (
+    <ol className="grid max-h-[60svh] gap-2 overflow-y-auto">
+      {state.entries.map((e) => {
+        const set = e.action === "insert" ? initialOf.get(e.id) : null;
+        const changes =
+          e.action === "update"
+            ? Object.keys(e.new_data ?? {})
+                .filter((k) => FIELD_LABEL.has(k))
+                .map((k) => `${FIELD_LABEL.get(k)?.label}: ${fieldValue(k, e.old_data?.[k])} → ${fieldValue(k, e.new_data?.[k])}`)
+            : set
+              ? FIELDS.filter((f) => set[f.key] !== null && set[f.key] !== undefined).map(
+                  (f) => `${f.label}: ${fieldValue(f.key, set[f.key])}`,
+                )
+              : [];
+        return (
+          <li key={e.id} className="rounded-lg border px-3 py-2 text-sm">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <span>
+                <span className="font-semibold">{e.actor_name}</span> {e.action === "insert" ? "đặt" : "sửa"} mục tiêu{" "}
+                {e.month ? monthText(e.month.slice(0, 7)) : ""} — <span className="font-medium">{nameOf(e.ads_staff_id)}</span>
+              </span>
+              <span className="text-xs text-muted-foreground tabular-nums">{when.format(new Date(e.at))}</span>
+            </div>
+            {changes.length > 0 && (
+              <ul className="mt-1 grid gap-0.5 text-xs text-muted-foreground">
+                {changes.map((c) => (
+                  <li key={c}>• {c}</li>
+                ))}
+              </ul>
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
