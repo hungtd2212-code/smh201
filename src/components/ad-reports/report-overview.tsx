@@ -1,6 +1,6 @@
 "use client";
 
-import { BadgeDollarSign, LayoutDashboard, Lock, Pencil, Target } from "lucide-react";
+import { BadgeDollarSign, FileSpreadsheet, LayoutDashboard, Lock, Pencil, Target } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
@@ -76,6 +76,7 @@ import { LIME, ORANGE, PeriodTable, TD, TH, YELLOW, type PeriodRow } from "./per
 import { ReportFields, allFilled, fieldKey, toNumbers, type FieldItem } from "./report-fields";
 import { NotReady, StatsError } from "./shared";
 import { GoalTrackingSection } from "./goal-tracking";
+import { ImportDialog } from "./import-dialog";
 import { RevenueDialog } from "./revenue";
 import { AlertsPanel, TargetsDialog, useAdTargets } from "./targets";
 import { DayFilter, WeekGoals } from "./week-goals";
@@ -193,6 +194,7 @@ function OverviewBody() {
   const { state: targetsState, reload: reloadTargets } = useAdTargets();
   const [targetsOpen, setTargetsOpen] = useState(false);
   const [revenueOpen, setRevenueOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   if (!catalogs.marketingReady) return <MarketingNotReady what="Màn Tổng quan" />;
   if (staff.status === "loading") return <Skeleton className="h-64 w-full rounded-xl" />;
@@ -302,7 +304,21 @@ function OverviewBody() {
             Doanh thu
           </Button>
         )}
+        {scope.managesMarketing && (
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <FileSpreadsheet />
+            Nhập từ Excel
+          </Button>
+        )}
       </div>
+      {importOpen && (
+        <ImportDialog
+          catalog={{ staff: catalogs.adsStaff, accounts: catalogs.adAccounts, assignments: catalogs.assignments, today }}
+          onClose={() => setImportOpen(false)}
+          // Số mới nằm rải nhiều tháng / nhiều người → tải lại cả trang cho chắc.
+          onImported={() => window.location.reload()}
+        />
+      )}
       {single && today && <DayFilter month={single} today={today} range={range} onChange={pickRange} />}
       {revenueOpen && (
         <RevenueDialog
