@@ -1,4 +1,4 @@
-// Kiểm thử màn hình làm việc đầu tiên theo vị trí (src/lib/staff/home.ts).
+// Kiểm thử màn hình làm việc đầu tiên sau đăng nhập / bấm logo (src/lib/staff/home.ts).
 // Chạy:  npm run test:ui
 import { DEFAULT_HOME, homeFor } from "../src/lib/staff/home.ts";
 
@@ -17,34 +17,47 @@ function ok(cond, label, extra) {
 const NHAP_LIEU = "/marketing/nhap-lieu";
 const TONG_QUAN = "/marketing/tong-quan";
 const LEADS = "/telesale/leads";
-
-console.log("Theo vị trí, được xem đủ trang");
 const all = [LEADS, NHAP_LIEU, TONG_QUAN, "/marketing/phan-tich"];
-let got = homeFor("lead_ads", all);
+let got;
+
+console.log("Theo vị trí (vai trò đi kèm vị trí), được xem đủ trang");
+got = homeFor("lead_ads", "marketing_manager", all);
 ok(got === NHAP_LIEU, "Lead Ads → Nhập liệu", got);
-got = homeFor("ads_staff", all);
+got = homeFor("ads_staff", "ads_staff", all);
 ok(got === NHAP_LIEU, "Nhân viên quảng cáo → Nhập liệu", got);
-got = homeFor("coo", all);
+got = homeFor("coo", "admin", all);
 ok(got === TONG_QUAN, "COO → Tổng quan", got);
-for (const position of ["page", "lead_telesale", "telesale", null]) {
-  got = homeFor(position, all);
-  ok(got === LEADS, `${position ?? "chưa có vị trí"} → Leads như cũ`, got);
-}
+got = homeFor("page", "page", all);
+ok(got === LEADS, "Trực page → Leads như cũ", got);
+got = homeFor("lead_telesale", "lead", all);
+ok(got === LEADS, "Trưởng Telesale → Leads như cũ", got);
+got = homeFor("telesale", "sale", all);
+ok(got === LEADS, "Telesale → Leads như cũ", got);
 
-console.log("Quản trị cấp cao (không giới hạn trang)");
-got = homeFor(null, null);
-ok(got === DEFAULT_HOME, "chưa có vị trí → Leads", got);
-got = homeFor("coo", null);
-ok(got === TONG_QUAN, "có vị trí COO → Tổng quan", got);
+console.log("Admin");
+got = homeFor(null, "super_admin", null);
+ok(got === TONG_QUAN, "tài khoản admin (Quản trị cấp cao, chưa có vị trí) → Tổng quan", got);
+got = homeFor(null, "admin", all);
+ok(got === TONG_QUAN, "Quản trị chưa có vị trí → Tổng quan", got);
+got = homeFor("coo", "super_admin", null);
+ok(got === TONG_QUAN, "Quản trị cấp cao có vị trí COO → Tổng quan", got);
 
-console.log("Không được xem trang theo vị trí");
-got = homeFor("ads_staff", [LEADS, TONG_QUAN]);
+console.log("Tài khoản cũ chưa có vị trí: theo vai trò");
+got = homeFor(null, "ads_staff", all);
+ok(got === LEADS, "Nhân viên Ads cũ chưa có vị trí → Leads như cũ", got);
+got = homeFor(null, "sale", all);
+ok(got === LEADS, "Telesale cũ → Leads", got);
+
+console.log("Không được xem trang đã chọn");
+got = homeFor("ads_staff", "ads_staff", [LEADS, TONG_QUAN]);
 ok(got === LEADS, "Nhân viên quảng cáo chưa được tick Nhập liệu → Leads", got);
-got = homeFor("coo", ["/marketing/phan-tich", NHAP_LIEU]);
-ok(got === "/marketing/phan-tich", "không được xem Tổng quan lẫn Leads → trang đầu tiên trên menu", got);
-got = homeFor("page", ["/marketing/phan-tich"]);
+got = homeFor("coo", "admin", ["/marketing/phan-tich", NHAP_LIEU]);
+ok(got === "/marketing/phan-tich", "COO không được xem Tổng quan lẫn Leads → trang đầu tiên trên menu", got);
+got = homeFor(null, "admin", [LEADS]);
+ok(got === LEADS, "Quản trị chỉ được tick Leads → Leads", got);
+got = homeFor("page", "page", ["/marketing/phan-tich"]);
 ok(got === "/marketing/phan-tich", "Trực page không được xem Leads → trang đầu tiên trên menu", got);
-got = homeFor("lead_ads", []);
+got = homeFor("lead_ads", "marketing_manager", []);
 ok(got === DEFAULT_HOME, "chưa được tick trang nào → Leads (trang đó tự báo chưa có quyền)", got);
 
 console.log(`\n${passed} ok, ${failed} lỗi`);

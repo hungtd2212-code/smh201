@@ -9,7 +9,7 @@ import { DEFAULT_HOME, homeFor } from "@/lib/staff/home";
 
 /**
  * Trang chủ "/" (sau khi đăng nhập, hoặc bấm logo): đưa mỗi người tới màn hình làm việc đầu tiên theo vị trí —
- * Lead Ads / Nhân viên quảng cáo → Nhập liệu, COO → Tổng quan, còn lại → Leads (src/lib/staff/home.ts).
+ * Lead Ads / Nhân viên quảng cáo → Nhập liệu, Admin / COO → Tổng quan, còn lại → Leads (src/lib/staff/home.ts).
  */
 export default function HomePage() {
   const staff = useCurrentStaff();
@@ -18,7 +18,7 @@ export default function HomePage() {
   let target: string | null = null;
   if (staff.status === "ok") {
     const allowed = staff.role === "super_admin" ? null : visiblePages(staff.role, staff.pageAccess);
-    target = homeFor(staff.position, allowed);
+    target = homeFor(staff.position, staff.role, allowed);
   } else if (staff.status !== "loading") {
     // Dữ liệu mẫu, chưa được cấp quyền, bị khoá, lỗi: như trước — trang Leads tự báo tình trạng.
     target = DEFAULT_HOME;
