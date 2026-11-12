@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CalendarRange, CalendarSync, ChartLine, Repeat } from "lucide-react";
+import { CalendarDays, CalendarRange, CalendarSync, ChartLine, Repeat, Users } from "lucide-react";
 import { Suspense, useMemo, useState } from "react";
 import { useAdsScope } from "@/components/catalog/ads-scope";
 import { CatalogGate, MarketingNotReady, PageHeader, ReadOnlyNote, useTodayVn } from "@/components/catalog/shared";
@@ -42,6 +42,7 @@ import { useAdReports } from "./hooks";
 import { MonthsPicker, RangePicker, YearsPicker, yearOptions, type DayRange } from "./period-picker";
 import { Change, FIRST_TH, PeriodTable, TD, TH, type PeriodRow } from "./period-table";
 import { NotReady, StatsError } from "./shared";
+import { StaffCompare } from "./staff-compare";
 
 const ALL = "__all";
 
@@ -51,6 +52,7 @@ const ALL = "__all";
  *   • So sánh khoảng ngày: 3 / 7 / 15 / 30 ngày gần nhất với cùng số ngày liền trước, hoặc hai khoảng tự chọn.
  *   • So sánh năm: các năm tự chọn (cả năm hoặc cùng kỳ đến hôm nay), đường theo tháng, bảng tháng × năm.
  *   • Tháng cùng kỳ: một tháng (ví dụ tháng 11) qua các năm.
+ *   • So sánh nhân viên (chỉ quản lý): 2–8 người cạnh nhau trong cùng khoảng ngày.
  * Nhân viên Ads xem số của mình; Quản trị / Trưởng Marketing xem tất cả hoặc từng người.
  */
 export function ReportAnalysis() {
@@ -70,8 +72,9 @@ export function ReportAnalysis() {
   );
 }
 
-type Mode = "months" | "days" | "years" | "same-month";
+type Mode = "staff" | "months" | "days" | "years" | "same-month";
 const MODES: { key: Mode; label: string; icon: typeof CalendarDays }[] = [
+  { key: "staff", label: "So sánh nhân viên", icon: Users },
   { key: "months", label: "So sánh tháng", icon: CalendarRange },
   { key: "days", label: "So sánh khoảng ngày", icon: CalendarDays },
   { key: "years", label: "So sánh năm", icon: CalendarSync },
@@ -79,6 +82,15 @@ const MODES: { key: Mode; label: string; icon: typeof CalendarDays }[] = [
 ];
 const PRESETS = [3, 7, 15, 30] as const;
 type Preset = (typeof PRESETS)[number] | "custom";
+type StaffPeriod = "7" | "30" | "this-month" | "last-month" | "this-year" | "custom";
+const STAFF_PERIODS: { value: StaffPeriod; label: string }[] = [
+  { value: "7", label: "7 ngày" },
+  { value: "30", label: "30 ngày" },
+  { value: "this-month", label: "Tháng này" },
+  { value: "last-month", label: "Tháng trước" },
+  { value: "this-year", label: "Năm nay" },
+  { value: "custom", label: "Tuỳ chỉnh" },
+];
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const firstYearOf = (accounts: AdAccount[], fallback: number) =>
@@ -130,7 +142,10 @@ function AnalysisBody() {
   const thisYear = Number((today || "2026").slice(0, 4));
   const years = yearOptions(thisYear, firstYearOf(catalogs.adAccounts, thisYear));
 
-  const [mode, setMode] = useState<Mode>("months");
+  const [pickedMode, setMode] = useState<Mode | null>(null);
+  // Quản lý mở trang → mặc định So sánh nhân viên; nhân viên Ads → So sánh tháng.
+  const mode: Mode = pickedMode ?? (scope.managesMarketing ? "staff" : "months");
+  const modes = MODES.filter((m) => m.key !== "staff" || scope.managesMarketing);
   const [staffFilter, setStaffFilter] = useState(ALL);
   const [metricKey, setMetricKey] = useState<MetricKey>("spend");
   // So sánh tháng
@@ -143,6 +158,9 @@ function AnalysisBody() {
   const [pickedYears, setPickedYears] = useState<number[] | null>(null);
   const [toDate, setToDate] = useState(true);
   const [pickedMonthNo, setPickedMonthNo] = useState<number | null>(null);
+  // So sánh nhân viên
+  const [staffPeriod, setStaffPeriod] = useState<StaffPeriod>("this-month");
+  const [staffCustom, setStaffCustom] = useState<DayRange | null>(null);
 
   const months = pickedMonths ?? (today ? monthsBetween(shiftMonth(thisMonth, -2), thisMonth) : []);
   const end = today ? (endToday ? today : shiftDay(today, -1)) : "";
@@ -153,12 +171,28 @@ function AnalysisBody() {
       : presetRanges(preset, end);
   const chosenYears = pickedYears ?? [thisYear - 1, thisYear];
   const monthNo = pickedMonthNo ?? Number(thisMonth.slice(5) || 1);
+  const thisMonthRange: DayRange = { from: today ? firstDayOf(thisMonth) : "", to: today };
+  const staffRange: DayRange = !today
+    ? thisMonthRange
+    : staffPeriod === "7"
+      ? { from: shiftDay(today, -6), to: today }
+      : staffPeriod === "30"
+        ? { from: shiftDay(today, -29), to: today }
+        : staffPeriod === "last-month"
+          ? { from: firstDayOf(shiftMonth(thisMonth, -1)), to: lastDayOf(shiftMonth(thisMonth, -1)) }
+          : staffPeriod === "this-year"
+            ? { from: `${thisYear}-01-01`, to: today }
+            : staffPeriod === "custom"
+              ? (staffCustom ?? thisMonthRange)
+              : thisMonthRange;
 
   // Khoảng ngày cần tải cho kiểu so sánh đang xem.
   let from = "";
   let to = "";
   if (today) {
-    if (mode === "months" && months.length > 0) {
+    if (mode === "staff") {
+      ({ from, to } = staffRange);
+    } else if (mode === "months" && months.length > 0) {
       from = firstDayOf(months[0]);
       to = lastDayOf(months.at(-1) ?? months[0]);
     } else if (mode === "days" && ranges) {
@@ -181,13 +215,11 @@ function AnalysisBody() {
   const person = scope.managesMarketing ? catalogs.adsStaff.find((p) => p.id === staffFilter) : me;
   const staffId = person?.id ?? null;
 
-  const byDay = useMemo(
-    () =>
-      state.status === "ready"
-        ? totalsByDay(entriesOf(state.reports, state.data ?? [], catalogs.assignments), staffId)
-        : new Map<string, Totals>(),
-    [state, catalogs.assignments, staffId],
+  const entries = useMemo(
+    () => (state.status === "ready" ? entriesOf(state.reports, state.data ?? [], catalogs.assignments) : []),
+    [state, catalogs.assignments],
   );
+  const byDay = useMemo(() => totalsByDay(entries, staffId), [entries, staffId]);
 
   if (!catalogs.marketingReady) return <MarketingNotReady what="Màn Phân tích" />;
   if (staff.status === "loading") return <Skeleton className="h-64 w-full rounded-xl" />;
@@ -208,7 +240,7 @@ function AnalysisBody() {
     <>
       <div className="flex flex-wrap items-center gap-3">
         <div role="tablist" className="flex w-fit flex-wrap gap-1 rounded-lg bg-muted p-1">
-          {MODES.map(({ key, label, icon: Icon }) => (
+          {modes.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               type="button"
@@ -225,7 +257,7 @@ function AnalysisBody() {
             </button>
           ))}
         </div>
-        {scope.managesMarketing && (
+        {scope.managesMarketing && mode !== "staff" && (
           <Select value={person ? person.id : ALL} onValueChange={setStaffFilter}>
             <SelectTrigger className="w-60" aria-label="Lọc theo nhân viên quảng cáo">
               <SelectValue />
@@ -245,6 +277,24 @@ function AnalysisBody() {
 
       {/* Lựa chọn của từng kiểu so sánh */}
       <div className="flex flex-wrap items-center gap-3">
+        {mode === "staff" && today && (
+          <>
+            <Segmented
+              label="Khoảng ngày"
+              value={staffPeriod}
+              onChange={(value) => {
+                if (value === "custom" && !staffCustom) setStaffCustom(staffRange);
+                setStaffPeriod(value);
+              }}
+              options={STAFF_PERIODS}
+            />
+            {staffPeriod === "custom" ? (
+              <RangePicker label="Từ – đến" value={staffRange} today={today} onChange={setStaffCustom} />
+            ) : (
+              <span className="text-sm text-muted-foreground tabular-nums">{rangeText(staffRange)}</span>
+            )}
+          </>
+        )}
         {mode === "months" && (
           <>
             <MonthsPicker value={months} today={today} years={years} onChange={setPickedMonths} />
@@ -336,6 +386,15 @@ function AnalysisBody() {
         <StatsError message={state.message} />
       ) : state.status !== "ready" || !today ? (
         <Skeleton className="h-64 w-full rounded-xl" />
+      ) : mode === "staff" ? (
+        <StaffCompare
+          people={catalogs.adsStaff}
+          assignments={catalogs.assignments}
+          entries={entries}
+          range={staffRange}
+          metric={metric}
+          metricTabs={metricTabs}
+        />
       ) : mode === "months" ? (
         <MonthsView months={months} byDay={byDay} today={today} metric={metric} metricTabs={metricTabs} who={who} />
       ) : mode === "days" && ranges ? (

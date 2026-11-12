@@ -1,6 +1,20 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  LabelList,
+  Line,
+  LineChart,
+  ReferenceLine,
+  Scatter,
+  ScatterChart,
+  XAxis,
+  YAxis,
+  ZAxis,
+} from "recharts";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import {
   METRICS,
@@ -29,6 +43,23 @@ const PALETTE = [
   { light: "#e34948", dark: "#e66767" },
 ];
 export const MAX_SERIES = PALETTE.length;
+
+/** Ô màu nhỏ (ngoài biểu đồ) đúng màu của vị trí `slot`, tự đổi theo nền sáng / tối. */
+export function Swatch({ slot, className }: { slot: number; className?: string }) {
+  const color = PALETTE[slot % PALETTE.length];
+  return (
+    <span
+      aria-hidden
+      className={cn("inline-block size-2.5 shrink-0 rounded-[3px] bg-(--swatch-light) dark:bg-(--swatch-dark)", className)}
+      style={{ "--swatch-light": color.light, "--swatch-dark": color.dark } as React.CSSProperties}
+    />
+  );
+}
+
+/** Cấu hình màu theo vị trí cố định của từng thứ (nhân viên…): khoá "s0", "s1"… → var(--color-s0)… */
+const slotConfig = (slots: number[]): ChartConfig =>
+  Object.fromEntries(slots.map((slot) => [`s${slot}`, { label: `s${slot}`, theme: PALETTE[slot % PALETTE.length] }]));
+const slotVar = (slot: number) => `var(--color-s${slot})`;
 
 const axisTick = { fontSize: 11 };
 
@@ -178,6 +209,8 @@ export type CompareSeries = {
   totals: (Totals | null)[];
   /** Tên của từng điểm trong ô gợi ý (ví dụ ngày thật của kỳ đó). */
   titles?: string[];
+  /** Màu cố định (vị trí trong bảng màu); bỏ trống = theo thứ tự đường. */
+  slot?: number;
 };
 
 /** Nhiều đường trên cùng trục (so sánh tháng / kỳ / năm), có chú thích màu. */
@@ -201,8 +234,9 @@ export function CompareLineChart({
     }
     return row;
   });
+  const slotOf = (s: CompareSeries, i: number) => (s.slot ?? i) % PALETTE.length;
   const config: ChartConfig = Object.fromEntries(
-    shown.map((s, i) => [s.key, { label: s.name, theme: PALETTE[i] }]),
+    shown.map((s, i) => [s.key, { label: s.name, theme: PALETTE[slotOf(s, i)] }]),
   );
   const hasValue = data.some((row) => shown.some((s) => row[s.key] !== null && row[s.key] !== 0));
   const many = xLabels.length > 16;
@@ -212,10 +246,7 @@ export function CompareLineChart({
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
         {shown.map((s, i) => (
           <li key={s.key} className="flex items-center gap-1.5">
-            <span
-              className="h-0.5 w-4 rounded-full bg-(--swatch-light) dark:bg-(--swatch-dark)"
-              style={{ "--swatch-light": PALETTE[i].light, "--swatch-dark": PALETTE[i].dark } as React.CSSProperties}
-            />
+            <Swatch slot={slotOf(s, i)} className="h-0.5 w-4 rounded-full" />
             <span className="text-muted-foreground">{s.name}</span>
           </li>
         ))}
@@ -311,5 +342,227 @@ export function StaffChart({ rows, metric }: { rows: { key: string; name: string
         <Bar dataKey="value" fill="var(--color-value)" radius={[0, 4, 4, 0]} maxBarSize={22} isAnimationActive={false} />
       </BarChart>
     </ChartContainer>
+  );
+}
+
+export type EntityValue = { key: string; name: string; slot: number; totals: Totals };
+
+/** Cột dọc: một chỉ số của từng người (mỗi người một màu cố định), đường nét đứt = cả nhóm. */
+export function EntityBarChart({
+  rows,
+  metric,
+  group,
+  height = "h-72",
+}: {
+  rows: EntityValue[];
+  metric: Metric;
+  /** Giá trị của cả nhóm (đường tham chiếu); null = không vẽ. */
+  group: number | null;
+  height?: string;
+}) {
+  const data = rows.map((r) => ({ ...r, value: metric.value(r.totals) }));
+  if (!data.some((d) => d.value !== null && d.value !== 0)) return <Empty height={height} />;
+  return (
+    <ChartContainer config={slotConfig(rows.map((r) => r.slot))} className={cn("aspect-auto w-full", height)}>
+      <BarChart accessibilityLayer data={data} margin={{ top: 22, right: 12, bottom: 0, left: 0 }}>
+        <CartesianGrid vertical={false} />
+        <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 12 }} interval={0} />
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          width={52}
+          tick={axisTick}
+          tickFormatter={(v: number) => compactMetric(metric, v)}
+        />
+        <ChartTooltip
+          cursor={{ fill: "var(--muted)", opacity: 0.6 }}
+          content={({ active, payload }) => {
+            const p = active ? payload?.[0]?.payload : null;
+            if (!p) return null;
+            return (
+              <TipBox
+                title={p.name}
+                rows={[
+                  { color: slotVar(p.slot), name: metric.label, value: formatMetric(metric, p.value, true) },
+                  ...(group !== null ? [{ name: "Cả nhóm", value: formatMetric(metric, group, true) }] : []),
+                ]}
+              />
+            );
+          }}
+        />
+        {group !== null && (
+          <ReferenceLine
+            y={group}
+            stroke="var(--muted-foreground)"
+            strokeDasharray="4 4"
+            label={{
+              value: metric.kind === "sum" ? "TB mỗi người" : "Cả nhóm",
+              position: "insideTopRight",
+              fontSize: 11,
+              fill: "var(--muted-foreground)",
+            }}
+          />
+        )}
+        <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={false}>
+          {data.map((d) => (
+            <Cell key={d.key} fill={slotVar(d.slot)} />
+          ))}
+          <LabelList
+            dataKey="value"
+            position="top"
+            offset={6}
+            className="fill-foreground"
+            fontSize={11}
+            fontWeight={600}
+            formatter={(v: unknown) => (typeof v === "number" ? compactMetric(metric, v) : "")}
+          />
+        </Bar>
+      </BarChart>
+    </ChartContainer>
+  );
+}
+
+/**
+ * Bản đồ hiệu quả: trục ngang = số data mang về, trục dọc = giá mỗi data. Hai đường nét đứt (trung bình
+ * của nhóm) chia 4 góc — góc dưới bên phải là "nhiều data, giá rẻ" (tốt nhất).
+ */
+export function EfficiencyMap({ rows, height = "h-80" }: { rows: EntityValue[]; height?: string }) {
+  const data = rows
+    .map((r) => ({ ...r, x: r.totals.data, y: r.totals.data > 0 ? r.totals.spend / r.totals.data : null }))
+    .filter((d): d is typeof d & { y: number } => d.y !== null);
+  if (data.length < 2) {
+    return (
+      <p className={cn("flex items-center justify-center text-center text-sm text-muted-foreground", height)}>
+        Cần ít nhất 2 người đã có data trong khoảng này để vẽ.
+      </p>
+    );
+  }
+  const totalData = data.reduce((s, d) => s + d.x, 0);
+  const totalSpend = data.reduce((s, d) => s + d.totals.spend, 0);
+  const avgX = totalData / data.length;
+  const avgY = totalData > 0 ? totalSpend / totalData : 0;
+  const cost = METRICS.find((m) => m.key === "costPerData") ?? METRICS[0];
+  const count = METRICS.find((m) => m.key === "data") ?? METRICS[0];
+  const corner = "pointer-events-none absolute text-[11px] font-medium text-muted-foreground";
+
+  return (
+    <div className="relative">
+      <ChartContainer config={slotConfig(data.map((d) => d.slot))} className={cn("aspect-auto w-full", height)}>
+        <ScatterChart accessibilityLayer margin={{ top: 24, right: 56, bottom: 8, left: 0 }}>
+          <CartesianGrid />
+          <XAxis
+            type="number"
+            dataKey="x"
+            name="Data"
+            tickLine={false}
+            axisLine={false}
+            tick={axisTick}
+            tickFormatter={(v: number) => compactMetric(count, v)}
+            domain={[0, "auto"]}
+          />
+          <YAxis
+            type="number"
+            dataKey="y"
+            name="Giá data"
+            tickLine={false}
+            axisLine={false}
+            width={52}
+            tick={axisTick}
+            tickFormatter={(v: number) => compactMetric(cost, v)}
+            domain={[0, "auto"]}
+          />
+          <ZAxis range={[160, 160]} />
+          <ReferenceLine x={avgX} stroke="var(--muted-foreground)" strokeDasharray="4 4" />
+          <ReferenceLine y={avgY} stroke="var(--muted-foreground)" strokeDasharray="4 4" />
+          <ChartTooltip
+            cursor={false}
+            content={({ active, payload }) => {
+              const p = active ? payload?.[0]?.payload : null;
+              if (!p) return null;
+              return (
+                <TipBox
+                  title={p.name}
+                  rows={[
+                    { color: slotVar(p.slot), name: "Data", value: formatMetric(count, p.x) },
+                    { name: "Giá data", value: formatMetric(cost, p.y, true) },
+                    { name: "Chi tiêu", value: `${Math.round(p.totals.spend).toLocaleString("vi-VN")}đ` },
+                  ]}
+                />
+              );
+            }}
+          />
+          <Scatter data={data} isAnimationActive={false}>
+            {data.map((d) => (
+              <Cell key={d.key} fill={slotVar(d.slot)} stroke="var(--card)" strokeWidth={2} />
+            ))}
+            <LabelList
+              dataKey="name"
+              content={({ x, y, value }) => (
+                // Tên đầy đủ trên một dòng (nhãn mặc định tự xuống dòng theo bề rộng chấm).
+                <text
+                  x={Number(x ?? 0) + 7}
+                  y={Number(y ?? 0) - 4}
+                  textAnchor="middle"
+                  className="fill-foreground"
+                  fontSize={12}
+                  fontWeight={500}
+                >
+                  {String(value ?? "")}
+                </text>
+              )}
+            />
+          </Scatter>
+        </ScatterChart>
+      </ChartContainer>
+      <span className={cn(corner, "right-6 bottom-9")}>Nhiều data · giá rẻ ✓</span>
+      <span className={cn(corner, "top-1 left-14")}>Ít data · giá đắt</span>
+    </div>
+  );
+}
+
+/** Thanh tỉ trọng 100%: mỗi người chiếm bao nhiêu phần chi tiêu / mess / data của cả nhóm. */
+export function ShareBars({ rows }: { rows: EntityValue[] }) {
+  const parts: { label: string; pick: (t: Totals) => number }[] = [
+    { label: "Chi tiêu", pick: (t) => t.spend },
+    { label: "Mess", pick: (t) => t.messages },
+    { label: "Data", pick: (t) => t.data },
+  ];
+  return (
+    <div className="grid gap-3">
+      {parts.map((part) => {
+        const total = rows.reduce((s, r) => s + part.pick(r.totals), 0);
+        return (
+          <div key={part.label} className="grid gap-1 sm:grid-cols-[5rem_1fr] sm:items-center sm:gap-3">
+            <span className="text-sm text-muted-foreground">{part.label}</span>
+            {total === 0 ? (
+              <span className="text-sm text-muted-foreground">Chưa có số</span>
+            ) : (
+              <div className="flex h-7 w-full gap-0.5 overflow-hidden rounded-md">
+                {rows.map((r) => {
+                  const share = part.pick(r.totals) / total;
+                  if (share <= 0) return null;
+                  const pct = (share * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 });
+                  return (
+                    <div
+                      key={r.key}
+                      className="relative h-full"
+                      style={{ width: `${share * 100}%` }}
+                      title={`${r.name}: ${pct}% ${part.label.toLowerCase()} của nhóm`}
+                    >
+                      <Swatch slot={r.slot} className="size-full rounded-none" />
+                      {share >= 0.12 && (
+                        <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white tabular-nums [text-shadow:0_1px_2px_rgb(0_0_0/0.5)]">
+                          {pct}%
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
