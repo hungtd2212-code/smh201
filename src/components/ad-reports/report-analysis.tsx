@@ -48,7 +48,8 @@ import {
   type MetricKey,
   type Totals,
 } from "@/lib/ad-reports/aggregate";
-import { formatDay, monthLabel } from "@/lib/ad-reports/dates";
+import { formatDay, monthDays, monthLabel } from "@/lib/ad-reports/dates";
+import { daysLabel } from "@/lib/ad-reports/export";
 import type { AdAccount } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
 import { ChartCard, CompareLineChart, MAX_SERIES, MetricTabs, TrendChart } from "./charts";
@@ -56,6 +57,7 @@ import { useAdReports } from "./hooks";
 import { MonthsPicker, RangePicker, YearsPicker, yearOptions, type DayRange } from "./period-picker";
 import { Change, FIRST_TH, PeriodTable, TD, TH, type PeriodRow } from "./period-table";
 import { AccountRanking } from "./account-ranking";
+import { ExportButton } from "./export-button";
 import { GoalTrackingSection } from "./goal-tracking";
 import { Leaderboard, StaffProgress, useLeaderboard } from "./leaderboard";
 import { RevenueDialog } from "./revenue";
@@ -218,11 +220,17 @@ function AnalysisBody() {
               ? (staffCustom ?? thisMonthRange)
               : thisMonthRange;
 
+  const boardMonth = boardLastMonth ? shiftMonth(thisMonth, -1) : thisMonth;
+
   // Khoảng ngày cần tải cho kiểu so sánh đang xem.
   let from = "";
   let to = "";
   if (today) {
-    if (mode === "staff" || mode === "funnel" || mode === "accounts") {
+    if (mode === "goals") {
+      // Mục tiêu & vinh danh tự tải số của mình; tải thêm tháng vinh danh để "Tải Excel" có số.
+      from = firstDayOf(boardMonth);
+      to = lastDayOf(boardMonth);
+    } else if (mode === "staff" || mode === "funnel" || mode === "accounts") {
       ({ from, to } = staffRange);
     } else if ((mode === "months" || mode === "weekday") && months.length > 0) {
       from = firstDayOf(months[0]);
@@ -270,6 +278,52 @@ function AnalysisBody() {
   const metricTabs = <MetricTabs value={metricKey} onChange={setMetricKey} />;
   const who = person ? person.full_name : scope.managesMarketing ? "tất cả nhân viên" : "";
 
+  // "Tải Excel": các ngày (và các kỳ so sánh) của kiểu so sánh đang xem.
+  const exportInput = () => {
+    if (state.status !== "ready" || !today) return null;
+    const upToToday = (list: string[]) => list.filter((d) => d <= today);
+    const span = (a: string, b: string) => upToToday(daysBetween(a, b));
+    let groups: { label: string; days: string[] }[] = [];
+    let periodLabel = "";
+    if (mode === "goals") {
+      groups = [{ label: monthLabel(boardMonth), days: upToToday(monthDays(boardMonth)) }];
+    } else if (mode === "staff" || mode === "funnel" || mode === "accounts") {
+      groups = [{ label: rangeText(staffRange), days: span(staffRange.from, staffRange.to) }];
+    } else if (mode === "months" || mode === "weekday") {
+      groups = months.map((m) => ({ label: monthLabel(m), days: upToToday(monthDays(m)) }));
+    } else if (mode === "days" && ranges) {
+      groups = ranges.map((r, i) => ({ label: `Kỳ ${i === 0 ? "A" : "B"} (${rangeText(r)})`, days: span(r.from, r.to) }));
+    } else if (mode === "years") {
+      groups = chosenYears.map((y) => ({
+        label: toDate ? `Năm ${y} (đến ${today.slice(8)}/${today.slice(5, 7)})` : `Năm ${y}`,
+        days: span(`${y}-01-01`, toDate ? `${y}-${today.slice(5)}` : `${y}-12-31`),
+      }));
+    } else if (mode === "same-month") {
+      const toDay = toDate && monthNo === Number(thisMonth.slice(5));
+      groups = chosenYears.map((y) => {
+        const m = `${y}-${pad(monthNo)}`;
+        return { label: monthLabel(m), days: span(`${m}-01`, toDay ? `${m}-${today.slice(8)}` : lastDayOf(m)) };
+      });
+    }
+    groups = groups.filter((g) => g.days.length > 0);
+    periodLabel = groups.length === 1 && mode !== "days" ? groups[0].label : groups.map((g) => g.label).join(" · ");
+    const days = [...new Set(groups.flatMap((g) => g.days))].sort();
+    return {
+      title: `Phân tích · ${MODES.find((m) => m.key === mode)?.label ?? ""}`,
+      who: person ? person.full_name : scope.managesMarketing ? "Tất cả nhân viên" : "",
+      periodLabel: periodLabel || daysLabel(days),
+      days,
+      groups,
+      staffId,
+      entries,
+      reports: state.reports,
+      data: state.data ?? [],
+      staff: catalogs.adsStaff,
+      accounts: catalogs.adAccounts,
+      assignments: catalogs.assignments,
+    };
+  };
+
   return (
     <>
       <div className="flex min-w-0 flex-wrap items-center gap-3">
@@ -314,6 +368,7 @@ function AnalysisBody() {
             </SelectContent>
           </Select>
         )}
+        <ExportButton getInput={exportInput} className="md:ml-auto" />
       </div>
 
       {/* Lựa chọn của từng kiểu so sánh */}
@@ -474,7 +529,7 @@ function AnalysisBody() {
         </ReadOnlyNote>
       ) : mode === "goals" && today ? (
         <GoalsView
-          month={boardLastMonth ? shiftMonth(thisMonth, -1) : thisMonth}
+          month={boardMonth}
           today={today}
           staffId={staffId}
           who={person ? person.full_name : scope.managesMarketing ? "cả công ty" : ""}

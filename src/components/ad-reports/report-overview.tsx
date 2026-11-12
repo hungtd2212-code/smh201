@@ -76,6 +76,7 @@ import { LIME, ORANGE, PeriodTable, TD, TH, YELLOW, type PeriodRow } from "./per
 import { ReportFields, allFilled, fieldKey, toNumbers, type FieldItem } from "./report-fields";
 import { NotReady, StatsError } from "./shared";
 import { GoalTrackingSection } from "./goal-tracking";
+import { ExportButton } from "./export-button";
 import { ImportDialog } from "./import-dialog";
 import { RevenueDialog } from "./revenue";
 import { AlertsPanel, TargetsDialog, useAdTargets } from "./targets";
@@ -251,6 +252,28 @@ function OverviewBody() {
     }
   }
   const editTargets = scope.managesMarketing && targets !== null;
+  // "Tải Excel": đúng kỳ (tháng / nhiều tháng / tuần / khoảng ngày) và đúng người đang xem.
+  const exportInput = () => {
+    if (state.status !== "ready" || !today) return null;
+    const days = daysBetween(periodFrom, periodTo).filter((d) => d <= today && keep(d));
+    return {
+      title: "Tổng quan",
+      who: person ? person.full_name : scope.managesMarketing ? "Tất cả nhân viên" : "",
+      periodLabel: periodName,
+      days,
+      groups:
+        !range && months.length > 1
+          ? months.map((m) => ({ label: monthLabel(m), days: days.filter((d) => d.startsWith(m)) }))
+          : undefined,
+      staffId,
+      entries,
+      reports: state.reports,
+      data: state.data ?? [],
+      staff: catalogs.adsStaff,
+      accounts: catalogs.adAccounts,
+      assignments: catalogs.assignments,
+    };
+  };
 
   return (
     <>
@@ -310,6 +333,7 @@ function OverviewBody() {
             Nhập từ Excel
           </Button>
         )}
+        <ExportButton getInput={exportInput} className={scope.managesMarketing ? undefined : "ml-auto"} />
       </div>
       {importOpen && (
         <ImportDialog
