@@ -321,6 +321,7 @@ function OverviewBody() {
           onClose={() => setTargetsOpen(false)}
           people={catalogs.adsStaff}
           targets={targets}
+          carryReady={targetsState.status === "ready" && targetsState.carryReady}
           assignments={catalogs.assignments}
           today={today}
           onSaved={reloadTargets}
@@ -361,6 +362,7 @@ function OverviewBody() {
               targetsState={targetsState}
               range={range}
               onPickRange={pickRange}
+              onEditTargets={editTargets ? () => setTargetsOpen(true) : undefined}
             />
           )}
           <KpiCards

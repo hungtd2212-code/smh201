@@ -451,6 +451,7 @@ function AnalysisBody() {
           onClose={() => setDialog(null)}
           people={catalogs.adsStaff}
           targets={targetsState.targets}
+          carryReady={targetsState.carryReady}
           assignments={catalogs.assignments}
           today={today}
           onSaved={reloadTargets}

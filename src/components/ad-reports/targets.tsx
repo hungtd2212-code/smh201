@@ -18,11 +18,13 @@ import {
   shiftMonth,
   splitTotal,
   type Alert,
+  type CarryMode,
   type Status,
   type TargetItem,
   type TargetValues,
 } from "@/lib/ad-reports/aggregate";
 import {
+  carryModeFor,
   fetchTargetHistory,
   fetchTargets,
   saveTarget,
@@ -39,7 +41,8 @@ import { NumberInput } from "./number-input";
 
 export type TargetsState =
   | { status: "loading" }
-  | { status: "ready"; targets: AdTarget[] }
+  /** `carryReady`: đã chạy file 017 (lưu được cách dồn tuần không đạt). */
+  | { status: "ready"; targets: AdTarget[]; carryReady: boolean }
   /** Chưa chạy supabase/012_ad_targets.sql. */
   | { status: "not-migrated" }
   | { status: "error"; message: string };
@@ -52,8 +55,10 @@ export function useAdTargets() {
     let cancelled = false;
     // Chỉ đặt state khi máy chủ đã trả lời (không đồng bộ trong effect).
     fetchTargets()
-      .then((targets) => {
-        if (!cancelled) setState(targets ? { status: "ready", targets } : { status: "not-migrated" });
+      .then((data) => {
+        if (!cancelled) {
+          setState(data ? { status: "ready", targets: data.targets, carryReady: data.carryReady } : { status: "not-migrated" });
+        }
       })
       .catch((error: unknown) => {
         if (!cancelled) setState({ status: "error", message: error instanceof Error ? error.message : String(error) });
@@ -193,7 +198,14 @@ const fromDraft = (d: Draft): TargetValues =>
   Object.fromEntries(FIELDS.map((f) => [f.key, d[f.key] === "" ? null : Number(d[f.key])])) as TargetValues;
 const emptyDraft = (d: Draft) => FIELDS.every((f) => d[f.key] === "");
 const monthText = (month: string) => `tháng ${Number(month.slice(5, 7))}/${month.slice(0, 4)}`;
+/** Cách dồn phần thiếu của tuần không đạt (quản lý chốt, lưu ở dòng cả nhóm). */
+const CARRY_LABEL: Record<CarryMode, string> = {
+  spread: "Chia đều các tuần còn lại",
+  next: "Dồn sang tuần sau",
+};
+const CARRY_FIELD = "Tuần không đạt thì phần thiếu";
 const fieldValue = (key: string, value: unknown) => {
+  if (key === "week_carry") return value === "next" || value === "spread" ? CARRY_LABEL[value].toLowerCase() : "theo tháng trước";
   if (value === null || value === undefined || value === "") return "trống";
   const f = FIELD_LABEL.get(key);
   const n = Number(value);
@@ -205,6 +217,7 @@ export function TargetsDialog({
   onClose,
   people,
   targets,
+  carryReady,
   assignments,
   today,
   onSaved,
@@ -213,6 +226,8 @@ export function TargetsDialog({
   onClose: () => void;
   people: AdsStaff[];
   targets: AdTarget[];
+  /** Đã chạy file 017: chốt được cách dồn tuần không đạt. */
+  carryReady: boolean;
   assignments: AdAccountAssignment[];
   today: string;
   onSaved: () => Promise<void>;
@@ -230,7 +245,8 @@ export function TargetsDialog({
           <DialogDescription>
             Đặt từ đầu mỗi tháng: nhập dòng “Cả nhóm” (mục tiêu chung của công ty) rồi bấm “Tự động phân bổ” để chia xuống
             từng nhân viên, sau đó sửa lại tuỳ ý. Ô trống = không đặt. Giá tối đa / tỉ lệ ads / doanh thu của nhân viên để
-            trống thì dùng của cả nhóm. Mọi lần đặt / sửa đều được ghi lại (ai, lúc nào, số cũ → số mới).
+            trống thì dùng của cả nhóm. Chốt luôn cách dồn phần thiếu khi một tuần không đạt — cả công ty dùng chung một cách.
+            Mọi lần đặt / sửa đều được ghi lại (ai, lúc nào, số cũ → số mới).
           </DialogDescription>
         </DialogHeader>
         <div role="tablist" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
@@ -273,6 +289,7 @@ export function TargetsDialog({
               month={month}
               people={people}
               targets={targets}
+              carryReady={carryReady}
               assignments={assignments}
               onClose={onClose}
               onSaved={onSaved}
@@ -290,6 +307,7 @@ function TargetsForm({
   month,
   people,
   targets,
+  carryReady,
   assignments,
   onClose,
   onSaved,
@@ -297,6 +315,7 @@ function TargetsForm({
   month: string;
   people: AdsStaff[];
   targets: AdTarget[];
+  carryReady: boolean;
   assignments: AdAccountAssignment[];
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -320,8 +339,19 @@ function TargetsForm({
   const [drafts, setDrafts] = useState<Record<string, Draft>>(initial);
   const [method, setMethod] = useState<"equal" | "last-month">("equal");
   const [busy, setBusy] = useState(false);
+  // Cách dồn phần thiếu của tuần không đạt: lưu ở dòng cả nhóm của tháng; null = theo tháng trước / mặc định.
+  const initialCarry = exact(null)?.week_carry ?? null;
+  const [carry, setCarry] = useState<CarryMode | null>(initialCarry);
+  const inherited = carryModeFor(
+    targets.filter((t) => !(t.ads_staff_id === null && t.month?.slice(0, 7) === month)),
+    month,
+  );
+  const shownCarry = carry ?? inherited.mode;
+  const carryChanged = carryReady && carry !== initialCarry;
   const changed = rows.filter(
-    (r) => JSON.stringify(drafts[r.key]) !== JSON.stringify(initial[r.key]) && !(emptyDraft(drafts[r.key]) && !r.existing),
+    (r) =>
+      (JSON.stringify(drafts[r.key]) !== JSON.stringify(initial[r.key]) && !(emptyDraft(drafts[r.key]) && !r.existing)) ||
+      (r.staffId === null && carryChanged),
   );
   // Tháng này chưa đặt dòng nào → gợi ý chép từ tháng gần nhất đã đặt.
   const source = rows.every((r) => !r.existing)
@@ -343,6 +373,8 @@ function TargetsForm({
       }
       return next;
     });
+    const sourceCarry = targets.find((x) => x.ads_staff_id === null && x.month?.slice(0, 7) === sourceMonth)?.week_carry;
+    if (carryReady && sourceCarry) setCarry(sourceCarry);
     toast.info(`Đã chép mục tiêu ${monthText(sourceMonth)} — kiểm tra rồi bấm Lưu`);
   }
 
@@ -396,7 +428,13 @@ function TargetsForm({
     setBusy(true);
     try {
       for (const row of changed) {
-        await saveTarget(row.existing?.id ?? null, row.staffId, month, fromDraft(drafts[row.key]));
+        const values = fromDraft(drafts[row.key]);
+        await saveTarget(
+          row.existing?.id ?? null,
+          row.staffId,
+          month,
+          row.staffId === null && carryReady ? { ...values, week_carry: carry } : values,
+        );
       }
       toast.success(`Đã lưu mục tiêu ${monthText(month)}`);
       await onSaved();
@@ -433,6 +471,30 @@ function TargetsForm({
             Chép từ {monthText(source)}
           </Button>
         )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2" role="group" aria-label={CARRY_FIELD}>
+        <span className="text-sm font-medium">{CARRY_FIELD}:</span>
+        {(["spread", "next"] as const).map((key) => (
+          <Button
+            key={key}
+            size="sm"
+            variant={shownCarry === key ? "default" : "outline"}
+            aria-pressed={shownCarry === key}
+            disabled={!carryReady || busy}
+            onClick={() => setCarry(key)}
+          >
+            {CARRY_LABEL[key]}
+          </Button>
+        ))}
+        <span className="text-xs text-muted-foreground">
+          {!carryReady
+            ? "Cần chạy file supabase/017_week_carry.sql trên Supabase trước — hiện đang tạm chia đều."
+            : carry === null
+              ? inherited.from
+                ? `Tháng này chưa chốt — đang theo ${monthText(inherited.from)}.`
+                : "Chưa chốt — mặc định chia đều các tuần còn lại."
+              : "Cả công ty dùng chung cách này cho tháng đang chọn; nhân viên chỉ xem."}
+        </span>
       </div>
       {source && (
         <p className="text-sm text-amber-700 dark:text-amber-300">
@@ -569,12 +631,18 @@ function TargetHistory({ people, targets }: { people: AdsStaff[]; targets: AdTar
         const changes =
           e.action === "update"
             ? Object.keys(e.new_data ?? {})
-                .filter((k) => FIELD_LABEL.has(k))
-                .map((k) => `${FIELD_LABEL.get(k)?.label}: ${fieldValue(k, e.old_data?.[k])} → ${fieldValue(k, e.new_data?.[k])}`)
-            : set
-              ? FIELDS.filter((f) => set[f.key] !== null && set[f.key] !== undefined).map(
-                  (f) => `${f.label}: ${fieldValue(f.key, set[f.key])}`,
+                .filter((k) => FIELD_LABEL.has(k) || k === "week_carry")
+                .map(
+                  (k) =>
+                    `${FIELD_LABEL.get(k)?.label ?? CARRY_FIELD}: ${fieldValue(k, e.old_data?.[k])} → ${fieldValue(k, e.new_data?.[k])}`,
                 )
+            : set
+              ? [
+                  ...FIELDS.filter((f) => set[f.key] !== null && set[f.key] !== undefined).map(
+                    (f) => `${f.label}: ${fieldValue(f.key, set[f.key])}`,
+                  ),
+                  ...(set.week_carry ? [`${CARRY_FIELD}: ${fieldValue("week_carry", set.week_carry)}`] : []),
+                ]
               : [];
         return (
           <li key={e.id} className="rounded-lg border px-3 py-2 text-sm">

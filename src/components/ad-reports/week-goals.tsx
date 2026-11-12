@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2, Clock3, Flag, Minus, XCircle } from "lucide-react";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState } from "react";
 import { StaffAvatar } from "@/components/staff/staff-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -18,7 +18,6 @@ import {
   totalsByDay,
   weekdayOf,
   weeksOfMonth,
-  type CarryMode,
   type DayGoal,
   type Entry,
   type KpiCheck,
@@ -31,7 +30,7 @@ import {
 } from "@/lib/ad-reports/aggregate";
 import { formatDay, monthLabel } from "@/lib/ad-reports/dates";
 import { formatNumber } from "@/lib/ad-reports/number";
-import { targetFor } from "@/lib/ad-reports/targets";
+import { carryModeFor, targetFor } from "@/lib/ad-reports/targets";
 import type { AdAccountAssignment, AdsStaff } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
 import { GlassBar, TONE_TEXT, type Tone } from "./glass";
@@ -41,8 +40,9 @@ import type { TargetsState } from "./targets";
 /**
  * Về đích theo tuần & ngày (như sheet "Báo cáo tuần"): mục tiêu tháng chia đều xuống từng ngày, tuần (T2 → CN, cắt ở
  * đầu / cuối tháng) = cộng các ngày. Về đích = đủ số điện thoại VÀ giá số / giá mess không vượt mức tối đa.
- * Tuần đã qua mà chưa đủ số: phần thiếu dồn sang tuần sau hoặc chia đều cho các tuần còn lại (người xem chọn; nhớ trên
- * máy). Ô "Cả tháng" vẫn so với mục tiêu tháng gốc.
+ * Tuần đã qua mà chưa đủ số: phần thiếu dồn sang tuần sau hoặc chia đều cho các tuần còn lại — Quản trị / Trưởng
+ * Marketing chốt một cách cho cả công ty trong hộp Mục tiêu (file 017); nhân viên chỉ xem. Ô "Cả tháng" vẫn so với mục
+ * tiêu tháng gốc.
  * "Cá nhân về đích thì tổ chức về đích — mỗi ngày về đích thì cả tuần về đích, cả tuần về đích thì cả tháng về đích."
  *   • Quản lý xem tất cả: bảng mỗi người một dòng × mỗi tuần một cột (+ dòng cả công ty), bấm tên để xem lịch từng ngày.
  *   • Một người (nhân viên tự xem, hoặc quản lý lọc một người): lịch từng ngày của người đó.
@@ -64,38 +64,7 @@ type Line = {
   byDay: Map<string, Totals>;
 };
 
-/* Cách dồn phần thiếu — người xem chọn, nhớ trên máy (localStorage). */
-const CARRY_KEY = "smh:week-carry";
-const DEFAULT_CARRY: CarryMode = "spread";
-const carryListeners = new Set<() => void>();
-function readCarry(): CarryMode {
-  try {
-    const v = window.localStorage.getItem(CARRY_KEY);
-    return v === "next" || v === "spread" ? v : DEFAULT_CARRY;
-  } catch {
-    return DEFAULT_CARRY;
-  }
-}
-function subscribeCarry(listener: () => void) {
-  carryListeners.add(listener);
-  window.addEventListener("storage", listener);
-  return () => {
-    carryListeners.delete(listener);
-    window.removeEventListener("storage", listener);
-  };
-}
-function useCarryMode() {
-  const mode = useSyncExternalStore(subscribeCarry, readCarry, () => DEFAULT_CARRY);
-  const setMode = (next: CarryMode) => {
-    try {
-      window.localStorage.setItem(CARRY_KEY, next);
-    } catch {
-      // Không lưu được (chế độ riêng tư…) thì chỉ đổi trong lần xem này.
-    }
-    for (const l of carryListeners) l();
-  };
-  return [mode, setMode] as const;
-}
+const CARRY_TEXT = { spread: "chia đều các tuần còn lại", next: "dồn sang tuần sau" } as const;
 
 type Result = { totals: Totals; goal: DayGoal; verdict: Verdict; phase: Phase; tone: Tone; fill: number };
 
@@ -379,6 +348,7 @@ export function WeekGoals({
   targetsState,
   range,
   onPickRange,
+  onEditTargets,
 }: {
   month: string;
   today: string;
@@ -393,11 +363,14 @@ export function WeekGoals({
   targetsState: TargetsState;
   range: DayRange | null;
   onPickRange: (range: DayRange | null) => void;
+  /** Quản lý: mở hộp Mục tiêu (để đổi cách dồn). */
+  onEditTargets?: () => void;
 }) {
   const [focus, setFocus] = useState<string>("team");
-  const [carryMode, setCarryMode] = useCarryMode();
   const weeks = useMemo(() => weeksOfMonth(month), [month]);
   const targets = targetsState.status === "ready" ? targetsState.targets : null;
+  const carry = useMemo(() => carryModeFor(targets ?? [], month), [targets, month]);
+  const carryMode = carry.mode;
 
   const lines = useMemo(() => {
     if (!targets) return [];
@@ -473,7 +446,7 @@ export function WeekGoals({
           </h2>
           <p className="max-w-3xl text-[11px] text-muted-foreground">
             Đầu tháng mục tiêu chia đều cho từng ngày; tuần (thứ Hai → Chủ nhật) = cộng các ngày. Tuần đã qua mà chưa đủ số
-            thì phần thiếu được dồn tiếp (chọn cách dồn bên phải). Về đích = đủ số điện thoại và giá số, giá mess không vượt
+            thì phần thiếu được dồn tiếp theo cách quản lý đã chốt (bên phải). Về đích = đủ số điện thoại và giá số, giá mess không vượt
             mức tối đa (vượt ngân sách chỉ nhắc). Rê chuột để xem chi tiết; bấm một tuần hay một ngày để lọc cả trang.
           </p>
         </div>
@@ -481,27 +454,23 @@ export function WeekGoals({
           <span className="glass-soft rounded-full px-3 py-1 text-[11px] font-medium italic">
             Cá nhân về đích → tổ chức về đích · Ngày về đích → tuần về đích → tháng về đích
           </span>
-          <div className="glass-soft flex flex-wrap items-center gap-1 rounded-full p-1 text-[11px]" role="group" aria-label="Tuần không đạt thì phần thiếu">
-            <span className="pr-1 pl-2 text-muted-foreground">Tuần không đạt:</span>
-            {(
-              [
-                ["spread", "Chia đều các tuần còn lại"],
-                ["next", "Dồn sang tuần sau"],
-              ] as const
-            ).map(([key, label]) => (
+          <div className="glass-soft flex flex-wrap items-center gap-1.5 rounded-full py-1 pr-1 pl-3 text-[11px]">
+            <span className="text-muted-foreground">Tuần không đạt thì phần thiếu:</span>
+            <span className="font-semibold">{CARRY_TEXT[carryMode]}</span>
+            <span className="text-muted-foreground">
+              {carry.from ? `(quản lý chốt${carry.from !== month ? ` từ ${monthLabel(carry.from).toLowerCase()}` : ""})` : "(mặc định)"}
+            </span>
+            {onEditTargets ? (
               <button
-                key={key}
                 type="button"
-                aria-pressed={carryMode === key}
-                onClick={() => setCarryMode(key)}
-                className={cn(
-                  "rounded-full px-2.5 py-1 font-medium whitespace-nowrap transition-colors",
-                  carryMode === key ? "bg-foreground text-background shadow-sm" : "hover:bg-white/70 dark:hover:bg-white/10",
-                )}
+                onClick={onEditTargets}
+                className="rounded-full bg-foreground px-2.5 py-1 font-medium text-background shadow-sm transition-opacity hover:opacity-85"
               >
-                {label}
+                Đổi
               </button>
-            ))}
+            ) : (
+              <span className="pr-2" />
+            )}
           </div>
         </div>
       </div>
