@@ -4,7 +4,7 @@ import { Crown, Medal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { StaffAvatar } from "@/components/staff/staff-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { scoreBoard, type BoardScore } from "@/lib/ad-reports/aggregate";
+import { BOARD_MIN_SHARE, scoreBoard, type BoardScore } from "@/lib/ad-reports/aggregate";
 import { monthLabel } from "@/lib/ad-reports/dates";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isNotMigrated } from "@/lib/supabase/errors";
@@ -158,6 +158,7 @@ export function Leaderboard({ month, elapsed, state }: { month: string; elapsed:
         </h2>
         <p className="text-sm text-muted-foreground">
           Điểm 0–100: tỉ lệ ads / doanh thu · giá số · số điện thoại so với target (người tốt nhất mỗi tiêu chí = 100).
+          Chỉ xếp hạng người chi tiêu từ {Math.round(BOARD_MIN_SHARE * 100)}% mức trung bình của nhóm trở lên.
         </p>
       </div>
       {top.length === 0 ? (

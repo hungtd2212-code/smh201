@@ -168,6 +168,11 @@ ok(Math.abs(sc.b.score - (50 + 20 + 50) / 3) < 0.1, "b: 50, 20, 50", sc.b);
 ok(Math.abs(sc.c.score - (0 + 100 + 0) / 3) < 0.1, "c: thiếu doanh thu, thiếu target → 0 ở hai tiêu chí đó", sc.c);
 ok(board[0].id === "a", "a đứng đầu");
 ok(scoreBoard([{ id: "x", spend: 10, data: 2, revenue: 0, dataTarget: null }], 1)[0].score === 100, "chỉ có tiêu chí giá số → người duy nhất 100 điểm");
+const tiny = scoreBoard([
+  { id: "big", spend: 17000000, data: 90, revenue: 0, dataTarget: null },
+  { id: "small", spend: 2, data: 5, revenue: 0, dataTarget: null },
+], 1);
+ok(tiny.length === 1 && tiny[0].id === "big" && tiny[0].score === 100, "người chạy rất ít tiền (2đ ra 5 số) không được xếp hạng", tiny);
 
 console.log(`\n${passed} ok, ${failed} lỗi`);
 if (failed > 0) process.exit(1);

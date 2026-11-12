@@ -606,11 +606,16 @@ export type BoardScore = {
  *   • giá số: rẻ nhất nhóm = 100, tương tự;
  *   • số điện thoại so với target (theo nhịp tới hôm nay): đạt / vượt = 100, chưa đạt = tỉ lệ đạt × 100.
  * Tiêu chí nào cả nhóm chưa có số (vd chưa nhập doanh thu) thì bỏ qua; người thiếu số ở một tiêu chí được 0 điểm
- * tiêu chí đó. Chỉ xếp hạng người có chi tiêu trong tháng.
+ * tiêu chí đó. Chỉ xếp hạng người chi tiêu từ 30% mức trung bình của nhóm trở lên — để người chạy rất ít tiền
+ * (vd vài nghìn đồng ra 1 số) không "rẻ nhất" một cách ảo.
  */
+export const BOARD_MIN_SHARE = 0.3;
+
 export function scoreBoard(rows: BoardInput[], elapsed: number): BoardScore[] {
-  const scored = rows
-    .filter((r) => r.spend > 0)
+  const spenders = rows.filter((r) => r.spend > 0);
+  const average = spenders.length > 0 ? spenders.reduce((s, r) => s + r.spend, 0) / spenders.length : 0;
+  const scored = spenders
+    .filter((r) => r.spend >= average * BOARD_MIN_SHARE)
     .map((r) => ({
       id: r.id,
       adRevenuePct: r.revenue > 0 ? (r.spend / r.revenue) * 100 : null,
