@@ -85,6 +85,8 @@ export type CurrentStaff =
        * Quản trị cấp cao luôn thấy mọi trang.
        */
       pageAccess: string[] | null;
+      /** Ảnh đại diện (null = chưa có, hiện chữ cái đầu). */
+      avatarUrl: string | null;
     }
   /** Đã đăng nhập nhưng chưa được thêm vào bảng `staff` → chưa có quyền xem dữ liệu. */
   | { status: "no-access"; email: string }
@@ -102,6 +104,7 @@ type OwnStaffRow = {
   username?: string | null;
   position?: "coo" | "lead_ads" | "ads_staff" | "page" | null;
   page_access?: string[] | null;
+  avatar_url?: string | null;
 };
 
 /**
@@ -112,6 +115,7 @@ type OwnStaffRow = {
 async function fetchOwnStaffRow(userId: string) {
   const supabase = getSupabaseBrowserClient();
   const attempts = [
+    "full_name, role, locked_at, locked_reason, can_delete, can_export, username, position, page_access, avatar_url",
     "full_name, role, locked_at, locked_reason, can_delete, can_export, username, position, page_access",
     "full_name, role, locked_at, locked_reason, can_delete, can_export",
     "full_name, role, locked_at, locked_reason, can_delete",
@@ -159,6 +163,7 @@ async function loadCurrentStaff(): Promise<CurrentStaff> {
     username: data.username ?? null,
     position: data.position ?? null,
     pageAccess: data.page_access ?? null,
+    avatarUrl: data.avatar_url ?? null,
   };
 }
 

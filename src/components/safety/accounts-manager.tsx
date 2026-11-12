@@ -8,7 +8,9 @@ import { CatalogGate, PageHeader } from "@/components/catalog/shared";
 import { useCatalogs } from "@/components/catalog-provider";
 import { ConfirmActionDialog } from "@/components/safety/confirm-action-dialog";
 import { BranchesNotReady, useBranches } from "@/components/staff/branches-manager";
+import { AvatarPicker, type AvatarChoice } from "@/components/staff/avatar-picker";
 import { PermissionDialog } from "@/components/staff/permission-dialog";
+import { StaffAvatar } from "@/components/staff/staff-avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -39,6 +41,7 @@ import {
   positionLabel,
   type Position,
 } from "@/lib/staff/positions";
+import { clearAvatar, uploadAvatar } from "@/lib/staff/avatar";
 import {
   createStaffAccount,
   fetchStaffLogins,
@@ -55,6 +58,12 @@ import { AdminOnly, errorText, useRole } from "./shared";
 
 const ALL = "__all";
 const KEEP = "__keep";
+
+/** Lưu ảnh đại diện đã chọn trong form (File mới → tải lên; "remove" → bỏ ảnh; null → giữ nguyên). */
+async function applyAvatar(userId: string, choice: AvatarChoice) {
+  if (choice instanceof File) await uploadAvatar(userId, choice);
+  else if (choice === "remove") await clearAvatar(userId);
+}
 const USERNAME = /^[a-z0-9][a-z0-9._]{2,29}$/;
 
 /**
@@ -236,8 +245,13 @@ function AccountsBody() {
                     <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">{i + 1}</td>
                     <td className="px-3 py-2 font-medium">{loginOf(member)}</td>
                     <td className="px-3 py-2">
-                      {member.full_name}
-                      {member.user_id === userId && <span className="ml-1.5 text-xs text-muted-foreground">(bạn)</span>}
+                      <span className="flex items-center gap-2">
+                        <StaffAvatar name={member.full_name} url={member.avatar_url} />
+                        <span>
+                          {member.full_name}
+                          {member.user_id === userId && <span className="ml-1.5 text-xs text-muted-foreground">(bạn)</span>}
+                        </span>
+                      </span>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">{positionLabel(member.position, member.role)}</td>
                     <td className="px-3 py-2">
@@ -441,6 +455,7 @@ function AddPersonForm({
   const [fullName, setFullName] = useState("");
   const [position, setPosition] = useState<Position | "">("");
   const [branchId, setBranchId] = useState(branches.length === 1 ? branches[0].id : "");
+  const [avatar, setAvatar] = useState<AvatarChoice>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -455,6 +470,12 @@ function AddPersonForm({
     setError(null);
     try {
       const id = await createStaffAccount({ username, password, fullName: fullName.trim(), position, branchId });
+      try {
+        await applyAvatar(id, avatar);
+      } catch (caught) {
+        // Tài khoản đã tạo xong; chỉ ảnh chưa lưu được → báo để thêm lại sau (nút bút).
+        toast.warning("Đã tạo tài khoản nhưng chưa lưu được ảnh đại diện", { description: errorText(caught) });
+      }
       await onSaved(id, fullName.trim(), username);
     } catch (caught) {
       setError(errorText(caught));
@@ -466,6 +487,10 @@ function AddPersonForm({
   return (
     <form onSubmit={save} className="grid gap-4 rounded-xl border bg-card p-4" noValidate>
       <h3 className="font-medium">Thêm người</h3>
+      <div className="grid gap-1.5">
+        <Label>Ảnh đại diện (không bắt buộc)</Label>
+        <AvatarPicker name={fullName} value={avatar} onChange={setAvatar} />
+      </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div className="grid content-start gap-1.5">
           <Label htmlFor="new-username">
@@ -597,6 +622,7 @@ function EditPersonDialog({
   const [position, setPosition] = useState<string>(member.position ?? KEEP);
   const [branchId, setBranchId] = useState(member.branch_id ?? "");
   const [password, setPassword] = useState("");
+  const [avatar, setAvatar] = useState<AvatarChoice>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -612,6 +638,7 @@ function EditPersonDialog({
         branchId: branchId || null,
       });
       if (password) await resetStaffPassword(member.user_id, password);
+      await applyAvatar(member.user_id, avatar);
       await onSaved();
       toast.success(`Đã cập nhật ${fullName.trim()}`, password ? { description: "Đã đặt mật khẩu mới." } : undefined);
       onClose();
@@ -630,6 +657,7 @@ function EditPersonDialog({
             <DialogTitle>Sửa nhân sự</DialogTitle>
             <DialogDescription>Tên đăng nhập: {login}</DialogDescription>
           </DialogHeader>
+          <AvatarPicker name={fullName} current={member.avatar_url} value={avatar} onChange={setAvatar} />
           <div className="grid gap-1.5">
             <Label htmlFor="edit-fullname">Tên nhân viên</Label>
             <Input id="edit-fullname" maxLength={120} value={fullName} onChange={(e) => setFullName(e.target.value)} />
@@ -711,6 +739,7 @@ function OwnAccountDialog({ member, login, onClose }: { member: StaffMember; log
   const [username, setUsername] = useState(member.username ?? "admin");
   const [password, setPassword] = useState("");
   const [again, setAgain] = useState("");
+  const [avatar, setAvatar] = useState<AvatarChoice>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -727,6 +756,7 @@ function OwnAccountDialog({ member, login, onClose }: { member: StaffMember; log
     try {
       if (fullName.trim() !== member.full_name || usernameChanged) await updateOwnAccount(fullName.trim(), username);
       if (password) await setOwnPassword(password);
+      await applyAvatar(member.user_id, avatar);
       toast.success("Đã lưu thông tin của bạn", {
         description: usernameChanged ? `Lần sau đăng nhập bằng tên “${username}”.` : undefined,
       });
@@ -746,6 +776,7 @@ function OwnAccountDialog({ member, login, onClose }: { member: StaffMember; log
             <DialogTitle>Thông tin của bạn</DialogTitle>
             <DialogDescription>Đang đăng nhập bằng: {login}</DialogDescription>
           </DialogHeader>
+          <AvatarPicker name={fullName} current={member.avatar_url} value={avatar} onChange={setAvatar} />
           <div className="grid gap-1.5">
             <Label htmlFor="own-fullname">Tên</Label>
             <Input id="own-fullname" maxLength={120} value={fullName} onChange={(e) => setFullName(e.target.value)} />

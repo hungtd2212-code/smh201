@@ -9,7 +9,11 @@
 --
 -- Lý do (chủ phòng khám, 12/11/2026): đặt mục tiêu để màn Tổng quan hiện
 -- thanh tiến độ và cảnh báo khi vượt — ví dụ giá data tối đa 150.000đ,
--- ngân sách tháng 300 triệu, data mục tiêu 1.500 / tháng.
+-- ngân sách tháng 300 triệu, data mục tiêu 1.500 / tháng, doanh thu mục tiêu,
+-- tỉ lệ chi phí ads / doanh thu tối đa (vd 30%).
+--
+-- Đã chạy bản trước của file này rồi thì chạy lại bản này cũng được: chỉ thêm
+-- 2 cột doanh thu mục tiêu và tỉ lệ ads / doanh thu tối đa.
 --
 --   • Một dòng "cả nhóm" (ads_staff_id trống) + tuỳ ý mỗi nhân viên Ads một dòng.
 --   • Ô để trống = không đặt mục tiêu đó. Giá tối đa của nhân viên để trống
@@ -27,10 +31,17 @@ create table if not exists public.ad_targets (
   monthly_data         int check (monthly_data is null or monthly_data >= 0),                    -- data mục tiêu / tháng
   max_cost_per_message int check (max_cost_per_message is null or max_cost_per_message >= 0),    -- giá mess tối đa (đ)
   max_cost_per_data    int check (max_cost_per_data is null or max_cost_per_data >= 0),          -- giá data tối đa (đ)
+  monthly_revenue      bigint check (monthly_revenue is null or monthly_revenue >= 0),           -- doanh thu mục tiêu / tháng (đ)
+  max_ad_revenue_pct   numeric(6, 2) check (max_ad_revenue_pct is null or max_ad_revenue_pct >= 0), -- chi phí ads / doanh thu tối đa (%)
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
   updated_by           uuid default auth.uid() references auth.users (id) on delete set null
 );
+-- Bảng đã có từ bản trước của file này → thêm 2 cột mới.
+alter table public.ad_targets
+  add column if not exists monthly_revenue    bigint check (monthly_revenue is null or monthly_revenue >= 0),
+  add column if not exists max_ad_revenue_pct numeric(6, 2) check (max_ad_revenue_pct is null or max_ad_revenue_pct >= 0);
+
 -- Chỉ một dòng "cả nhóm" và mỗi nhân viên một dòng.
 create unique index if not exists ad_targets_team_key on public.ad_targets ((ads_staff_id is null)) where ads_staff_id is null;
 create unique index if not exists ad_targets_staff_key on public.ad_targets (ads_staff_id) where ads_staff_id is not null;
@@ -86,8 +97,10 @@ create policy ad_targets_update on public.ad_targets
 
 revoke all on public.ad_targets from anon, authenticated;
 grant select on public.ad_targets to authenticated;
-grant insert (ads_staff_id, monthly_budget, monthly_data, max_cost_per_message, max_cost_per_data) on public.ad_targets to authenticated;
-grant update (monthly_budget, monthly_data, max_cost_per_message, max_cost_per_data) on public.ad_targets to authenticated;
+grant insert (ads_staff_id, monthly_budget, monthly_data, max_cost_per_message, max_cost_per_data,
+              monthly_revenue, max_ad_revenue_pct) on public.ad_targets to authenticated;
+grant update (monthly_budget, monthly_data, max_cost_per_message, max_cost_per_data,
+              monthly_revenue, max_ad_revenue_pct) on public.ad_targets to authenticated;
 
 revoke all on function private.ad_targets_guard() from public;
 

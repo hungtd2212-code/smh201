@@ -1,6 +1,6 @@
 "use client";
 
-import { EllipsisVertical, KeyRound, LogOut } from "lucide-react";
+import { EllipsisVertical, ImageUp, KeyRound, LogOut } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -17,7 +17,19 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { AvatarPicker, type AvatarChoice } from "@/components/staff/avatar-picker";
 import { ChangePasswordDialog } from "@/components/staff/change-password-dialog";
+import { StaffAvatar } from "@/components/staff/staff-avatar";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { clearAvatar, uploadAvatar } from "@/lib/staff/avatar";
 import { useCurrentStaff } from "@/hooks/use-current-staff";
 import { loginName, positionLabel } from "@/lib/staff/positions";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -36,6 +48,7 @@ const initials = (name: string) =>
 export function UserMenu() {
   const staff = useCurrentStaff();
   const [changingPassword, setChangingPassword] = useState(false);
+  const [changingAvatar, setChangingAvatar] = useState(false);
 
   if (staff.status === "demo") {
     return (
@@ -88,9 +101,13 @@ export function UserMenu() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton size="lg">
-              <Avatar className="size-8">
-                <AvatarFallback>{initials(name)}</AvatarFallback>
-              </Avatar>
+              {staff.status === "ok" && staff.avatarUrl ? (
+                <StaffAvatar name={name} url={staff.avatarUrl} />
+              ) : (
+                <Avatar className="size-8">
+                  <AvatarFallback>{initials(name)}</AvatarFallback>
+                </Avatar>
+              )}
               <span className="grid flex-1 leading-tight">
                 <span className="truncate text-sm font-medium">{name}</span>
                 <span className="truncate text-xs text-muted-foreground">{detail}</span>
@@ -111,6 +128,10 @@ export function UserMenu() {
                   <KeyRound />
                   Đổi mật khẩu
                 </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setChangingAvatar(true)}>
+                  <ImageUp />
+                  Đổi ảnh đại diện
+                </DropdownMenuItem>
               </>
             )}
             <DropdownMenuItem onSelect={signOut}>
@@ -120,7 +141,65 @@ export function UserMenu() {
           </DropdownMenuContent>
         </DropdownMenu>
         <ChangePasswordDialog open={changingPassword} onOpenChange={setChangingPassword} />
+        {staff.status === "ok" && changingAvatar && (
+          <OwnAvatarDialog
+            userId={staff.userId}
+            name={staff.fullName}
+            current={staff.avatarUrl}
+            onClose={() => setChangingAvatar(false)}
+          />
+        )}
       </SidebarMenuItem>
     </SidebarMenu>
+  );
+}
+
+/** Tự đổi ảnh đại diện của mình (menu tên ở cuối menu trái). */
+function OwnAvatarDialog({
+  userId,
+  name,
+  current,
+  onClose,
+}: {
+  userId: string;
+  name: string;
+  current: string | null;
+  onClose: () => void;
+}) {
+  const [choice, setChoice] = useState<AvatarChoice>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      if (choice instanceof File) await uploadAvatar(userId, choice);
+      else if (choice === "remove") await clearAvatar(userId);
+      toast.success("Đã lưu ảnh đại diện");
+      // Tải lại để mọi chỗ hiện ảnh mới.
+      setTimeout(() => window.location.reload(), 800);
+    } catch (error) {
+      toast.error("Không lưu được ảnh", { description: error instanceof Error ? error.message : String(error) });
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Ảnh đại diện</DialogTitle>
+          <DialogDescription>Ảnh hiện ở menu, báo cáo và bảng vinh danh.</DialogDescription>
+        </DialogHeader>
+        <AvatarPicker name={name} current={current} value={choice} onChange={setChoice} />
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Huỷ
+          </Button>
+          <Button onClick={save} disabled={saving || choice === null}>
+            {saving ? "Đang lưu…" : "Lưu"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

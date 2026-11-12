@@ -164,9 +164,11 @@ export function AlertsPanel({ alerts }: { alerts: Alert[] }) {
 type Draft = Record<keyof TargetValues, string>;
 const FIELDS: { key: keyof TargetValues; label: string; suffix?: string; digits: number }[] = [
   { key: "monthly_budget", label: "Ngân sách / tháng", suffix: "đ", digits: 13 },
-  { key: "monthly_data", label: "Data / tháng", digits: 7 },
+  { key: "monthly_data", label: "Số điện thoại (data) / tháng", digits: 7 },
+  { key: "max_cost_per_data", label: "Giá số tối đa", suffix: "đ", digits: 9 },
   { key: "max_cost_per_message", label: "Giá mess tối đa", suffix: "đ", digits: 9 },
-  { key: "max_cost_per_data", label: "Giá data tối đa", suffix: "đ", digits: 9 },
+  { key: "monthly_revenue", label: "Doanh thu / tháng", suffix: "đ", digits: 13 },
+  { key: "max_ad_revenue_pct", label: "Ads / doanh thu tối đa", suffix: "%", digits: 3 },
 ];
 const toDraft = (t: TargetValues | undefined): Draft =>
   Object.fromEntries(FIELDS.map((f) => [f.key, t?.[f.key] == null ? "" : String(t[f.key])])) as Draft;
@@ -217,12 +219,13 @@ export function TargetsDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && !saving && onClose()}>
-      <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-4xl">
+      <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-6xl">
         <DialogHeader>
           <DialogTitle>Mục tiêu quảng cáo</DialogTitle>
           <DialogDescription>
-            Ô để trống = không đặt. Giá tối đa của nhân viên để trống thì dùng của cả nhóm. Ngân sách và data của
-            cả nhóm là tổng của mọi người.
+            Mục tiêu theo tháng (quý = 3 tháng, năm = 12 tháng). Ô để trống = không đặt. Giá tối đa và tỉ lệ ads /
+            doanh thu của nhân viên để trống thì dùng của cả nhóm. Ngân sách, data, doanh thu của cả nhóm là mục tiêu
+            chung của công ty.
           </DialogDescription>
         </DialogHeader>
         <div className="overflow-x-auto rounded-lg border">

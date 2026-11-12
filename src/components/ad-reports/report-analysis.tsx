@@ -1,6 +1,19 @@
 "use client";
 
-import { CalendarDays, CalendarRange, CalendarSync, ChartLine, CreditCard, Funnel, Grid3x3, Repeat, Users } from "lucide-react";
+import {
+  BadgeDollarSign,
+  CalendarDays,
+  CalendarRange,
+  CalendarSync,
+  ChartLine,
+  CreditCard,
+  Funnel,
+  Grid3x3,
+  Repeat,
+  Target,
+  Trophy,
+  Users,
+} from "lucide-react";
 import { Suspense, useMemo, useState } from "react";
 import { useAdsScope } from "@/components/catalog/ads-scope";
 import { CatalogGate, MarketingNotReady, PageHeader, ReadOnlyNote, useTodayVn } from "@/components/catalog/shared";
@@ -23,6 +36,7 @@ import {
   formatMetric,
   lastDayOf,
   metricOf,
+  monthElapsed,
   monthsBetween,
   shiftDay,
   shiftMonth,
@@ -42,6 +56,10 @@ import { useAdReports } from "./hooks";
 import { MonthsPicker, RangePicker, YearsPicker, yearOptions, type DayRange } from "./period-picker";
 import { Change, FIRST_TH, PeriodTable, TD, TH, type PeriodRow } from "./period-table";
 import { AccountRanking } from "./account-ranking";
+import { GoalTrackingSection } from "./goal-tracking";
+import { Leaderboard, StaffProgress, useLeaderboard } from "./leaderboard";
+import { RevenueDialog } from "./revenue";
+import { TargetsDialog, useAdTargets, type TargetsState } from "./targets";
 import { FunnelView } from "./funnel-view";
 import { KpiCards } from "./kpi-cards";
 import { NotReady, StatsError } from "./shared";
@@ -78,8 +96,9 @@ export function ReportAnalysis() {
   );
 }
 
-type Mode = "staff" | "funnel" | "accounts" | "weekday" | "months" | "days" | "years" | "same-month";
+type Mode = "goals" | "staff" | "funnel" | "accounts" | "weekday" | "months" | "days" | "years" | "same-month";
 const MODES: { key: Mode; label: string; icon: typeof CalendarDays }[] = [
+  { key: "goals", label: "Mục tiêu & vinh danh", icon: Trophy },
   { key: "staff", label: "So sánh nhân viên", icon: Users },
   { key: "funnel", label: "Phễu khách hàng", icon: Funnel },
   { key: "accounts", label: "Theo TKQC", icon: CreditCard },
@@ -153,7 +172,7 @@ function AnalysisBody() {
 
   const [pickedMode, setMode] = useState<Mode | null>(null);
   // Quản lý mở trang → mặc định So sánh nhân viên; nhân viên Ads → So sánh tháng.
-  const mode: Mode = pickedMode ?? (scope.managesMarketing ? "staff" : "months");
+  const mode: Mode = pickedMode ?? "goals";
   const modes = MODES.filter((m) => m.key !== "staff" || scope.managesMarketing);
   const [staffFilter, setStaffFilter] = useState(ALL);
   const [metricKey, setMetricKey] = useState<MetricKey>("spend");
@@ -170,6 +189,10 @@ function AnalysisBody() {
   // So sánh nhân viên
   const [staffPeriod, setStaffPeriod] = useState<StaffPeriod>("this-month");
   const [staffCustom, setStaffCustom] = useState<DayRange | null>(null);
+  // Mục tiêu & vinh danh
+  const [boardLastMonth, setBoardLastMonth] = useState(false);
+  const { state: targetsState, reload: reloadTargets } = useAdTargets();
+  const [dialog, setDialog] = useState<"targets" | "revenue" | null>(null);
 
   const months = pickedMonths ?? (today ? monthsBetween(shiftMonth(thisMonth, -2), thisMonth) : []);
   const end = today ? (endToday ? today : shiftDay(today, -1)) : "";
@@ -229,6 +252,8 @@ function AnalysisBody() {
     [state, catalogs.assignments],
   );
   const byDay = useMemo(() => totalsByDay(entries, staffId), [entries, staffId]);
+  const avatarOf = (p: { user_id: string | null }) =>
+    catalogs.staff.find((s) => s.user_id === p.user_id)?.avatar_url ?? null;
 
   if (!catalogs.marketingReady) return <MarketingNotReady what="Màn Phân tích" />;
   if (staff.status === "loading") return <Skeleton className="h-64 w-full rounded-xl" />;
@@ -286,6 +311,37 @@ function AnalysisBody() {
 
       {/* Lựa chọn của từng kiểu so sánh */}
       <div className="flex flex-wrap items-center gap-3">
+        {mode === "goals" && today && (
+          <>
+            <Segmented
+              label="Tháng vinh danh"
+              value={boardLastMonth ? "last" : "this"}
+              onChange={(v) => setBoardLastMonth(v === "last")}
+              options={[
+                { value: "this", label: "Vinh danh tháng này" },
+                { value: "last", label: "Tháng trước" },
+              ]}
+            />
+            {scope.managesMarketing && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto"
+                  disabled={targetsState.status !== "ready"}
+                  onClick={() => setDialog("targets")}
+                >
+                  <Target />
+                  Mục tiêu
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setDialog("revenue")}>
+                  <BadgeDollarSign />
+                  Doanh thu
+                </Button>
+              </>
+            )}
+          </>
+        )}
         {(mode === "staff" || mode === "funnel" || mode === "accounts") && today && (
           <>
             <Segmented
@@ -389,10 +445,34 @@ function AnalysisBody() {
         )}
       </div>
 
+      {dialog === "targets" && targetsState.status === "ready" && (
+        <TargetsDialog
+          open
+          onClose={() => setDialog(null)}
+          people={catalogs.adsStaff}
+          targets={targetsState.targets}
+          onSaved={reloadTargets}
+        />
+      )}
+      {dialog === "revenue" && (
+        <RevenueDialog people={catalogs.adsStaff} today={today} onClose={() => setDialog(null)} onSaved={async () => {}} />
+      )}
+
       {scope.isAdsStaff && !me ? (
         <ReadOnlyNote>
           Bạn chưa có TKQC nào. Vào Nhập liệu → Cài đặt TKQC để khai báo các TKQC bạn đang chạy.
         </ReadOnlyNote>
+      ) : mode === "goals" && today ? (
+        <GoalsView
+          month={boardLastMonth ? shiftMonth(thisMonth, -1) : thisMonth}
+          today={today}
+          staffId={staffId}
+          who={person ? person.full_name : scope.managesMarketing ? "cả công ty" : ""}
+          isManager={scope.managesMarketing}
+          targetsState={targetsState}
+          assignments={catalogs.assignments}
+          onEditTargets={scope.managesMarketing && targetsState.status === "ready" ? () => setDialog("targets") : undefined}
+        />
       ) : state.status === "error" ? (
         <StatsError message={state.message} />
       ) : state.status !== "ready" || !today ? (
@@ -405,6 +485,7 @@ function AnalysisBody() {
           range={staffRange}
           metric={metric}
           metricTabs={metricTabs}
+          avatarOf={avatarOf}
         />
       ) : mode === "funnel" ? (
         <FunnelView
@@ -454,6 +535,47 @@ function AnalysisBody() {
           who={who}
         />
       )}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+/* Mục tiêu & vinh danh                                                                             */
+/* ------------------------------------------------------------------------------------------------ */
+
+function GoalsView({
+  month,
+  today,
+  staffId,
+  who,
+  isManager,
+  targetsState,
+  assignments,
+  onEditTargets,
+}: {
+  month: string;
+  today: string;
+  staffId: string | null;
+  who: string;
+  isManager: boolean;
+  targetsState: TargetsState;
+  assignments: Parameters<typeof GoalTrackingSection>[0]["assignments"];
+  onEditTargets?: () => void;
+}) {
+  const board = useLeaderboard(month);
+  const elapsed = monthElapsed(month, today);
+  return (
+    <>
+      <Leaderboard month={month} elapsed={elapsed} state={board} />
+      <GoalTrackingSection
+        staffId={staffId}
+        who={who}
+        targetsState={targetsState}
+        assignments={assignments}
+        today={today}
+        onEditTargets={onEditTargets}
+      />
+      {isManager && staffId === null && <StaffProgress state={board} elapsed={elapsed} />}
     </>
   );
 }

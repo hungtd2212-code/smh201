@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Trophy } from "lucide-react";
+import { Trophy } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import {
 import { formatDay, monthLabel } from "@/lib/ad-reports/dates";
 import type { AdAccountAssignment, AdsStaff } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
+import { StaffAvatar } from "@/components/staff/staff-avatar";
 import {
   ChartCard,
   CompareLineChart,
@@ -63,6 +64,7 @@ export function StaffCompare({
   range,
   metric,
   metricTabs,
+  avatarOf,
 }: {
   people: AdsStaff[];
   assignments: AdAccountAssignment[];
@@ -70,15 +72,17 @@ export function StaffCompare({
   range: DayRange;
   metric: Metric;
   metricTabs: React.ReactNode;
+  /** Ảnh đại diện của nhân viên Ads (null = chưa có ảnh). */
+  avatarOf: (staff: AdsStaff) => string | null;
 }) {
   const inRange = (day: string) => day >= range.from && day <= range.to;
   const byStaff = totalsByStaff(entries, inRange);
   const totalsOf = (id: string) => byStaff.get(id) ?? zero();
 
-  // Người có thể chọn: đã có số trong khoảng này, hoặc đang làm và có TKQC trong khoảng này.
-  const candidates = people.filter(
-    (p) => !isEmpty(totalsOf(p.id)) || (p.is_active && assignments.some((x) => x.ads_staff_id === p.id && overlaps(x, range))),
-  );
+  // Chọn được TẤT CẢ nhân viên Ads đang làm (người đã nghỉ thì chỉ hiện khi có số trong khoảng này).
+  const candidates = people.filter((p) => p.is_active || !isEmpty(totalsOf(p.id)));
+  const accountsIn = (id: string) =>
+    new Set(assignments.filter((x) => x.ads_staff_id === id && overlaps(x, range)).map((x) => x.ad_account_id)).size;
   // Mặc định: 3 người chi tiêu nhiều nhất trong khoảng này.
   const topSpenders = candidates
     .filter((p) => !isEmpty(totalsOf(p.id)))
@@ -141,14 +145,21 @@ export function StaffCompare({
 
   return (
     <>
-      <section className="grid gap-2 rounded-xl border bg-card p-4">
+      <section className="grid gap-3 rounded-xl border bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-medium">Chọn nhân viên để so sánh ({chosen.length} người)</h2>
+          <div className="grid gap-0.5">
+            <h2 className="font-medium">
+              Tick chọn nhân viên để so sánh ({chosen.length}/{candidates.length} người)
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Chọn từ 2 người trở lên (tối đa {MAX_SERIES} người cùng lúc để biểu đồ còn dễ nhìn).
+            </p>
+          </div>
           <div className="flex flex-wrap gap-1.5">
             <Button size="sm" variant="outline" onClick={() => pickMany(candidates)}>
-              Tất cả{candidates.length > MAX_SERIES ? ` (tối đa ${MAX_SERIES})` : ""}
+              Tất cả{candidates.length > MAX_SERIES ? ` (${MAX_SERIES} người đầu)` : ""}
             </Button>
-            <Button size="sm" variant="outline" onClick={() => pickMany(defaults)}>
+            <Button size="sm" variant="outline" onClick={() => pickMany(topSpenders)}>
               Top 3 chi tiêu
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setPicked([])}>
@@ -156,30 +167,50 @@ export function StaffCompare({
             </Button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Nhân viên để so sánh">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" role="group" aria-label="Nhân viên để so sánh">
           {candidates.map((p) => {
             const slot = slotOf.get(p.id);
             const on = slot !== undefined;
+            const totals = totalsOf(p.id);
+            const accounts = accountsIn(p.id);
             return (
-              <button
+              <label
                 key={p.id}
-                type="button"
-                aria-pressed={on}
-                onClick={() => toggle(p.id)}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors",
-                  on ? "border-foreground/30 bg-muted font-medium" : "text-muted-foreground hover:bg-muted",
+                  "relative flex cursor-pointer items-center gap-2.5 rounded-xl border p-2.5 transition-colors",
+                  on ? "border-foreground/40 bg-muted shadow-sm" : "hover:bg-muted/60",
                 )}
               >
-                {on ? <Swatch slot={slot} className="rounded-full" /> : <span className="size-2.5 rounded-full border" />}
-                {p.full_name}
-                {!p.is_active && <span className="text-xs text-muted-foreground">(đã nghỉ)</span>}
-                {on && <Check className="size-3.5 text-muted-foreground" />}
-              </button>
+                <input
+                  type="checkbox"
+                  className="absolute top-2 right-2 size-4 accent-primary"
+                  checked={on}
+                  onChange={() => toggle(p.id)}
+                  aria-label={p.full_name}
+                />
+                <span className="relative">
+                  <StaffAvatar name={p.full_name} url={avatarOf(p)} className="size-10" />
+                  {on && (
+                    <Swatch slot={slot} className="absolute -right-0.5 -bottom-0.5 size-3.5 rounded-full ring-2 ring-card" />
+                  )}
+                </span>
+                <span className="grid min-w-0 gap-0.5 pr-5">
+                  <span className="truncate text-sm font-medium">{p.full_name}</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {!p.is_active
+                      ? "Đã nghỉ"
+                      : isEmpty(totals)
+                        ? accounts > 0
+                          ? `${accounts} TKQC · chưa có số`
+                          : "Chưa có TKQC"
+                        : `${accounts} TKQC · ${Math.round(totals.spend).toLocaleString("vi-VN")}đ`}
+                  </span>
+                </span>
+              </label>
             );
           })}
           {candidates.length === 0 && (
-            <span className="text-sm text-muted-foreground">Khoảng ngày này chưa có nhân viên nào có TKQC.</span>
+            <span className="text-sm text-muted-foreground">Chưa có nhân viên Ads nào.</span>
           )}
         </div>
       </section>

@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Lock, Pencil, Target } from "lucide-react";
+import { BadgeDollarSign, LayoutDashboard, Lock, Pencil, Target } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
@@ -70,7 +70,9 @@ import { MonthsPicker, monthsLabel, yearOptions } from "./period-picker";
 import { LIME, ORANGE, PeriodTable, TD, TH, YELLOW, type PeriodRow } from "./period-table";
 import { ReportFields, allFilled, fieldKey, toNumbers, type FieldItem } from "./report-fields";
 import { NotReady, StatsError } from "./shared";
-import { AlertsPanel, TargetPanel, TargetsDialog, useAdTargets } from "./targets";
+import { GoalTrackingSection } from "./goal-tracking";
+import { RevenueDialog } from "./revenue";
+import { AlertsPanel, TargetsDialog, useAdTargets } from "./targets";
 
 const ALL = "__all";
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -151,6 +153,7 @@ function OverviewBody() {
   const allByDay = useMemo(() => totalsByDay(entries, staffId), [entries, staffId]);
   const { state: targetsState, reload: reloadTargets } = useAdTargets();
   const [targetsOpen, setTargetsOpen] = useState(false);
+  const [revenueOpen, setRevenueOpen] = useState(false);
 
   if (!catalogs.marketingReady) return <MarketingNotReady what="Màn Tổng quan" />;
   if (staff.status === "loading") return <Skeleton className="h-64 w-full rounded-xl" />;
@@ -181,7 +184,6 @@ function OverviewBody() {
   const targets = targetsState.status === "ready" ? targetsState.targets : null;
   const target = targets && single ? targetFor(targets, staffId) : null;
   const elapsed = single ? monthElapsed(single, today) : 0;
-  const targetItems = target ? checkTargets(current, target, elapsed) : [];
   const alerts: Alert[] = [];
   if (single === thisMonth) {
     alerts.push(...spikeAlerts(allByDay, today));
@@ -243,7 +245,24 @@ function OverviewBody() {
             Mục tiêu
           </Button>
         )}
+        {scope.managesMarketing && (
+          <Button variant="outline" onClick={() => setRevenueOpen(true)}>
+            <BadgeDollarSign />
+            Doanh thu
+          </Button>
+        )}
       </div>
+      {revenueOpen && (
+        <RevenueDialog
+          people={catalogs.adsStaff}
+          today={today}
+          onClose={() => setRevenueOpen(false)}
+          onSaved={async () => {
+            // Theo dõi mục tiêu tự tải lại doanh thu khi mở lại trang; tải lại ngay cho chắc.
+            window.location.reload();
+          }}
+        />
+      )}
       {editTargets && targetsOpen && (
         <TargetsDialog
           open
@@ -273,29 +292,16 @@ function OverviewBody() {
             spark={spark}
             oneMonth={single !== null}
           />
-          {single && targetItems.length > 0 ? (
-            <TargetPanel
-              title={`Mục tiêu ${lowerFirst(monthLabel(single))} — ${person ? person.full_name : "cả nhóm"}`}
-              items={targetItems}
-              elapsed={elapsed}
-              action={
-                editTargets ? (
-                  <Button size="sm" variant="ghost" onClick={() => setTargetsOpen(true)}>
-                    Sửa mục tiêu
-                  </Button>
-                ) : undefined
-              }
+          {months.includes(thisMonth) && (
+            <GoalTrackingSection
+              staffId={staffId}
+              who={person ? person.full_name : "cả công ty"}
+              targetsState={targetsState}
+              assignments={catalogs.assignments}
+              today={today}
+              onEditTargets={editTargets ? () => setTargetsOpen(true) : undefined}
             />
-          ) : single && editTargets ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed px-4 py-2.5 text-sm text-muted-foreground">
-              <Target className="size-4" />
-              Chưa đặt mục tiêu {person ? `cho ${person.full_name}` : "cho cả nhóm"} (ngân sách, data, giá mess / giá
-              data tối đa) — đặt để có thanh tiến độ và cảnh báo khi vượt.
-              <Button size="sm" variant="outline" onClick={() => setTargetsOpen(true)}>
-                Đặt mục tiêu
-              </Button>
-            </div>
-          ) : null}
+          )}
           {single ? (
             <DailyChart
               month={single}

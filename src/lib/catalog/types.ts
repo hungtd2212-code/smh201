@@ -175,6 +175,8 @@ export type StaffMember = {
   branch_id: string | null;
   /** Trang được xem; null = menu theo vai trò như trước. */
   page_access: string[] | null;
+  /** Ảnh đại diện (Supabase Storage, file 013); null = chưa có ảnh. */
+  avatar_url: string | null;
   /** Khác null = đã xoá khỏi danh sách nhân sự (vẫn giữ tên trong dữ liệu cũ). */
   deleted_at: string | null;
 };

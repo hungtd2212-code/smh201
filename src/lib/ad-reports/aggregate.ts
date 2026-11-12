@@ -257,6 +257,10 @@ export type TargetValues = {
   monthly_data: number | null;
   max_cost_per_message: number | null;
   max_cost_per_data: number | null;
+  /** Doanh thu mục tiêu / tháng (đ). */
+  monthly_revenue?: number | null;
+  /** Chi phí ads / doanh thu tối đa (%), vd 30. */
+  max_ad_revenue_pct?: number | null;
 };
 
 export type Status = "ok" | "warning" | "critical";
@@ -468,4 +472,166 @@ export function funnelCounts(leads: FunnelLead[], excluded: readonly string[]): 
     if (lead.status === "da_lam_dich_vu") counts.done += 1;
   }
   return counts;
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+/* Theo dõi mục tiêu tháng / quý / năm                                                               */
+/* ------------------------------------------------------------------------------------------------ */
+
+export type TrackKey = "budget" | "data" | "costPerData" | "costPerMessage" | "revenue" | "adRevenue";
+export type TrackStatus = "good" | "warning" | "bad" | "none";
+
+export type TrackItem = {
+  key: TrackKey;
+  label: string;
+  unit: "money" | "count" | "percent";
+  /** null = chưa tính được (vd chưa có mess để tính giá mess). */
+  actual: number | null;
+  /** null = chưa đặt mục tiêu. */
+  goal: number | null;
+  /** "progress": càng nhiều càng tốt (data, doanh thu); "budget": không vượt; "cap": không được cao hơn (giá, tỉ lệ). */
+  kind: "progress" | "budget" | "cap";
+  status: TrackStatus;
+  note: string;
+  /** Độ dài thanh (0 → 1, có thể > 1 khi vượt). */
+  fill: number;
+};
+
+export type TrackPeriod = { key: "month" | "quarter" | "year"; label: string; from: string; to: string; months: number };
+
+/** Tháng / quý / năm chứa ngày `today`. */
+export function trackPeriods(today: string): TrackPeriod[] {
+  const y = today.slice(0, 4);
+  const m = Number(today.slice(5, 7));
+  const q = Math.floor((m - 1) / 3);
+  const qFrom = `${y}-${String(q * 3 + 1).padStart(2, "0")}`;
+  const qTo = `${y}-${String(q * 3 + 3).padStart(2, "0")}`;
+  return [
+    { key: "month", label: "Tháng", from: firstDayOf(today.slice(0, 7)), to: lastDayOf(today.slice(0, 7)), months: 1 },
+    { key: "quarter", label: "Quý", from: firstDayOf(qFrom), to: lastDayOf(qTo), months: 3 },
+    { key: "year", label: "Năm", from: `${y}-01-01`, to: `${y}-12-31`, months: 12 },
+  ];
+}
+
+/** Phần của kỳ đã trôi qua tới hết ngày `today` (0 → 1). */
+export const periodElapsed = (period: TrackPeriod, today: string) => {
+  const all = daysBetween(period.from, period.to).length;
+  const passed = daysBetween(period.from, today < period.to ? today : period.to).length;
+  return all > 0 ? passed / all : 0;
+};
+
+const pctText = (value: number) => `${Math.round(Math.abs(value) * 100)}%`;
+
+/**
+ * So số thực đạt của một kỳ với mục tiêu (mục tiêu tháng × số tháng của kỳ cho ngân sách / data / doanh thu;
+ * giá và tỉ lệ thì giữ nguyên). `elapsed`: phần kỳ đã qua — để biết "kỳ vọng tới hôm nay".
+ */
+export function trackGoals(
+  actual: Totals,
+  revenue: number,
+  target: TargetValues | null,
+  months: number,
+  elapsed: number,
+): TrackItem[] {
+  const progress = (key: TrackKey, label: string, unit: TrackItem["unit"], value: number, monthly: number | null | undefined): TrackItem => {
+    if (!monthly) return { key, label, unit, actual: value, goal: null, kind: "progress", status: "none", note: "Chưa đặt mục tiêu", fill: 0 };
+    const goal = monthly * months;
+    const expected = goal * elapsed;
+    const fill = value / goal;
+    if (value >= goal) return { key, label, unit, actual: value, goal, kind: "progress", status: "good", note: "Đã đạt mục tiêu 🎉", fill };
+    if (expected <= 0) return { key, label, unit, actual: value, goal, kind: "progress", status: "none", note: "Kỳ chưa bắt đầu", fill };
+    const perf = value / expected - 1;
+    if (perf > 0.05) return { key, label, unit, actual: value, goal, kind: "progress", status: "good", note: `Tốt hơn kỳ vọng ${pctText(perf)}`, fill };
+    if (perf >= -0.05) return { key, label, unit, actual: value, goal, kind: "progress", status: "good", note: "Đúng kỳ vọng", fill };
+    return { key, label, unit, actual: value, goal, kind: "progress", status: perf < -0.15 ? "bad" : "warning", note: `Kém hơn kỳ vọng ${pctText(perf)}`, fill };
+  };
+  const cap = (key: TrackKey, label: string, unit: TrackItem["unit"], value: number | null, limit: number | null | undefined, empty: string): TrackItem => {
+    if (!limit) return { key, label, unit, actual: value, goal: null, kind: "cap", status: "none", note: "Chưa đặt mục tiêu", fill: 0 };
+    if (value === null) return { key, label, unit, actual: null, goal: limit, kind: "cap", status: "none", note: empty, fill: 0 };
+    const fill = value / limit;
+    if (value > limit) return { key, label, unit, actual: value, goal: limit, kind: "cap", status: "bad", note: `Vượt mục tiêu ${pctText(fill - 1)}`, fill };
+    if (fill > 0.9) return { key, label, unit, actual: value, goal: limit, kind: "cap", status: "warning", note: "Sát mức tối đa", fill };
+    return { key, label, unit, actual: value, goal: limit, kind: "cap", status: "good", note: `Tốt hơn mục tiêu ${pctText(1 - fill)}`, fill };
+  };
+
+  const items: TrackItem[] = [];
+  // Ngân sách: không vượt; tiêu nhanh hơn nhịp thì nhắc.
+  if (target?.monthly_budget) {
+    const goal = target.monthly_budget * months;
+    const expected = goal * elapsed;
+    const fill = actual.spend / goal;
+    const perf = expected > 0 ? actual.spend / expected - 1 : 0;
+    const [status, note]: [TrackStatus, string] =
+      fill > 1
+        ? ["bad", `Vượt ngân sách ${pctText(fill - 1)}`]
+        : perf > 0.1
+          ? ["warning", `Tiêu nhanh hơn kế hoạch ${pctText(perf)}`]
+          : perf < -0.1
+            ? ["good", `Tiêu chậm hơn kế hoạch ${pctText(perf)}`]
+            : ["good", "Đúng kế hoạch"];
+    items.push({ key: "budget", label: "Ngân sách", unit: "money", actual: actual.spend, goal, kind: "budget", status, note, fill });
+  } else {
+    items.push({ key: "budget", label: "Ngân sách", unit: "money", actual: actual.spend, goal: null, kind: "budget", status: "none", note: "Chưa đặt mục tiêu", fill: 0 });
+  }
+  items.push(progress("data", "Số điện thoại", "count", actual.data, target?.monthly_data));
+  items.push(cap("costPerData", "Giá số", "money", ratio(actual.spend, actual.data), target?.max_cost_per_data, "Chưa có data"));
+  items.push(cap("costPerMessage", "Giá mess", "money", ratio(actual.spend, actual.messages), target?.max_cost_per_message, "Chưa có mess"));
+  items.push(progress("revenue", "Doanh thu", "money", revenue, target?.monthly_revenue));
+  items.push(
+    cap("adRevenue", "Ads / doanh thu", "percent", revenue > 0 ? (actual.spend / revenue) * 100 : null, target?.max_ad_revenue_pct, "Chưa có doanh thu"),
+  );
+  return items;
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+/* Vinh danh                                                                                        */
+/* ------------------------------------------------------------------------------------------------ */
+
+export type BoardInput = { id: string; spend: number; data: number; revenue: number; dataTarget: number | null };
+export type BoardScore = {
+  id: string;
+  /** Chi phí ads / doanh thu (%); null = chưa có doanh thu. */
+  adRevenuePct: number | null;
+  /** Giá mỗi số (đ); null = chưa có data. */
+  costPerData: number | null;
+  /** Số đạt so với target tới hôm nay (1 = đúng nhịp); null = chưa đặt target. */
+  targetPace: number | null;
+  /** Điểm 0 → 100 (trung bình các tiêu chí có số). */
+  score: number;
+};
+
+/**
+ * Điểm vinh danh: mỗi tiêu chí chấm 0 → 100 (người tốt nhất nhóm = 100):
+ *   • tỉ lệ ads / doanh thu: thấp nhất nhóm = 100, người khác = thấp nhất ÷ của mình × 100;
+ *   • giá số: rẻ nhất nhóm = 100, tương tự;
+ *   • số điện thoại so với target (theo nhịp tới hôm nay): đạt / vượt = 100, chưa đạt = tỉ lệ đạt × 100.
+ * Tiêu chí nào cả nhóm chưa có số (vd chưa nhập doanh thu) thì bỏ qua; người thiếu số ở một tiêu chí được 0 điểm
+ * tiêu chí đó. Chỉ xếp hạng người có chi tiêu trong tháng.
+ */
+export function scoreBoard(rows: BoardInput[], elapsed: number): BoardScore[] {
+  const scored = rows
+    .filter((r) => r.spend > 0)
+    .map((r) => ({
+      id: r.id,
+      adRevenuePct: r.revenue > 0 ? (r.spend / r.revenue) * 100 : null,
+      costPerData: r.data > 0 ? r.spend / r.data : null,
+      targetPace: r.dataTarget && elapsed > 0 ? r.data / (r.dataTarget * elapsed) : null,
+    }));
+  const minOf = (values: (number | null)[]) => {
+    const known = values.filter((v): v is number => v !== null && v > 0);
+    return known.length > 0 ? Math.min(...known) : null;
+  };
+  const bestRatio = minOf(scored.map((s) => s.adRevenuePct));
+  const bestCost = minOf(scored.map((s) => s.costPerData));
+  const hasTarget = scored.some((s) => s.targetPace !== null);
+  return scored
+    .map((s) => {
+      const parts: number[] = [];
+      if (bestRatio !== null) parts.push(s.adRevenuePct ? (bestRatio / s.adRevenuePct) * 100 : 0);
+      if (bestCost !== null) parts.push(s.costPerData ? (bestCost / s.costPerData) * 100 : 0);
+      if (hasTarget) parts.push(s.targetPace === null ? 0 : Math.min(1, s.targetPace) * 100);
+      const score = parts.length > 0 ? parts.reduce((a, b) => a + b, 0) / parts.length : 0;
+      return { ...s, score: Math.round(score * 10) / 10 };
+    })
+    .sort((a, b) => b.score - a.score);
 }

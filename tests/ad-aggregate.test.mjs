@@ -3,7 +3,8 @@
 import {
   METRICS, change, checkTargets, compactMetric, daysBetween, entriesOf, formatMetric, funnelCounts, lastDayOf,
   metricOf, monthElapsed, monthsBetween, previousOf, shiftDay, shiftMonth, spikeAlerts, sumDays, totalsByAccount,
-  totalsByDay, totalsByMonth, totalsByStaff, totalsByWeekday, weekdayOf,
+  totalsByDay, totalsByMonth, totalsByStaff, totalsByWeekday, weekdayOf, trackPeriods, periodElapsed, trackGoals,
+  scoreBoard,
 } from "../src/lib/ad-reports/aggregate.ts";
 
 let passed = 0;
@@ -135,6 +136,38 @@ const fc = funnelCounts([
   { day: "2026-11-01", status: "so_moi", hasAppointment: false, invalidPhone: true, accountId: null },
 ], ["so_trung", "trung_dich_vu_khac", "so_huy"]);
 ok(same(fc, { leads: 4, booked: 3, done: 1 }), "phễu: bỏ số trùng / số sai; hẹn lịch gồm cả lead đã có ngày hẹn", fc);
+
+console.log("\n== Theo dõi mục tiêu tháng / quý / năm");
+const periods = trackPeriods("2026-11-12");
+ok(periods[1].from === "2026-10-01" && periods[1].to === "2026-12-31" && periods[2].months === 12, "quý 4, năm 2026", periods);
+ok(Math.abs(periodElapsed(periods[0], "2026-11-12") - 12 / 30) < 1e-9, "tháng 11 đã qua 12/30");
+const goals = { monthly_budget: 100, monthly_data: 30, max_cost_per_message: 2, max_cost_per_data: 5, monthly_revenue: 1000, max_ad_revenue_pct: 20 };
+let tg = Object.fromEntries(trackGoals({ spend: 60, messages: 40, data: 15 }, 300, goals, 1, 0.5).map((i) => [i.key, i]));
+ok(tg.budget.status === "warning" && /nhanh hơn/.test(tg.budget.note), "tiêu 60% khi qua 50% tháng → nhanh hơn kế hoạch", tg.budget);
+ok(tg.data.status === "good" && tg.data.note === "Đúng kỳ vọng", "data 15/30 khi qua nửa tháng → đúng kỳ vọng", tg.data);
+ok(tg.costPerData.status === "good" && tg.costPerData.actual === 4, "giá số 4 ≤ 5 → tốt", tg.costPerData);
+ok(tg.costPerMessage.status === "good", "giá mess 1,5 ≤ 2");
+ok(tg.revenue.status === "bad" && /Kém hơn kỳ vọng 40%/.test(tg.revenue.note), "doanh thu 300 / kỳ vọng 500 → kém 40%", tg.revenue);
+ok(tg.adRevenue.status === "warning" && tg.adRevenue.actual === 20, "ads / doanh thu 20% = đúng mức tối đa → chưa vượt nhưng sát mức", tg.adRevenue);
+tg = Object.fromEntries(trackGoals({ spend: 60, messages: 40, data: 15 }, 0, goals, 3, 0.5).map((i) => [i.key, i]));
+ok(tg.data.goal === 90 && tg.budget.goal === 300, "quý: mục tiêu × 3 tháng");
+ok(tg.adRevenue.status === "none" && tg.adRevenue.note === "Chưa có doanh thu", "chưa có doanh thu → chưa tính tỉ lệ");
+ok(trackGoals({ spend: 1, messages: 1, data: 1 }, 0, null, 1, 0.5).every((i) => i.status === "none"), "chưa đặt mục tiêu → không chấm");
+
+console.log("\n== Vinh danh");
+const board = scoreBoard([
+  { id: "a", spend: 100, data: 20, revenue: 1000, dataTarget: 40 },  // ads/dt 10%, giá 5, đạt 100% nhịp
+  { id: "b", spend: 100, data: 10, revenue: 500, dataTarget: 40 },   // 20%, giá 10, đạt 50%
+  { id: "c", spend: 50, data: 25, revenue: 0, dataTarget: null },    // chưa có doanh thu, giá 2, chưa target
+  { id: "d", spend: 0, data: 0, revenue: 0, dataTarget: 10 },        // không chạy → không xếp
+], 0.5);
+ok(board.length === 3 && !board.some((b) => b.id === "d"), "chỉ xếp người có chi tiêu");
+const sc = Object.fromEntries(board.map((b) => [b.id, b]));
+ok(Math.abs(sc.a.score - (100 + 40 + 100) / 3) < 0.1, "a: ads/dt 100, giá số 40, target 100", sc.a);
+ok(Math.abs(sc.b.score - (50 + 20 + 50) / 3) < 0.1, "b: 50, 20, 50", sc.b);
+ok(Math.abs(sc.c.score - (0 + 100 + 0) / 3) < 0.1, "c: thiếu doanh thu, thiếu target → 0 ở hai tiêu chí đó", sc.c);
+ok(board[0].id === "a", "a đứng đầu");
+ok(scoreBoard([{ id: "x", spend: 10, data: 2, revenue: 0, dataTarget: null }], 1)[0].score === 100, "chỉ có tiêu chí giá số → người duy nhất 100 điểm");
 
 console.log(`\n${passed} ok, ${failed} lỗi`);
 if (failed > 0) process.exit(1);

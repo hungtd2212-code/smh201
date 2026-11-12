@@ -52,6 +52,7 @@ async function fetchStaff(): Promise<StaffMember[]> {
   const supabase = getSupabaseBrowserClient();
   const base = "user_id, full_name, role, branch, accepts_leads, last_assigned_at, locked_at, locked_reason";
   const attempts = [
+    `${base}, can_delete, can_export, username, position, branch_id, page_access, deleted_at, avatar_url`,
     `${base}, can_delete, can_export, username, position, branch_id, page_access, deleted_at`,
     `${base}, can_delete, can_export`,
     `${base}, can_delete`,
@@ -70,6 +71,7 @@ async function fetchStaff(): Promise<StaffMember[]> {
       branch_id: null,
       page_access: null,
       deleted_at: null,
+      avatar_url: null,
       ...row,
     })) as StaffMember[];
   }
