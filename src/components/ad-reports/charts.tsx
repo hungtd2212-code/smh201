@@ -5,6 +5,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   LabelList,
   Line,
   LineChart,
@@ -64,10 +65,19 @@ const slotVar = (slot: number) => `var(--color-s${slot})`;
 const axisTick = { fontSize: 11 };
 
 /** Hàng nút chọn chỉ số để vẽ. */
-export function MetricTabs({ value, onChange }: { value: MetricKey; onChange: (key: MetricKey) => void }) {
+export function MetricTabs({
+  value,
+  onChange,
+  keys,
+}: {
+  value: MetricKey;
+  onChange: (key: MetricKey) => void;
+  /** Chỉ hiện các chỉ số này (mặc định: cả 6). */
+  keys?: MetricKey[];
+}) {
   return (
     <div role="tablist" aria-label="Chỉ số trên biểu đồ" className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
-      {METRICS.map((m) => (
+      {METRICS.filter((m) => !keys || keys.includes(m.key)).map((m) => (
         <button
           key={m.key}
           type="button"
@@ -137,68 +147,134 @@ function Empty({ height }: { height: string }) {
 
 export type TrendPoint = { key: string; label: string; title: string; totals: Totals };
 
-/** Một chuỗi theo thời gian (theo ngày / tháng / năm) của một chỉ số. */
-export function TrendChart({ points, metric, height = "h-72" }: { points: TrendPoint[]; metric: Metric; height?: string }) {
-  const data = points.map((p) => ({ ...p, value: metric.value(p.totals) }));
-  if (!data.some((d) => d.value !== null && d.value !== 0)) return <Empty height={height} />;
+/**
+ * Một chuỗi theo thời gian (theo ngày / tháng / năm) của một chỉ số. Tuỳ chọn:
+ *   • `previous`: kỳ trước (cùng vị trí trên trục ngang) — vẽ nét đứt màu xám để so;
+ *   • `target`: mức mục tiêu — đường ngang màu đỏ (ví dụ giá data tối đa).
+ */
+export function TrendChart({
+  points,
+  metric,
+  height = "h-72",
+  previous,
+  currentLabel = "Kỳ này",
+  target,
+}: {
+  points: TrendPoint[];
+  metric: Metric;
+  height?: string;
+  previous?: { label: string; totals: (Totals | null)[]; titles?: string[] };
+  currentLabel?: string;
+  target?: { value: number; label: string } | null;
+}) {
+  const data = points.map((p, i) => {
+    const before = previous?.totals[i];
+    return {
+      ...p,
+      value: metric.value(p.totals),
+      previous: before ? metric.value(before) : null,
+      previousTitle: previous?.titles?.[i],
+    };
+  });
+  const hasCurrent = data.some((d) => d.value !== null && d.value !== 0);
+  const hasPrevious = Boolean(previous) && data.some((d) => d.previous !== null && d.previous !== 0);
+  if (!hasCurrent && !hasPrevious) return <Empty height={height} />;
   const config: ChartConfig = { value: { label: metric.label, theme: PALETTE[0] } };
   const many = data.length > 16;
-  const tooltip = (
-    <ChartTooltip
-      cursor={metric.kind === "sum" ? { fill: "var(--muted)", opacity: 0.6 } : true}
-      content={({ active, payload }) => {
-        const p = active ? payload?.[0]?.payload : null;
-        if (!p) return null;
-        return <TipBox title={p.title} rows={[{ name: metric.label, value: formatMetric(metric, p.value, true) }]} />;
-      }}
-    />
-  );
-  const axes = (
-    <>
-      <CartesianGrid vertical={false} />
-      <XAxis
-        dataKey="label"
-        tickLine={false}
-        axisLine={false}
-        tick={axisTick}
-        interval={many ? "preserveStartEnd" : 0}
-        minTickGap={many ? 8 : 2}
-      />
-      <YAxis
-        tickLine={false}
-        axisLine={false}
-        width={52}
-        tick={axisTick}
-        tickFormatter={(v: number) => compactMetric(metric, v)}
-      />
-    </>
-  );
+  const bars = metric.kind === "sum";
 
   return (
-    <ChartContainer config={config} className={cn("aspect-auto w-full", height)}>
-      {metric.kind === "sum" ? (
-        <BarChart accessibilityLayer data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-          {axes}
-          {tooltip}
-          <Bar dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
-        </BarChart>
-      ) : (
-        <LineChart accessibilityLayer data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-          {axes}
-          {tooltip}
-          <Line
-            dataKey="value"
-            type="linear"
-            stroke="var(--color-value)"
-            strokeWidth={2}
-            dot={many ? false : { r: 4, strokeWidth: 2, stroke: "var(--card)", fill: "var(--color-value)" }}
-            activeDot={{ r: 5, strokeWidth: 2, stroke: "var(--card)" }}
-            connectNulls={false}
-            isAnimationActive={false}
-          />
-        </LineChart>
+    <div className="grid gap-2">
+      {(hasPrevious || target) && (
+        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          <li className="flex items-center gap-1.5">
+            <Swatch slot={0} className={bars ? "" : "h-0.5 w-4 rounded-full"} />
+            <span className="text-muted-foreground">{currentLabel}</span>
+          </li>
+          {hasPrevious && previous && (
+            <li className="flex items-center gap-1.5">
+              <span className="w-4 border-t-2 border-dashed border-muted-foreground" />
+              <span className="text-muted-foreground">{previous.label}</span>
+            </li>
+          )}
+          {target && (
+            <li className="flex items-center gap-1.5">
+              <span className="w-4 border-t-2 border-red-500" />
+              <span className="text-muted-foreground">{target.label}</span>
+            </li>
+          )}
+        </ul>
       )}
-    </ChartContainer>
+      <ChartContainer config={config} className={cn("aspect-auto w-full", height)}>
+        <ComposedChart accessibilityLayer data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey="label"
+            tickLine={false}
+            axisLine={false}
+            tick={axisTick}
+            interval={many ? "preserveStartEnd" : 0}
+            minTickGap={many ? 8 : 2}
+          />
+          <YAxis
+            tickLine={false}
+            axisLine={false}
+            width={52}
+            tick={axisTick}
+            tickFormatter={(v: number) => compactMetric(metric, v)}
+          />
+          <ChartTooltip
+            cursor={bars ? { fill: "var(--muted)", opacity: 0.6 } : true}
+            content={({ active, payload }) => {
+              const p = active ? payload?.[0]?.payload : null;
+              if (!p) return null;
+              const rows: { color?: string; name?: string; value: string }[] = [
+                { color: "var(--color-value)", name: currentLabel, value: formatMetric(metric, p.value, true) },
+              ];
+              if (hasPrevious && previous) {
+                rows.push({
+                  color: "var(--muted-foreground)",
+                  name: p.previousTitle ? `${previous.label} · ${p.previousTitle}` : previous.label,
+                  value: formatMetric(metric, p.previous, true),
+                });
+              }
+              if (target) rows.push({ color: "#ef4444", name: target.label, value: formatMetric(metric, target.value, true) });
+              return <TipBox title={p.title} rows={rows} />;
+            }}
+          />
+          {bars ? (
+            <Bar dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
+          ) : (
+            <Line
+              dataKey="value"
+              type="linear"
+              stroke="var(--color-value)"
+              strokeWidth={2}
+              dot={many ? false : { r: 4, strokeWidth: 2, stroke: "var(--card)", fill: "var(--color-value)" }}
+              activeDot={{ r: 5, strokeWidth: 2, stroke: "var(--card)" }}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+          )}
+          {hasPrevious && (
+            <Line
+              dataKey="previous"
+              type="linear"
+              stroke="var(--muted-foreground)"
+              strokeWidth={1.5}
+              strokeDasharray="5 4"
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--card)", fill: "var(--muted-foreground)" }}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+          )}
+          {target && (
+            <ReferenceLine y={target.value} stroke="#ef4444" strokeWidth={1.5} ifOverflow="extendDomain" />
+          )}
+        </ComposedChart>
+      </ChartContainer>
+    </div>
   );
 }
 
@@ -211,6 +287,8 @@ export type CompareSeries = {
   titles?: string[];
   /** Màu cố định (vị trí trong bảng màu); bỏ trống = theo thứ tự đường. */
   slot?: number;
+  /** Nét đứt (kỳ trước). */
+  dashed?: boolean;
 };
 
 /** Nhiều đường trên cùng trục (so sánh tháng / kỳ / năm), có chú thích màu. */
@@ -246,7 +324,14 @@ export function CompareLineChart({
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
         {shown.map((s, i) => (
           <li key={s.key} className="flex items-center gap-1.5">
-            <Swatch slot={slotOf(s, i)} className="h-0.5 w-4 rounded-full" />
+            {s.dashed ? (
+              <span
+                className="w-4 border-t-2 border-dashed border-(--swatch-light) dark:border-(--swatch-dark)"
+                style={{ "--swatch-light": PALETTE[slotOf(s, i)].light, "--swatch-dark": PALETTE[slotOf(s, i)].dark } as React.CSSProperties}
+              />
+            ) : (
+              <Swatch slot={slotOf(s, i)} className="h-0.5 w-4 rounded-full" />
+            )}
             <span className="text-muted-foreground">{s.name}</span>
           </li>
         ))}
@@ -296,6 +381,7 @@ export function CompareLineChart({
                 type="linear"
                 stroke={`var(--color-${s.key})`}
                 strokeWidth={2}
+                strokeDasharray={s.dashed ? "5 4" : undefined}
                 dot={many ? false : { r: 3.5, strokeWidth: 2, stroke: "var(--card)", fill: `var(--color-${s.key})` }}
                 activeDot={{ r: 5, strokeWidth: 2, stroke: "var(--card)" }}
                 connectNulls={false}
@@ -426,14 +512,24 @@ export function EntityBarChart({
  * Bản đồ hiệu quả: trục ngang = số data mang về, trục dọc = giá mỗi data. Hai đường nét đứt (trung bình
  * của nhóm) chia 4 góc — góc dưới bên phải là "nhiều data, giá rẻ" (tốt nhất).
  */
-export function EfficiencyMap({ rows, height = "h-80" }: { rows: EntityValue[]; height?: string }) {
+export function EfficiencyMap({
+  rows,
+  height = "h-80",
+  by = "data",
+}: {
+  rows: EntityValue[];
+  height?: string;
+  /** "data": data × giá data (nhân viên); "messages": mess × giá mess (TKQC — data không tách theo TKQC). */
+  by?: "data" | "messages";
+}) {
+  const pick = (t: Totals) => (by === "data" ? t.data : t.messages);
   const data = rows
-    .map((r) => ({ ...r, x: r.totals.data, y: r.totals.data > 0 ? r.totals.spend / r.totals.data : null }))
+    .map((r) => ({ ...r, x: pick(r.totals), y: pick(r.totals) > 0 ? r.totals.spend / pick(r.totals) : null }))
     .filter((d): d is typeof d & { y: number } => d.y !== null);
   if (data.length < 2) {
     return (
       <p className={cn("flex items-center justify-center text-center text-sm text-muted-foreground", height)}>
-        Cần ít nhất 2 người đã có data trong khoảng này để vẽ.
+        Cần ít nhất 2 {by === "data" ? "người đã có data" : "TKQC đã có mess"} trong khoảng này để vẽ.
       </p>
     );
   }
@@ -441,8 +537,8 @@ export function EfficiencyMap({ rows, height = "h-80" }: { rows: EntityValue[]; 
   const totalSpend = data.reduce((s, d) => s + d.totals.spend, 0);
   const avgX = totalData / data.length;
   const avgY = totalData > 0 ? totalSpend / totalData : 0;
-  const cost = METRICS.find((m) => m.key === "costPerData") ?? METRICS[0];
-  const count = METRICS.find((m) => m.key === "data") ?? METRICS[0];
+  const cost = METRICS.find((m) => m.key === (by === "data" ? "costPerData" : "costPerMessage")) ?? METRICS[0];
+  const count = METRICS.find((m) => m.key === by) ?? METRICS[0];
   const corner = "pointer-events-none absolute text-[11px] font-medium text-muted-foreground";
 
   return (
@@ -453,7 +549,7 @@ export function EfficiencyMap({ rows, height = "h-80" }: { rows: EntityValue[]; 
           <XAxis
             type="number"
             dataKey="x"
-            name="Data"
+            name={count.label}
             tickLine={false}
             axisLine={false}
             tick={axisTick}
@@ -463,7 +559,7 @@ export function EfficiencyMap({ rows, height = "h-80" }: { rows: EntityValue[]; 
           <YAxis
             type="number"
             dataKey="y"
-            name="Giá data"
+            name={cost.label}
             tickLine={false}
             axisLine={false}
             width={52}
@@ -483,8 +579,8 @@ export function EfficiencyMap({ rows, height = "h-80" }: { rows: EntityValue[]; 
                 <TipBox
                   title={p.name}
                   rows={[
-                    { color: slotVar(p.slot), name: "Data", value: formatMetric(count, p.x) },
-                    { name: "Giá data", value: formatMetric(cost, p.y, true) },
+                    { color: slotVar(p.slot), name: count.label, value: formatMetric(count, p.x) },
+                    { name: cost.label, value: formatMetric(cost, p.y, true) },
                     { name: "Chi tiêu", value: `${Math.round(p.totals.spend).toLocaleString("vi-VN")}đ` },
                   ]}
                 />
@@ -514,8 +610,8 @@ export function EfficiencyMap({ rows, height = "h-80" }: { rows: EntityValue[]; 
           </Scatter>
         </ScatterChart>
       </ChartContainer>
-      <span className={cn(corner, "right-6 bottom-9")}>Nhiều data · giá rẻ ✓</span>
-      <span className={cn(corner, "top-1 left-14")}>Ít data · giá đắt</span>
+      <span className={cn(corner, "right-14 bottom-9")}>Nhiều {count.label.toLowerCase()} · giá rẻ ✓</span>
+      <span className={cn(corner, "top-1 left-14")}>Ít {count.label.toLowerCase()} · giá đắt</span>
     </div>
   );
 }

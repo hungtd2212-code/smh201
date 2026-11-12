@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CalendarRange, CalendarSync, ChartLine, Repeat, Users } from "lucide-react";
+import { CalendarDays, CalendarRange, CalendarSync, ChartLine, CreditCard, Funnel, Grid3x3, Repeat, Users } from "lucide-react";
 import { Suspense, useMemo, useState } from "react";
 import { useAdsScope } from "@/components/catalog/ads-scope";
 import { CatalogGate, MarketingNotReady, PageHeader, ReadOnlyNote, useTodayVn } from "@/components/catalog/shared";
@@ -41,8 +41,12 @@ import { ChartCard, CompareLineChart, MAX_SERIES, MetricTabs, TrendChart } from 
 import { useAdReports } from "./hooks";
 import { MonthsPicker, RangePicker, YearsPicker, yearOptions, type DayRange } from "./period-picker";
 import { Change, FIRST_TH, PeriodTable, TD, TH, type PeriodRow } from "./period-table";
+import { AccountRanking } from "./account-ranking";
+import { FunnelView } from "./funnel-view";
+import { KpiCards } from "./kpi-cards";
 import { NotReady, StatsError } from "./shared";
 import { StaffCompare } from "./staff-compare";
+import { WeekdayView } from "./weekday-view";
 
 const ALL = "__all";
 
@@ -53,6 +57,8 @@ const ALL = "__all";
  *   • So sánh năm: các năm tự chọn (cả năm hoặc cùng kỳ đến hôm nay), đường theo tháng, bảng tháng × năm.
  *   • Tháng cùng kỳ: một tháng (ví dụ tháng 11) qua các năm.
  *   • So sánh nhân viên (chỉ quản lý): 2–8 người cạnh nhau trong cùng khoảng ngày.
+ *   • Phễu khách hàng: Chi tiêu → Mess → Data → Lead → Hẹn lịch → Đã làm dịch vụ.
+ *   • Theo TKQC: xếp hạng từng TKQC. Theo thứ & ngày: thứ nào trong tuần hiệu quả, lịch nhiệt từng ngày.
  * Nhân viên Ads xem số của mình; Quản trị / Trưởng Marketing xem tất cả hoặc từng người.
  */
 export function ReportAnalysis() {
@@ -72,9 +78,12 @@ export function ReportAnalysis() {
   );
 }
 
-type Mode = "staff" | "months" | "days" | "years" | "same-month";
+type Mode = "staff" | "funnel" | "accounts" | "weekday" | "months" | "days" | "years" | "same-month";
 const MODES: { key: Mode; label: string; icon: typeof CalendarDays }[] = [
   { key: "staff", label: "So sánh nhân viên", icon: Users },
+  { key: "funnel", label: "Phễu khách hàng", icon: Funnel },
+  { key: "accounts", label: "Theo TKQC", icon: CreditCard },
+  { key: "weekday", label: "Theo thứ & ngày", icon: Grid3x3 },
   { key: "months", label: "So sánh tháng", icon: CalendarRange },
   { key: "days", label: "So sánh khoảng ngày", icon: CalendarDays },
   { key: "years", label: "So sánh năm", icon: CalendarSync },
@@ -190,9 +199,9 @@ function AnalysisBody() {
   let from = "";
   let to = "";
   if (today) {
-    if (mode === "staff") {
+    if (mode === "staff" || mode === "funnel" || mode === "accounts") {
       ({ from, to } = staffRange);
-    } else if (mode === "months" && months.length > 0) {
+    } else if ((mode === "months" || mode === "weekday") && months.length > 0) {
       from = firstDayOf(months[0]);
       to = lastDayOf(months.at(-1) ?? months[0]);
     } else if (mode === "days" && ranges) {
@@ -277,7 +286,7 @@ function AnalysisBody() {
 
       {/* Lựa chọn của từng kiểu so sánh */}
       <div className="flex flex-wrap items-center gap-3">
-        {mode === "staff" && today && (
+        {(mode === "staff" || mode === "funnel" || mode === "accounts") && today && (
           <>
             <Segmented
               label="Khoảng ngày"
@@ -295,10 +304,12 @@ function AnalysisBody() {
             )}
           </>
         )}
-        {mode === "months" && (
+        {(mode === "months" || mode === "weekday") && (
           <>
             <MonthsPicker value={months} today={today} years={years} onChange={setPickedMonths} />
-            <span className="text-sm text-muted-foreground">Tick các tháng muốn so sánh (có thể khác năm).</span>
+            <span className="text-sm text-muted-foreground">
+              {mode === "months" ? "Tick các tháng muốn so sánh (có thể khác năm)." : "Tick các tháng muốn xem."}
+            </span>
           </>
         )}
         {mode === "days" && ranges && (
@@ -395,6 +406,29 @@ function AnalysisBody() {
           metric={metric}
           metricTabs={metricTabs}
         />
+      ) : mode === "funnel" ? (
+        <FunnelView
+          entries={entries}
+          assignments={catalogs.assignments}
+          campaigns={catalogs.campaigns}
+          channels={catalogs.channels}
+          people={catalogs.adsStaff}
+          staffId={staffId}
+          range={staffRange}
+          who={who}
+        />
+      ) : mode === "accounts" ? (
+        <AccountRanking
+          reports={state.reports}
+          assignments={catalogs.assignments}
+          accounts={catalogs.adAccounts}
+          people={catalogs.adsStaff}
+          staffId={staffId}
+          range={staffRange}
+          who={who}
+        />
+      ) : mode === "weekday" ? (
+        <WeekdayView months={months} byDay={byDay} today={today} metric={metric} metricTabs={metricTabs} who={who} />
       ) : mode === "months" ? (
         <MonthsView months={months} byDay={byDay} today={today} metric={metric} metricTabs={metricTabs} who={who} />
       ) : mode === "days" && ranges ? (
@@ -605,11 +639,18 @@ function DaysView({
   const short = (day: string) => `${day.slice(8)}/${day.slice(5, 7)}`;
   const series = [
     { key: "b", name: names[1], totals: at(curDays), titles: curDays.map(short) },
-    { key: "a", name: names[0], totals: at(prevDays), titles: prevDays.map(short) },
+    { key: "a", name: names[0], totals: at(prevDays), titles: prevDays.map(short), dashed: true },
   ].map((s) => ({ ...s, totals: cumulative ? cumulate(s.totals) : s.totals }));
 
   return (
     <>
+      <KpiCards
+        title={`${names[1]} · ${rangeText(current)}`}
+        current={rows[1].totals}
+        previous={rows[0].totals}
+        compareLabel={`${names[0].toLowerCase()} (${rangeText(previous)})`}
+        spark={curDays.map((d) => byDay.get(d) ?? zero())}
+      />
       <section className="grid gap-2">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-medium">

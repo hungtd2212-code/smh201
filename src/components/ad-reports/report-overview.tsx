@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Lock, Pencil } from "lucide-react";
+import { LayoutDashboard, Lock, Pencil, Target } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
@@ -28,16 +28,23 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentStaff } from "@/hooks/use-current-staff";
 import {
   add,
+  checkTargets,
   entriesOf,
   firstDayOf,
   isEmpty,
   lastDayOf,
   metricOf,
+  monthElapsed,
+  previousOf,
+  spikeAlerts,
   totalsByDay,
   totalsByMonth,
   totalsByStaff,
   zero,
+  type Alert,
   type MetricKey,
+  type PreviousPeriod,
+  type TargetValues,
   type Totals,
 } from "@/lib/ad-reports/aggregate";
 import {
@@ -52,15 +59,18 @@ import {
 } from "@/lib/ad-reports/dates";
 import { formatNumber, formatPercent, ratio } from "@/lib/ad-reports/number";
 import { updateDailyData, updateReport } from "@/lib/ad-reports/repo";
+import { targetFor } from "@/lib/ad-reports/targets";
 import type { AdDailyData, AdDailyReport, ReportValues } from "@/lib/ad-reports/types";
 import type { AdAccount, AdAccountAssignment, AdsStaff } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
 import { ChartCard, MetricTabs, StaffChart, TrendChart } from "./charts";
 import { useAdReports, useNow } from "./hooks";
+import { KpiCards } from "./kpi-cards";
 import { MonthsPicker, monthsLabel, yearOptions } from "./period-picker";
 import { LIME, ORANGE, PeriodTable, TD, TH, YELLOW, type PeriodRow } from "./period-table";
 import { ReportFields, allFilled, fieldKey, toNumbers, type FieldItem } from "./report-fields";
 import { NotReady, StatsError } from "./shared";
+import { AlertsPanel, TargetPanel, TargetsDialog, useAdTargets } from "./targets";
 
 const ALL = "__all";
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -116,7 +126,9 @@ function OverviewBody() {
   const [metricKey, setMetricKey] = useState<MetricKey>("spend");
 
   const months = useMemo(() => pickedMonths ?? (today ? [today.slice(0, 7)] : []), [pickedMonths, today]);
-  const from = months.length > 0 ? firstDayOf(months[0]) : "";
+  // Kỳ để so (tháng trước / các tháng liền trước / năm trước) — tải luôn để so trên thẻ và biểu đồ.
+  const prev = useMemo(() => previousOf(months, today), [months, today]);
+  const from = months.length > 0 ? firstDayOf(prev ? prev.months[0] : months[0]) : "";
   const to = months.length > 0 ? lastDayOf(months.at(-1) ?? months[0]) : "";
   const { state, reload } = useAdReports(from, to);
   const thisYear = Number((today || "2026").slice(0, 4));
@@ -134,6 +146,11 @@ function OverviewBody() {
       ? catalogs.adsStaff.find((a) => a.user_id === staff.userId)
       : undefined;
   const person = scope.managesMarketing ? catalogs.adsStaff.find((p) => p.id === staffFilter) : me;
+  const staffId = person ? person.id : null;
+  // Tổng theo ngày của mọi ngày đã tải (gồm cả kỳ trước) — rồi tách ra kỳ đang xem / kỳ trước.
+  const allByDay = useMemo(() => totalsByDay(entries, staffId), [entries, staffId]);
+  const { state: targetsState, reload: reloadTargets } = useAdTargets();
+  const [targetsOpen, setTargetsOpen] = useState(false);
 
   if (!catalogs.marketingReady) return <MarketingNotReady what="Màn Tổng quan" />;
   if (staff.status === "loading") return <Skeleton className="h-64 w-full rounded-xl" />;
@@ -149,6 +166,41 @@ function OverviewBody() {
   const single = months.length === 1 ? months[0] : null;
   const metricTabs = <MetricTabs value={metricKey} onChange={setMetricKey} />;
   const periodName = single ? monthLabel(single) : monthsLabel(months, today);
+  const pick = (keepDay: (day: string) => boolean) => new Map([...allByDay].filter(([day]) => keepDay(day)));
+  const curByDay = pick(keep);
+  const prevByDay = prev ? pick(prev.keep) : null;
+  const current = [...curByDay.values()].reduce(add, zero());
+  const previous = prevByDay ? [...prevByDay.values()].reduce(add, zero()) : null;
+  const thisMonth = today.slice(0, 7);
+  const curByMonth = totalsByMonth(curByDay);
+  const spark = single
+    ? monthDays(single).filter((d) => d <= today).map((d) => curByDay.get(d) ?? zero())
+    : months.map((m) => curByMonth.get(m) ?? zero());
+
+  // Mục tiêu tháng (chỉ khi xem một tháng) và cảnh báo.
+  const targets = targetsState.status === "ready" ? targetsState.targets : null;
+  const target = targets && single ? targetFor(targets, staffId) : null;
+  const elapsed = single ? monthElapsed(single, today) : 0;
+  const targetItems = target ? checkTargets(current, target, elapsed) : [];
+  const alerts: Alert[] = [];
+  if (single === thisMonth) {
+    alerts.push(...spikeAlerts(allByDay, today));
+    if (!person && targets) {
+      // Xem tất cả: nhắc từng người đang vượt ngân sách / giá tối đa của mình.
+      const byStaff = totalsByStaff(entries, keep);
+      for (const p of catalogs.adsStaff) {
+        const t = targetFor(targets, p.id);
+        const totals = byStaff.get(p.id);
+        if (!t || !totals) continue;
+        for (const item of checkTargets(totals, t, elapsed)) {
+          if (item.status === "critical" && item.key !== "data") {
+            alerts.push({ level: "critical", text: `${p.full_name}: ${item.label.toLowerCase()} — ${item.note.toLowerCase()}.` });
+          }
+        }
+      }
+    }
+  }
+  const editTargets = scope.managesMarketing && targets !== null;
 
   return (
     <>
@@ -175,7 +227,32 @@ function OverviewBody() {
             Về tháng này
           </Button>
         )}
+        {scope.managesMarketing && (
+          <Button
+            variant="outline"
+            className="ml-auto"
+            disabled={!editTargets}
+            title={
+              targetsState.status === "not-migrated"
+                ? "Cần chạy file supabase/012_ad_targets.sql trên Supabase trước"
+                : undefined
+            }
+            onClick={() => setTargetsOpen(true)}
+          >
+            <Target />
+            Mục tiêu
+          </Button>
+        )}
       </div>
+      {editTargets && targetsOpen && (
+        <TargetsDialog
+          open
+          onClose={() => setTargetsOpen(false)}
+          people={catalogs.adsStaff}
+          targets={targets}
+          onSaved={reloadTargets}
+        />
+      )}
 
       {scope.isAdsStaff && !me ? (
         <ReadOnlyNote>
@@ -185,33 +262,76 @@ function OverviewBody() {
         <StatsError message={state.message} />
       ) : state.status !== "ready" || months.length === 0 ? (
         <Skeleton className="h-64 w-full rounded-xl" />
-      ) : single && person ? (
-        <PersonMonth
-          person={person}
-          month={single}
-          today={today}
-          reports={state.reports}
-          dailyData={state.data}
-          accounts={catalogs.adAccounts}
-          assignments={catalogs.assignments}
-          canAlwaysEdit={scope.managesMarketing}
-          showEntryStaff={scope.managesMarketing}
-          focusDay={focusDay}
-          onSaved={reload}
-          metricTabs={metricTabs}
-          metricKey={metricKey}
-        />
       ) : (
         <>
-          <PeriodSummary
+          <AlertsPanel alerts={alerts} />
+          <KpiCards
             title={`${single ? "Tổng " + lowerFirst(periodName) : periodName} — ${person ? person.full_name : "tất cả nhân viên"}`}
-            single={single}
-            months={months}
-            byDay={totalsByDay(entries, person ? person.id : null, keep)}
-            metricTabs={metricTabs}
-            metricKey={metricKey}
-            onPickMonth={(month) => setPickedMonths([month])}
+            current={current}
+            previous={previous}
+            compareLabel={prev?.label}
+            spark={spark}
+            oneMonth={single !== null}
           />
+          {single && targetItems.length > 0 ? (
+            <TargetPanel
+              title={`Mục tiêu ${lowerFirst(monthLabel(single))} — ${person ? person.full_name : "cả nhóm"}`}
+              items={targetItems}
+              elapsed={elapsed}
+              action={
+                editTargets ? (
+                  <Button size="sm" variant="ghost" onClick={() => setTargetsOpen(true)}>
+                    Sửa mục tiêu
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : single && editTargets ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed px-4 py-2.5 text-sm text-muted-foreground">
+              <Target className="size-4" />
+              Chưa đặt mục tiêu {person ? `cho ${person.full_name}` : "cho cả nhóm"} (ngân sách, data, giá mess / giá
+              data tối đa) — đặt để có thanh tiến độ và cảnh báo khi vượt.
+              <Button size="sm" variant="outline" onClick={() => setTargetsOpen(true)}>
+                Đặt mục tiêu
+              </Button>
+            </div>
+          ) : null}
+          {single ? (
+            <DailyChart
+              month={single}
+              byDay={curByDay}
+              previousByDay={prev ? allByDay : null}
+              previousMonth={prev?.months[0] ?? null}
+              target={target}
+              metricTabs={metricTabs}
+              metricKey={metricKey}
+            />
+          ) : (
+            <PeriodSummary
+              months={months}
+              byDay={curByDay}
+              prev={prev}
+              prevByDay={prevByDay}
+              metricTabs={metricTabs}
+              metricKey={metricKey}
+              onPickMonth={(month) => setPickedMonths([month])}
+            />
+          )}
+          {single && person && (
+            <PersonMonth
+              person={person}
+              month={single}
+              today={today}
+              reports={state.reports}
+              dailyData={state.data}
+              accounts={catalogs.adAccounts}
+              assignments={catalogs.assignments}
+              canAlwaysEdit={scope.managesMarketing}
+              showEntryStaff={scope.managesMarketing}
+              focusDay={focusDay}
+              onSaved={reload}
+            />
+          )}
           {!person && (
             <StaffSection
               periodName={periodName}
@@ -234,57 +354,60 @@ function OverviewBody() {
 /* Thẻ tổng + biểu đồ + bảng theo tháng                                                            */
 /* ------------------------------------------------------------------------------------------------ */
 
-function Tile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border bg-card px-4 py-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-0.5 text-xl font-semibold tabular-nums">{value}</div>
-    </div>
-  );
-}
-
-function Tiles({ totals, title, oneMonth }: { totals: Totals; title: string; oneMonth: boolean }) {
-  const m = metrics(totals);
-  return (
-    <section className="grid gap-2">
-      <h2 className="font-medium">{title}</h2>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <Tile label={oneMonth ? "Tổng chi tiêu tháng" : "Tổng chi tiêu"} value={`${formatNumber(totals.spend)}đ`} />
-        <Tile label="Tổng mess" value={formatNumber(totals.messages)} />
-        <Tile label="Giá mess" value={m.costPerMessage === null ? "–" : `${formatNumber(m.costPerMessage)}đ`} />
-        <Tile label="Data" value={formatNumber(totals.data)} />
-        <Tile label="Giá data" value={m.costPerData === null ? "–" : `${formatNumber(m.costPerData)}đ`} />
-        <Tile label="Tỉ lệ xin số" value={formatPercent(m.dataRate)} />
-      </div>
-    </section>
-  );
-}
-
 const shortMonth = (month: string, withYear: boolean) =>
   withYear ? `T${Number(month.slice(5))}/${month.slice(2, 4)}` : `T${Number(month.slice(5))}`;
 
-/** Biểu đồ theo ngày của một tháng. */
+/** Giá tối đa của mục tiêu ứng với chỉ số đang vẽ (để kẻ đường đỏ trên biểu đồ). */
+const targetLine = (key: MetricKey, target: TargetValues | null) => {
+  const cap = key === "costPerMessage" ? target?.max_cost_per_message : key === "costPerData" ? target?.max_cost_per_data : null;
+  return cap ? { value: cap, label: "Mục tiêu tối đa" } : null;
+};
+
+/** Biểu đồ theo ngày của một tháng, kèm nét đứt của tháng trước (cùng ngày) và đường mục tiêu. */
 function DailyChart({
   month,
   byDay,
+  previousByDay,
+  previousMonth,
+  target,
   metricTabs,
   metricKey,
 }: {
   month: string;
   byDay: Map<string, Totals>;
+  previousByDay: Map<string, Totals> | null;
+  previousMonth: string | null;
+  target: TargetValues | null;
   metricTabs: React.ReactNode;
   metricKey: MetricKey;
 }) {
   const metric = metricOf(metricKey);
-  const points = monthDays(month).map((day) => ({
+  const days = monthDays(month);
+  const points = days.map((day) => ({
     key: day,
     label: String(Number(day.slice(8))),
     title: formatDay(day),
     totals: byDay.get(day) ?? zero(),
   }));
+  const prevDays = previousMonth ? monthDays(previousMonth) : [];
+  const previous =
+    previousByDay && previousMonth
+      ? {
+          label: monthLabel(previousMonth),
+          totals: days.map((_, i) => (prevDays[i] ? (previousByDay.get(prevDays[i]) ?? zero()) : null)),
+          titles: days.map((_, i) => (prevDays[i] ? formatDay(prevDays[i]) : "")),
+        }
+      : undefined;
   return (
-    <ChartCard title={`${metric.label} theo ngày — ${monthLabel(month).toLowerCase()}`} actions={metricTabs}>
-      <TrendChart points={points} metric={metric} height="h-64" />
+    <ChartCard title={`${metric.label} theo ngày — ${lowerFirst(monthLabel(month))}`} actions={metricTabs}>
+      <TrendChart
+        points={points}
+        metric={metric}
+        height="h-64"
+        currentLabel={monthLabel(month)}
+        previous={previous}
+        target={targetLine(metricKey, target)}
+      />
     </ChartCard>
   );
 }
@@ -294,24 +417,25 @@ function DailyChart({
  * khi nhiều tháng — bảng mỗi dòng một tháng (có tổng từng năm nếu chọn nhiều năm).
  */
 function PeriodSummary({
-  title,
-  single,
   months,
   byDay,
+  prev,
+  prevByDay,
   metricTabs,
   metricKey,
   onPickMonth,
 }: {
-  title: string;
-  single: string | null;
   months: string[];
   byDay: Map<string, Totals>;
+  prev: PreviousPeriod | null;
+  prevByDay: Map<string, Totals> | null;
   metricTabs: React.ReactNode;
   metricKey: MetricKey;
   onPickMonth: (month: string) => void;
 }) {
   const metric = metricOf(metricKey);
   const byMonth = totalsByMonth(byDay);
+  const prevByMonth = prevByDay ? totalsByMonth(prevByDay) : null;
   const total = [...byMonth.values()].reduce(add, zero());
   const years = [...new Set(months.map((m) => m.slice(0, 4)))];
   const manyYears = years.length > 1;
@@ -347,33 +471,36 @@ function PeriodSummary({
 
   return (
     <>
-      <Tiles totals={total} title={title} oneMonth={single !== null} />
-      {single ? (
-        <DailyChart month={single} byDay={byDay} metricTabs={metricTabs} metricKey={metricKey} />
-      ) : (
-        <>
-          <ChartCard title={`${metric.label} theo tháng`} actions={metricTabs}>
-            <TrendChart
-              metric={metric}
-              points={months.map((month) => ({
-                key: month,
-                label: shortMonth(month, manyYears),
-                title: monthLabel(month),
-                totals: byMonth.get(month) ?? zero(),
-              }))}
-            />
-          </ChartCard>
-          <section className="grid gap-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-medium">Theo tháng</h2>
-              <p className="text-sm text-muted-foreground">
-                Mũi tên: tăng / giảm so với tháng ở dòng trên. Bấm tên tháng để xem từng ngày.
-              </p>
-            </div>
-            <PeriodTable firstHead="Tháng" rows={rows} showChange />
-          </section>
-        </>
-      )}
+      <ChartCard title={`${metric.label} theo tháng`} actions={metricTabs}>
+        <TrendChart
+          metric={metric}
+          currentLabel="Các tháng đang chọn"
+          previous={
+            prev && prevByMonth
+              ? {
+                  label: `Kỳ trước (${prev.label})`,
+                  totals: prev.months.map((m) => prevByMonth.get(m) ?? zero()),
+                  titles: prev.months.map((m) => monthLabel(m)),
+                }
+              : undefined
+          }
+          points={months.map((month) => ({
+            key: month,
+            label: shortMonth(month, manyYears),
+            title: monthLabel(month),
+            totals: byMonth.get(month) ?? zero(),
+          }))}
+        />
+      </ChartCard>
+      <section className="grid gap-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-medium">Theo tháng</h2>
+          <p className="text-sm text-muted-foreground">
+            Mũi tên: tăng / giảm so với tháng ở dòng trên. Bấm tên tháng để xem từng ngày.
+          </p>
+        </div>
+        <PeriodTable firstHead="Tháng" rows={rows} showChange />
+      </section>
       {isEmpty(total) && (
         <p className="text-sm text-muted-foreground">Khoảng thời gian này chưa có báo cáo nào.</p>
       )}
@@ -630,8 +757,6 @@ function PersonMonth({
   showEntryStaff,
   focusDay,
   onSaved,
-  metricTabs,
-  metricKey,
 }: {
   person: AdsStaff;
   month: string;
@@ -646,8 +771,6 @@ function PersonMonth({
   showEntryStaff: boolean;
   focusDay: string | null;
   onSaved: () => Promise<void>;
-  metricTabs: React.ReactNode;
-  metricKey: MetricKey;
 }) {
   const days = useMemo(() => monthDays(month), [month]);
   const group = useMemo(
@@ -656,12 +779,9 @@ function PersonMonth({
   );
   const [editing, setEditing] = useState<Row | null>(null);
   const total = group.rows.map(rowTotals).reduce(add, zero());
-  const byDay = useMemo(() => new Map(group.rows.map((row) => [row.day, rowTotals(row)])), [group]);
 
   return (
     <>
-      <Tiles totals={total} title={`${monthLabel(month)} — ${person.full_name}`} oneMonth />
-      <DailyChart month={month} byDay={byDay} metricTabs={metricTabs} metricKey={metricKey} />
       {group.accounts.length === 0 && isEmpty(total) ? (
         <ReadOnlyNote>
           {monthLabel(month)} {person.full_name} không có TKQC nào nên chưa có số liệu.

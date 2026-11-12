@@ -1,8 +1,9 @@
 // Kiểm thử phần cộng dồn số liệu ads của Tổng quan / Phân tích (src/lib/ad-reports/aggregate.ts).
 // Chạy:  npm run test:ui
 import {
-  METRICS, change, compactMetric, daysBetween, entriesOf, formatMetric, lastDayOf, metricOf, monthsBetween,
-  shiftDay, shiftMonth, sumDays, totalsByDay, totalsByMonth, totalsByStaff,
+  METRICS, change, checkTargets, compactMetric, daysBetween, entriesOf, formatMetric, funnelCounts, lastDayOf,
+  metricOf, monthElapsed, monthsBetween, previousOf, shiftDay, shiftMonth, spikeAlerts, sumDays, totalsByAccount,
+  totalsByDay, totalsByMonth, totalsByStaff, totalsByWeekday, weekdayOf,
 } from "../src/lib/ad-reports/aggregate.ts";
 
 let passed = 0;
@@ -82,6 +83,58 @@ c = change(metricOf("spend"), 50, 40);
 ok(c.tone === "neutral", "chi tiêu tăng → không tô tốt / xấu");
 ok(change(metricOf("data"), 5, 0).pct === null, "kỳ trước bằng 0 → không tính %");
 ok(change(metricOf("costPerData"), null, 5) === null, "không tính được → không so");
+
+
+console.log("\n== So với kỳ trước");
+let p = previousOf(["2026-10"], "2026-11-12");
+ok(same(p.months, ["2026-09"]) && p.label === "tháng 9/2026" && p.keep("2026-09-30"), "tháng đã qua → cả tháng trước", p);
+p = previousOf(["2026-11"], "2026-11-12");
+ok(p.keep("2026-10-12") && !p.keep("2026-10-13") && /cùng kỳ tới ngày 12/.test(p.label), "tháng hiện tại → tháng trước tới cùng ngày", p.label);
+p = previousOf(["2026-09", "2026-10", "2026-11"], "2026-11-12");
+ok(same(p.months, ["2026-06", "2026-07", "2026-08"]) && p.keep("2026-07-31") && p.keep("2026-08-12") && !p.keep("2026-08-13"), "3 tháng liền nhau → 3 tháng liền trước (tháng 8 ứng với tháng 11 nên cắt tới ngày 12)", p.months);
+p = previousOf(monthsBetween("2026-01", "2026-11"), "2026-11-12");
+ok(p.months[0] === "2025-01" && p.label.startsWith("năm 2025") && p.keep("2025-11-12") && !p.keep("2025-11-13"), "cả năm nay → năm ngoái cùng kỳ", p.label);
+ok(previousOf(["2026-01", "2026-05"], "2026-11-12") === null, "tháng rời rạc → không so");
+
+console.log("\n== Mục tiêu");
+ok(monthElapsed("2026-11", "2026-11-15") === 0.5 && monthElapsed("2026-10", "2026-11-15") === 1, "phần tháng đã qua");
+const items = checkTargets({ spend: 200, messages: 10, data: 1 }, { monthly_budget: 300, monthly_data: 10, max_cost_per_message: 15, max_cost_per_data: 150 }, 0.5);
+const byKey = Object.fromEntries(items.map((i) => [i.key, i]));
+ok(byKey.budget.status === "warning", "tiêu 67% khi mới qua 50% tháng → cảnh báo", byKey.budget);
+ok(byKey.data.status === "warning", "data 10% khi đã qua 50% tháng → chậm", byKey.data);
+ok(byKey.costPerMessage.status === "critical" && byKey.costPerData.status === "critical", "giá mess 20 > 15, giá data 200 > 150 → vượt");
+ok(checkTargets({ spend: 400, messages: 0, data: 0 }, { monthly_budget: 300, monthly_data: null, max_cost_per_message: null, max_cost_per_data: 100 }, 0.5)
+  .find((i) => i.key === "budget").status === "critical", "vượt ngân sách → đỏ");
+ok(checkTargets(zero3(), { monthly_budget: null, monthly_data: null, max_cost_per_message: null, max_cost_per_data: null }, 1).length === 0, "không đặt mục tiêu → không có dòng nào");
+function zero3() { return { spend: 0, messages: 0, data: 0 }; }
+
+console.log("\n== Cảnh báo bất thường");
+const spikes = new Map();
+for (let i = 1; i <= 7; i++) spikes.set(shiftDay("2026-11-11", -i), { spend: 100000, messages: 10, data: 1 });
+spikes.set("2026-11-11", { spend: 100000, messages: 10, data: 0 });
+let alerts = spikeAlerts(spikes, "2026-11-12");
+ok(alerts.length === 1 && /chưa có data/.test(alerts[0].text), "tiêu tiền mà chưa có data → nhắc", alerts);
+spikes.set("2026-11-11", { spend: 200000, messages: 10, data: 1 });
+alerts = spikeAlerts(spikes, "2026-11-12");
+ok(alerts.some((a) => /Giá data ngày 11\/11/.test(a.text) && a.level === "critical"), "giá data gấp đôi 7 ngày trước → đỏ", alerts);
+ok(spikeAlerts(new Map(), "2026-11-12").length === 0, "không có số → không cảnh báo");
+
+console.log("\n== Theo thứ, theo TKQC, phễu");
+ok(weekdayOf("2026-11-09") === 0 && weekdayOf("2026-11-15") === 6, "09/11/2026 là thứ Hai, 15/11 là Chủ nhật");
+const wk = totalsByWeekday(new Map([["2026-11-09", { spend: 5, messages: 1, data: 1 }]]), daysBetween("2026-11-02", "2026-11-15"));
+ok(wk[0].days === 2 && wk[0].totals.spend === 5 && wk[6].days === 2, "mỗi thứ 2 ngày trong 2 tuần", wk[0]);
+const acc = totalsByAccount(reports, assignments, "duong", (d) => d.startsWith("2026-11"));
+ok(acc.get("A").totals.spend === 200000 && acc.get("B").totals.spend === 70000 && !acc.has("C"), "tổng theo TKQC của một người", [...acc.keys()]);
+ok(totalsByAccount(reports, assignments, null).get("B").owners.size === 2, "TKQC đổi người: ghi đủ 2 người phụ trách");
+const fc = funnelCounts([
+  { day: "2026-11-01", status: "so_moi", hasAppointment: false, invalidPhone: false, accountId: null },
+  { day: "2026-11-01", status: "hen_lich", hasAppointment: true, invalidPhone: false, accountId: null },
+  { day: "2026-11-01", status: "fail", hasAppointment: true, invalidPhone: false, accountId: null },
+  { day: "2026-11-01", status: "da_lam_dich_vu", hasAppointment: false, invalidPhone: false, accountId: null },
+  { day: "2026-11-01", status: "so_trung", hasAppointment: false, invalidPhone: false, accountId: null },
+  { day: "2026-11-01", status: "so_moi", hasAppointment: false, invalidPhone: true, accountId: null },
+], ["so_trung", "trung_dich_vu_khac", "so_huy"]);
+ok(same(fc, { leads: 4, booked: 3, done: 1 }), "phễu: bỏ số trùng / số sai; hẹn lịch gồm cả lead đã có ngày hẹn", fc);
 
 console.log(`\n${passed} ok, ${failed} lỗi`);
 if (failed > 0) process.exit(1);
