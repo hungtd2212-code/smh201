@@ -23,12 +23,15 @@ export function isoToDate(iso: string) {
 /** Date (từ ô lịch) → "yyyy-MM-dd". */
 export const dateToIso = (date: Date) => format(date, "yyyy-MM-dd");
 
-/** Các ngày từ `to` lùi về `from` (mới nhất trước). */
-export function daysDesc(from: string, to: string) {
-  const days: string[] = [];
-  for (let day = to; day && day >= from; day = addDays(day, -1)) days.push(day);
-  return days;
+/** "2026-11" → mọi ngày của tháng, từ ngày 1 tới ngày cuối. */
+export function monthDays(month: string) {
+  const [y, m] = month.split("-").map(Number);
+  const count = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`);
 }
+
+/** "2026-11" → "Tháng 11/2026" */
+export const monthLabel = (month: string) => `Tháng ${Number(month.slice(5, 7))}/${month.slice(0, 4)}`;
 
 /** "yyyy-MM-dd" → "dd/MM/yyyy" */
 export const formatDay = (iso: string) => (iso ? iso.split("-").reverse().join("/") : "");
@@ -40,6 +43,9 @@ const clock = new Intl.DateTimeFormat("vi-VN", {
   hour12: false,
 });
 const vnDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
+
+/** Ngày (giờ Việt Nam, yyyy-MM-dd) của một mốc thời gian. */
+export const dayOf = (iso: string) => vnDay.format(new Date(iso));
 
 /**
  * Giờ của một mốc thời gian: "09:15" nếu là hôm nay; ngày khác thì "09:15 ngày 10/11/2026"

@@ -49,5 +49,14 @@ export function isNumberText(text: string): boolean {
   return /^\d+$/.test(value) || /^\d{1,3}([.,\s]\d{3})+$/.test(value);
 }
 
+/** 0.2857 → "28,57%"; null (chia cho 0) → "–". */
+export const formatPercent = (ratio: number | null) =>
+  ratio === null
+    ? "–"
+    : `${(ratio * 100).toLocaleString("vi-VN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+
+/** a / b, mẫu số bằng 0 thì null (màn hình hiện "–"). */
+export const ratio = (a: number, b: number) => (b > 0 ? a / b : null);
+
 /** Chuỗi chữ số → số; "" → null. */
 export const toInteger = (digits: string) => (digits === "" ? null : Number(digits));

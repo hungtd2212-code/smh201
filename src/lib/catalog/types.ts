@@ -76,6 +76,8 @@ export type AdAccount = {
   /** false = Ngừng dùng (vd nhân viên đã bấm xoá một TKQC có báo cáo cũ). */
   is_active: boolean;
   note: string | null;
+  /** Lúc TKQC được khai báo trong hệ thống. */
+  created_at: string;
   deleted_at: string | null;
 };
 

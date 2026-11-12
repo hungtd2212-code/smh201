@@ -6,11 +6,16 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { addDays, dateToIso, formatDay, isoToDate } from "@/lib/ad-reports/dates";
 
-/** Bộ chọn ngày của các màn báo cáo ads: [Hôm nay] [Hôm qua] [Tuỳ chỉnh]. Không cho chọn ngày chưa tới. */
-
-export type DayRange = { from: string; to: string };
+/** Bộ chọn ngày / tháng của các màn báo cáo ads. */
 
 const pick = (active: boolean): "default" | "outline" => (active ? "default" : "outline");
 
@@ -67,96 +72,57 @@ export function SingleDayFilter({
   );
 }
 
-/** Chọn một KHOẢNG ngày (màn Tổng quan). */
-export function RangeFilter({
+/**
+ * Chọn THÁNG và NĂM (màn Tổng quan). `value` dạng "yyyy-MM". Năm: từ 2024 tới năm hiện tại.
+ */
+export function MonthFilter({
   value,
   today,
   onChange,
 }: {
-  value: DayRange;
+  value: string;
   today: string;
-  onChange: (range: DayRange) => void;
+  onChange: (month: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<{ from?: Date; to?: Date }>({});
-  const yesterday = addDays(today, -1);
-  const single = value.from === value.to;
-  const isToday = single && value.from === today;
-  const isYesterday = single && value.from === yesterday;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const thisYear = Number((today || value).slice(0, 4));
+  const years = Array.from({ length: Math.max(1, thisYear - 2024 + 1) }, (_, i) => 2024 + i);
+  if (!years.includes(year)) years.push(year);
+  const set = (y: number, m: number) => onChange(`${y}-${String(m).padStart(2, "0")}`);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Button variant={pick(isToday)} disabled={!today} onClick={() => onChange({ from: today, to: today })}>
-        Hôm nay
-      </Button>
-      <Button
-        variant={pick(isYesterday)}
-        disabled={!today}
-        onClick={() => onChange({ from: yesterday, to: yesterday })}
-      >
-        Hôm qua
-      </Button>
-      <Popover
-        open={open}
-        onOpenChange={(next) => {
-          if (next && value.from) setDraft({ from: isoToDate(value.from), to: isoToDate(value.to) });
-          setOpen(next);
-        }}
-      >
-        <PopoverTrigger asChild>
-          <Button variant={pick(Boolean(today) && !isToday && !isYesterday)} disabled={!today}>
-            <CalendarDays />
-            Tuỳ chỉnh
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto p-2">
-          {today && (
-            <Calendar
-              mode="range"
-              locale={vi}
-              numberOfMonths={2}
-              defaultMonth={addMonthsBack(isoToDate(value.to || today))}
-              selected={draft.from ? { from: draft.from, to: draft.to } : undefined}
-              disabled={{ after: isoToDate(today) }}
-              onSelect={(next) => setDraft(next ?? {})}
-            />
-          )}
-          <div className="flex justify-end gap-2 border-t px-1 pt-2">
-            <Button variant="ghost" onClick={() => setOpen(false)}>
-              Huỷ
-            </Button>
-            <Button
-              disabled={!draft.from}
-              onClick={() => {
-                if (!draft.from) return;
-                onChange({ from: dateToIso(draft.from), to: dateToIso(draft.to ?? draft.from) });
-                setOpen(false);
-              }}
-            >
-              Áp dụng
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
-      <p className="ml-1 text-sm text-muted-foreground tabular-nums">
-        {!value.from ? (
-          "…"
-        ) : single ? (
-          <>
-            Ngày <span className="font-semibold text-foreground">{formatDay(value.from)}</span>
-          </>
-        ) : (
-          <>
-            Từ <span className="font-semibold text-foreground">{formatDay(value.from)}</span> đến{" "}
-            <span className="font-semibold text-foreground">{formatDay(value.to)}</span>
-          </>
-        )}
-      </p>
+      <Select value={String(month)} onValueChange={(m) => set(year, Number(m))}>
+        <SelectTrigger className="w-32" aria-label="Tháng">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+            <SelectItem key={m} value={String(m)}>
+              Tháng {m}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select value={String(year)} onValueChange={(y) => set(Number(y), month)}>
+        <SelectTrigger className="w-28" aria-label="Năm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {years.map((y) => (
+            <SelectItem key={y} value={String(y)}>
+              {y}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {today && value !== today.slice(0, 7) && (
+        <Button variant="ghost" onClick={() => onChange(today.slice(0, 7))}>
+          Về tháng này
+        </Button>
+      )}
     </div>
   );
 }
 
-/** Lịch hai tháng: hiện tháng trước và tháng đang chọn (tháng đang chọn ở bên phải). */
-function addMonthsBack(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth() - 1, 1);
-}

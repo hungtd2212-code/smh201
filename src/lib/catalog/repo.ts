@@ -80,7 +80,7 @@ const CAMPAIGN_COLUMNS =
   "id, name, channel_id, page_id, service_id, branch, start_date, end_date, budget, owner_id, ads_id, is_active, deleted_at";
 const PAGE_COLUMNS = "id, name, channel_id, branch, is_active, deleted_at";
 
-const AD_ACCOUNT_COLUMNS = "id, name, account_id, channel_id, is_active, note, deleted_at";
+const AD_ACCOUNT_COLUMNS = "id, name, account_id, channel_id, is_active, note, created_at, deleted_at";
 
 /**
  * TKQC đang dùng. Hai cột "loại tài khoản", "thanh toán" do file 007 thêm vào; chưa chạy file đó thì
