@@ -131,7 +131,7 @@ export const ownerOf = (assignments: AdAccountAssignment[], accountId: string, d
   assignments.find((x) => x.ad_account_id === accountId && coversDay(x, day))?.ads_staff_id ?? null;
 
 /** Một lượt cộng: ngày, người phụ trách (null = không ai), và các số. */
-type Entry = { day: string; staffId: string | null; totals: Totals };
+export type Entry = { day: string; staffId: string | null; totals: Totals };
 
 /**
  * Tách báo cáo TKQC + dòng "Data xin được" thành từng lượt cộng. Data nhập riêng theo từng TKQC ở báo cáo
@@ -245,6 +245,25 @@ export function previousOf(months: string[], today: string): PreviousPeriod | nu
     months: prev,
     keep: (day) => set.has(day.slice(0, 7)) && (day.slice(0, 7) !== cutMonth || day.slice(8) <= cutDay),
     label,
+  };
+}
+
+/**
+ * Khoảng ngày liền trước, cùng độ dài, để so (vd tuần này ↔ tuần trước). Khoảng đang chạy (có ngày sau hôm nay) thì
+ * kỳ trước cũng chỉ tính tới cùng số ngày đã qua.
+ */
+export function previousRange(from: string, to: string, today: string) {
+  const length = daysBetween(from, to).length;
+  const end = today && today < to ? today : to;
+  const used = Math.max(1, daysBetween(from, end).length);
+  const prevFrom = shiftDay(from, -length);
+  const prevTo = shiftDay(prevFrom, used - 1);
+  const short = (day: string) => `${day.slice(8)}/${day.slice(5, 7)}`;
+  return {
+    from: prevFrom,
+    to: prevTo,
+    label: prevFrom === prevTo ? `ngày ${short(prevFrom)}` : `${short(prevFrom)} – ${short(prevTo)}`,
+    keep: (day: string) => day >= prevFrom && day <= prevTo,
   };
 }
 
@@ -649,6 +668,110 @@ export function splitTotal(total: number, weights: number[], step = 1): number[]
   if (diff !== 0) parts[order[0].i] += diff;
   return parts;
 }
+
+/* ------------------------------------------------------------------------------------------------ */
+/* Về đích theo ngày / tuần: mục tiêu tháng chia xuống từng ngày                                     */
+/* ------------------------------------------------------------------------------------------------ */
+
+/**
+ * Một tuần của tháng: thứ Hai → Chủ nhật, cắt ở đầu / cuối tháng (như sheet "Báo cáo tuần": 1–4, 5–11…). Tuần lẻ ở
+ * đầu / cuối tháng ngắn hơn 4 ngày thì gộp vào tuần kế bên (vd tháng 11/2026 bắt đầu Chủ nhật: 1–8, 9–15, 16–22,
+ * 23–30) — mỗi tháng 4 hoặc 5 tuần.
+ */
+export type Week = { index: number; from: string; to: string; days: string[] };
+
+const MIN_WEEK_DAYS = 4;
+
+export function weeksOfMonth(month: string): Week[] {
+  const chunks: string[][] = [];
+  for (const day of daysBetween(firstDayOf(month), lastDayOf(month))) {
+    const last = chunks.at(-1);
+    if (!last || weekdayOf(day) === 0) chunks.push([day]);
+    else last.push(day);
+  }
+  if (chunks.length > 1 && chunks[0].length < MIN_WEEK_DAYS) chunks.splice(0, 2, [...chunks[0], ...chunks[1]]);
+  const n = chunks.length;
+  if (n > 1 && chunks[n - 1].length < MIN_WEEK_DAYS) chunks.splice(n - 2, 2, [...chunks[n - 2], ...chunks[n - 1]]);
+  return chunks.map((days, i) => ({ index: i + 1, from: days[0], to: days[days.length - 1], days }));
+}
+
+/** Mục tiêu của một ngày (hoặc cộng của nhiều ngày). null = chưa đặt. */
+export type DayGoal = { budget: number | null; data: number | null };
+
+/**
+ * Chia mục tiêu tháng đều cho từng ngày của tháng: số nguyên (ngân sách làm tròn 1.000đ), cộng các ngày đúng bằng
+ * mục tiêu tháng. Mục tiêu tuần = cộng các ngày của tuần — ngày về đích thì tuần về đích, tuần về đích thì tháng về đích.
+ */
+export function dailyGoals(target: TargetValues | null, month: string): Map<string, DayGoal> {
+  const days = daysBetween(firstDayOf(month), lastDayOf(month));
+  const ones = days.map(() => 1);
+  const budget = target?.monthly_budget ? splitTotal(target.monthly_budget, ones, 1000) : null;
+  const data = target?.monthly_data ? splitTotal(target.monthly_data, ones) : null;
+  return new Map(days.map((day, i) => [day, { budget: budget ? budget[i] : null, data: data ? data[i] : null }]));
+}
+
+/** Cộng mục tiêu của các ngày `days`. */
+export function goalOf(goals: Map<string, DayGoal>, days: Iterable<string>): DayGoal {
+  const sum: DayGoal = { budget: null, data: null };
+  for (const day of days) {
+    const g = goals.get(day);
+    if (!g) continue;
+    if (g.budget !== null) sum.budget = (sum.budget ?? 0) + g.budget;
+    if (g.data !== null) sum.data = (sum.data ?? 0) + g.data;
+  }
+  return sum;
+}
+
+export type KpiCheck = {
+  key: "data" | "costPerData" | "costPerMessage" | "budget";
+  label: string;
+  /** null = chưa tính được (vd tiêu tiền mà chưa có data → giá số "vô cùng"). */
+  actual: number | null;
+  goal: number;
+  /** "min": phải đạt ít nhất; "max": không được vượt. */
+  kind: "min" | "max";
+  met: boolean;
+};
+
+export type Verdict = {
+  checks: KpiCheck[];
+  /**
+   * Về đích: số điện thoại đủ mục tiêu VÀ giá số / giá mess không vượt mức tối đa (cái nào đã đặt mới xét).
+   * null = chưa đặt mục tiêu nào để xét.
+   */
+  met: boolean | null;
+  /** Chi tiêu vượt ngân sách của kỳ — chỉ nhắc, không tính vào về đích (tiêu thêm mà giá vẫn tốt là được). */
+  overBudget: boolean;
+};
+
+/** Xét một kỳ (ngày / tuần / tháng) có về đích không: `totals` thực đạt, `goal` mục tiêu kỳ, `target` để lấy giá tối đa. */
+export function judge(totals: Totals, goal: DayGoal, target: TargetValues | null): Verdict {
+  const checks: KpiCheck[] = [];
+  if (goal.data) {
+    checks.push({ key: "data", label: "Số điện thoại", actual: totals.data, goal: goal.data, kind: "min", met: totals.data >= goal.data });
+  }
+  const caps: [KpiCheck["key"], string, number | null | undefined, number][] = [
+    ["costPerData", "Giá số", target?.max_cost_per_data, totals.data],
+    ["costPerMessage", "Giá mess", target?.max_cost_per_message, totals.messages],
+  ];
+  for (const [key, label, cap, count] of caps) {
+    // Chưa tiêu đồng nào thì chưa có giá để xét.
+    if (!cap || totals.spend === 0) continue;
+    const actual = ratio(totals.spend, count);
+    checks.push({ key, label, actual, goal: cap, kind: "max", met: actual !== null && actual <= cap });
+  }
+  const met = checks.length > 0 ? checks.every((c) => c.met) : null;
+  const overBudget = goal.budget !== null && totals.spend > goal.budget;
+  if (goal.budget !== null) {
+    checks.push({ key: "budget", label: "Ngân sách", actual: totals.spend, goal: goal.budget, kind: "max", met: !overBudget });
+  }
+  return { checks, met, overBudget };
+}
+
+/** Kỳ đã qua, đang chạy (có ngày hôm nay) hay chưa tới. */
+export type Phase = "past" | "current" | "future";
+export const phaseOf = (from: string, to: string, today: string): Phase =>
+  today > to ? "past" : today < from ? "future" : "current";
 
 /* ------------------------------------------------------------------------------------------------ */
 /* Vinh danh                                                                                        */

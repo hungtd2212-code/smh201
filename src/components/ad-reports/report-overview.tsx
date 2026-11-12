@@ -29,14 +29,19 @@ import { useCurrentStaff } from "@/hooks/use-current-staff";
 import {
   add,
   checkTargets,
+  daysBetween,
   entriesOf,
   firstDayOf,
   isEmpty,
   lastDayOf,
   metricOf,
   monthElapsed,
+  monthsBetween,
   previousOf,
+  previousRange,
+  shiftDay,
   spikeAlerts,
+  weeksOfMonth,
   totalsByDay,
   totalsByMonth,
   totalsByStaff,
@@ -66,18 +71,28 @@ import { cn } from "@/lib/utils";
 import { ChartCard, MetricTabs, StaffChart, TrendChart } from "./charts";
 import { useAdReports, useNow } from "./hooks";
 import { KpiCards } from "./kpi-cards";
-import { MonthsPicker, monthsLabel, yearOptions } from "./period-picker";
+import { MonthsPicker, monthsLabel, yearOptions, type DayRange } from "./period-picker";
 import { LIME, ORANGE, PeriodTable, TD, TH, YELLOW, type PeriodRow } from "./period-table";
 import { ReportFields, allFilled, fieldKey, toNumbers, type FieldItem } from "./report-fields";
 import { NotReady, StatsError } from "./shared";
 import { GoalTrackingSection } from "./goal-tracking";
 import { RevenueDialog } from "./revenue";
 import { AlertsPanel, TargetsDialog, useAdTargets } from "./targets";
+import { DayFilter, WeekGoals } from "./week-goals";
 
 const ALL = "__all";
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** "Tháng 11/2026" → "tháng 11/2026" (chỉ chữ đầu, để "T11" vẫn viết hoa). */
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
+/** Tên khoảng ngày đang lọc: "Ngày 12/11/2026", "Tuần 2 (05/10 – 11/10)", "03/11/2026 – 09/11/2026". */
+function rangeLabel(range: DayRange) {
+  if (range.from === range.to) return `Ngày ${formatDay(range.from)}`;
+  const week = weeksOfMonth(range.from.slice(0, 7)).find((w) => w.from === range.from && w.to === range.to);
+  const short = (day: string) => formatDay(day).slice(0, 5);
+  if (week) return `Tuần ${week.index} (${short(week.from)} – ${short(week.to)}/${range.to.slice(0, 4)})`;
+  return `${formatDay(range.from)} – ${formatDay(range.to)}`;
+}
 
 /**
  * Marketing → Tổng quan: số liệu ads theo tháng, nhiều tháng, cả năm hoặc nhiều năm, kèm biểu đồ.
@@ -85,6 +100,8 @@ const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1
  *     giá mess, data, giá data, tỉ lệ xin số (như sheet "bảng dữ liệu quảng cáo theo tháng"). Nhân viên sửa
  *     được trong 24 giờ kể từ lúc gửi; quản lý sửa bất kỳ lúc nào.
  *   • Chọn NHIỀU tháng (hoặc cả năm, nhiều năm): mỗi dòng một tháng, có tổng từng năm.
+ *   • Một tháng: lọc tiếp theo tuần (T2 → CN, như sheet "Báo cáo tuần"), hôm qua / hôm nay hoặc một khoảng ngày; có
+ *     bảng "Về đích theo tuần & ngày" (mục tiêu tháng chia xuống từng ngày).
  *   • Quản trị / Trưởng Marketing: "Tất cả nhân viên" (tổng của mọi người + so sánh từng người) hoặc một người.
  */
 export function ReportOverview() {
@@ -93,7 +110,7 @@ export function ReportOverview() {
       <PageHeader
         icon={LayoutDashboard}
         title="Tổng quan"
-        description="Số liệu quảng cáo theo tháng, nhiều tháng hoặc cả năm: chi tiêu, mess, data, các chỉ số và biểu đồ."
+        description="Số liệu quảng cáo theo ngày, tuần, tháng, nhiều tháng hoặc cả năm: chi tiêu, mess, data, mục tiêu và về đích."
       />
       <CatalogGate>
         <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
@@ -126,11 +143,30 @@ function OverviewBody() {
   const [pickedMonths, setPickedMonths] = useState<string[] | null>(focusDay ? [focusDay.slice(0, 7)] : null);
   const [staffFilter, setStaffFilter] = useState(params.get("nv") ?? ALL);
   const [metricKey, setMetricKey] = useState<MetricKey>("spend");
+  // Lọc theo tuần / ngày (null = cả các tháng đang chọn).
+  const [range, setRange] = useState<DayRange | null>(null);
+  const pickMonths = (next: string[]) => {
+    setPickedMonths(next);
+    setRange(null);
+  };
+  const pickRange = (next: DayRange | null) => {
+    if (!next) {
+      setRange(null);
+      return;
+    }
+    const covered = monthsBetween(next.from.slice(0, 7), next.to.slice(0, 7));
+    setPickedMonths(covered);
+    const wholeMonth = covered.length === 1 && next.from === firstDayOf(covered[0]) && next.to === lastDayOf(covered[0]);
+    setRange(wholeMonth ? null : next);
+  };
 
   const months = useMemo(() => pickedMonths ?? (today ? [today.slice(0, 7)] : []), [pickedMonths, today]);
-  // Kỳ để so (tháng trước / các tháng liền trước / năm trước) — tải luôn để so trên thẻ và biểu đồ.
-  const prev = useMemo(() => previousOf(months, today), [months, today]);
-  const from = months.length > 0 ? firstDayOf(prev ? prev.months[0] : months[0]) : "";
+  // Kỳ để so (tháng trước / các tháng liền trước / năm trước; lọc ngày thì khoảng liền trước cùng độ dài) — tải
+  // luôn để so trên thẻ và biểu đồ.
+  const prevMonths = useMemo(() => previousOf(months, today), [months, today]);
+  const prevRange = useMemo(() => (range ? previousRange(range.from, range.to, today) : null), [range, today]);
+  const monthsFrom = months.length > 0 ? firstDayOf(prevMonths ? prevMonths.months[0] : months[0]) : "";
+  const from = prevRange && prevRange.from < monthsFrom ? prevRange.from : monthsFrom;
   const to = months.length > 0 ? lastDayOf(months.at(-1) ?? months[0]) : "";
   const { state, reload } = useAdReports(from, to);
   const thisYear = Number((today || "2026").slice(0, 4));
@@ -141,7 +177,10 @@ function OverviewBody() {
     [state, catalogs.assignments],
   );
   const monthSet = useMemo(() => new Set(months), [months]);
-  const keep = useMemo(() => (day: string) => monthSet.has(day.slice(0, 7)), [monthSet]);
+  const keep = useMemo(
+    () => (range ? (day: string) => day >= range.from && day <= range.to : (day: string) => monthSet.has(day.slice(0, 7))),
+    [monthSet, range],
+  );
 
   const me =
     scope.isAdsStaff && staff.status === "ok"
@@ -168,17 +207,24 @@ function OverviewBody() {
 
   const single = months.length === 1 ? months[0] : null;
   const metricTabs = <MetricTabs value={metricKey} onChange={setMetricKey} />;
-  const periodName = single ? monthLabel(single) : monthsLabel(months, today);
+  const periodName = range ? rangeLabel(range) : single ? monthLabel(single) : monthsLabel(months, today);
   const pick = (keepDay: (day: string) => boolean) => new Map([...allByDay].filter(([day]) => keepDay(day)));
   const curByDay = pick(keep);
+  const prev = prevRange ?? prevMonths;
   const prevByDay = prev ? pick(prev.keep) : null;
   const current = [...curByDay.values()].reduce(add, zero());
   const previous = prevByDay ? [...prevByDay.values()].reduce(add, zero()) : null;
   const thisMonth = today.slice(0, 7);
   const curByMonth = totalsByMonth(curByDay);
-  const spark = single
-    ? monthDays(single).filter((d) => d <= today).map((d) => curByDay.get(d) ?? zero())
+  // Các ngày đang xem (lọc ngày, hoặc cả một tháng); null = nhiều tháng.
+  const viewDays = range ? daysBetween(range.from, range.to) : single ? monthDays(single) : null;
+  const periodFrom = range ? range.from : firstDayOf(months[0] ?? thisMonth);
+  const periodTo = range ? range.to : lastDayOf(months.at(-1) ?? thisMonth);
+  const spark = viewDays
+    ? viewDays.filter((d) => d <= today).map((d) => curByDay.get(d) ?? zero())
     : months.map((m) => curByMonth.get(m) ?? zero());
+  const avatarOf = (p: { user_id: string | null }) =>
+    catalogs.staff.find((s) => s.user_id === p.user_id)?.avatar_url ?? null;
 
   // Mục tiêu tháng (chỉ khi xem một tháng) và cảnh báo.
   const targets = targetsState.status === "ready" ? targetsState.targets : null;
@@ -207,7 +253,7 @@ function OverviewBody() {
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
-        <MonthsPicker value={months} today={today} years={years} onChange={setPickedMonths} />
+        <MonthsPicker value={months} today={today} years={years} onChange={pickMonths} />
         {scope.managesMarketing && (
           <Select value={person ? person.id : ALL} onValueChange={setStaffFilter}>
             <SelectTrigger className="w-60" aria-label="Lọc theo nhân viên quảng cáo">
@@ -225,8 +271,13 @@ function OverviewBody() {
           </Select>
         )}
         {single && today && single !== today.slice(0, 7) && (
-          <Button variant="ghost" onClick={() => setPickedMonths([today.slice(0, 7)])}>
+          <Button variant="ghost" onClick={() => pickMonths([today.slice(0, 7)])}>
             Về tháng này
+          </Button>
+        )}
+        {range && !single && (
+          <Button variant="ghost" onClick={() => setRange(null)}>
+            Bỏ lọc ngày ({rangeLabel(range)})
           </Button>
         )}
         {scope.managesMarketing && (
@@ -252,6 +303,7 @@ function OverviewBody() {
           </Button>
         )}
       </div>
+      {single && today && <DayFilter month={single} today={today} range={range} onChange={pickRange} />}
       {revenueOpen && (
         <RevenueDialog
           people={catalogs.adsStaff}
@@ -296,39 +348,66 @@ function OverviewBody() {
               onEditTargets={editTargets ? () => setTargetsOpen(true) : undefined}
             />
           )}
+          {single && (
+            <WeekGoals
+              month={single}
+              today={today}
+              entries={entries}
+              people={catalogs.adsStaff}
+              assignments={catalogs.assignments}
+              avatarOf={avatarOf}
+              staffId={staffId}
+              who={person ? person.full_name : "cả công ty"}
+              targetsState={targetsState}
+              range={range}
+              onPickRange={pickRange}
+            />
+          )}
           <KpiCards
-            title={`${single ? "Tổng " + lowerFirst(periodName) : periodName} — ${person ? person.full_name : "tất cả nhân viên"}`}
+            title={`${single && !range ? "Tổng " + lowerFirst(periodName) : periodName} — ${person ? person.full_name : "tất cả nhân viên"}`}
             current={current}
             previous={previous}
             compareLabel={prev?.label}
             spark={spark}
-            oneMonth={single !== null}
+            oneMonth={single !== null && !range}
           />
-          {single ? (
-            <DailyChart
-              month={single}
-              byDay={curByDay}
-              previousByDay={prev ? allByDay : null}
-              previousMonth={prev?.months[0] ?? null}
-              target={target}
-              metricTabs={metricTabs}
-              metricKey={metricKey}
-            />
+          {viewDays ? (
+            viewDays.length > 1 && (
+              <DailyChart
+                days={viewDays}
+                title={lowerFirst(periodName)}
+                currentLabel={periodName}
+                byDay={curByDay}
+                previousByDay={prev ? allByDay : null}
+                previousDays={
+                  prevRange && range
+                    ? viewDays.map((_, i) => shiftDay(prevRange.from, i))
+                    : prevMonths && single
+                      ? monthDays(prevMonths.months[0])
+                      : null
+                }
+                previousLabel={prevRange ? `Kỳ trước (${prevRange.label})` : prevMonths ? monthLabel(prevMonths.months[0]) : ""}
+                target={target}
+                metricTabs={metricTabs}
+                metricKey={metricKey}
+              />
+            )
           ) : (
             <PeriodSummary
               months={months}
               byDay={curByDay}
-              prev={prev}
+              prev={prevMonths}
               prevByDay={prevByDay}
               metricTabs={metricTabs}
               metricKey={metricKey}
-              onPickMonth={(month) => setPickedMonths([month])}
+              onPickMonth={(month) => pickMonths([month])}
             />
           )}
-          {single && person && (
+          {viewDays && person && (
             <PersonMonth
               person={person}
-              month={single}
+              days={viewDays}
+              label={periodName}
               today={today}
               reports={state.reports}
               dailyData={state.data}
@@ -343,7 +422,9 @@ function OverviewBody() {
           {!person && (
             <StaffSection
               periodName={periodName}
-              months={months}
+              from={periodFrom}
+              to={periodTo}
+              oneMonth={single !== null && !range}
               people={catalogs.adsStaff}
               byStaff={totalsByStaff(entries, keep)}
               assignments={catalogs.assignments}
@@ -371,48 +452,57 @@ const targetLine = (key: MetricKey, target: TargetValues | null) => {
   return cap ? { value: cap, label: "Mục tiêu tối đa" } : null;
 };
 
-/** Biểu đồ theo ngày của một tháng, kèm nét đứt của tháng trước (cùng ngày) và đường mục tiêu. */
+/**
+ * Biểu đồ theo ngày (một tháng, một tuần hay một khoảng ngày), kèm nét đứt của kỳ trước (ngày tương ứng) và đường
+ * mục tiêu. `previousDays[i]` là ngày của kỳ trước ứng với `days[i]`.
+ */
 function DailyChart({
-  month,
+  days,
+  title,
+  currentLabel,
   byDay,
   previousByDay,
-  previousMonth,
+  previousDays,
+  previousLabel,
   target,
   metricTabs,
   metricKey,
 }: {
-  month: string;
+  days: string[];
+  title: string;
+  currentLabel: string;
   byDay: Map<string, Totals>;
   previousByDay: Map<string, Totals> | null;
-  previousMonth: string | null;
+  previousDays: string[] | null;
+  previousLabel: string;
   target: TargetValues | null;
   metricTabs: React.ReactNode;
   metricKey: MetricKey;
 }) {
   const metric = metricOf(metricKey);
-  const days = monthDays(month);
+  const manyMonths = new Set(days.map((d) => d.slice(0, 7))).size > 1;
   const points = days.map((day) => ({
     key: day,
-    label: String(Number(day.slice(8))),
+    label: manyMonths ? formatDay(day).slice(0, 5) : String(Number(day.slice(8))),
     title: formatDay(day),
     totals: byDay.get(day) ?? zero(),
   }));
-  const prevDays = previousMonth ? monthDays(previousMonth) : [];
+  const prevDays = previousDays ?? [];
   const previous =
-    previousByDay && previousMonth
+    previousByDay && previousDays
       ? {
-          label: monthLabel(previousMonth),
+          label: previousLabel,
           totals: days.map((_, i) => (prevDays[i] ? (previousByDay.get(prevDays[i]) ?? zero()) : null)),
           titles: days.map((_, i) => (prevDays[i] ? formatDay(prevDays[i]) : "")),
         }
       : undefined;
   return (
-    <ChartCard title={`${metric.label} theo ngày — ${lowerFirst(monthLabel(month))}`} actions={metricTabs}>
+    <ChartCard title={`${metric.label} theo ngày — ${title}`} actions={metricTabs}>
       <TrendChart
         points={points}
         metric={metric}
         height="h-64"
-        currentLabel={monthLabel(month)}
+        currentLabel={currentLabel}
         previous={previous}
         target={targetLine(metricKey, target)}
       />
@@ -522,7 +612,9 @@ function PeriodSummary({
 
 function StaffSection({
   periodName,
-  months,
+  from,
+  to,
+  oneMonth,
   people,
   byStaff,
   assignments,
@@ -531,7 +623,9 @@ function StaffSection({
   onPick,
 }: {
   periodName: string;
-  months: string[];
+  from: string;
+  to: string;
+  oneMonth: boolean;
   people: AdsStaff[];
   byStaff: Map<string | null, Totals>;
   assignments: AdAccountAssignment[];
@@ -541,8 +635,6 @@ function StaffSection({
 }) {
   const metric = metricOf(metricKey);
   // Người có TKQC trong khoảng đã chọn hoặc đã có số; người đã nghỉ mà không có số thì bỏ.
-  const from = firstDayOf(months[0]);
-  const to = lastDayOf(months.at(-1) ?? months[0]);
   const accountCount = (id: string) =>
     new Set(
       assignments
@@ -554,7 +646,6 @@ function StaffSection({
     .filter((row) => row.accounts > 0 || !isEmpty(row.totals));
   const unowned = byStaff.get(null);
   const total = [...byStaff.values()].reduce(add, zero());
-  const oneMonth = months.length === 1;
 
   return (
     <>
@@ -755,7 +846,8 @@ function buildGroup(
 
 function PersonMonth({
   person,
-  month,
+  days,
+  label,
   today,
   reports,
   dailyData,
@@ -767,7 +859,10 @@ function PersonMonth({
   onSaved,
 }: {
   person: AdsStaff;
-  month: string;
+  /** Các ngày của bảng: cả một tháng, một tuần hay một khoảng ngày. */
+  days: string[];
+  /** "Tháng 11/2026", "Tuần 2 (09/11 – 15/11/2026)"… */
+  label: string;
   today: string;
   reports: AdDailyReport[];
   /** null = chưa chạy file 010. */
@@ -780,7 +875,6 @@ function PersonMonth({
   focusDay: string | null;
   onSaved: () => Promise<void>;
 }) {
-  const days = useMemo(() => monthDays(month), [month]);
   const group = useMemo(
     () => buildGroup(person, days, reports, dailyData ?? [], accounts, assignments),
     [person, days, reports, dailyData, accounts, assignments],
@@ -792,11 +886,12 @@ function PersonMonth({
     <>
       {group.accounts.length === 0 && isEmpty(total) ? (
         <ReadOnlyNote>
-          {monthLabel(month)} {person.full_name} không có TKQC nào nên chưa có số liệu.
+          {label} {person.full_name} không có TKQC nào nên chưa có số liệu.
         </ReadOnlyNote>
       ) : (
         <MonthTable
           group={group}
+          totalLabel={/^Tháng/.test(label) ? "Tổng tháng" : "Tổng"}
           today={today}
           dataReady={dailyData !== null}
           canAlwaysEdit={canAlwaysEdit}
@@ -822,6 +917,7 @@ function PersonMonth({
 
 function MonthTable({
   group,
+  totalLabel,
   today,
   dataReady,
   canAlwaysEdit,
@@ -830,6 +926,7 @@ function MonthTable({
   onEdit,
 }: {
   group: Group;
+  totalLabel: string;
   today: string;
   /** false = chưa chạy file 010: không nhắc "thiếu Data". */
   dataReady: boolean;
@@ -883,7 +980,7 @@ function MonthTable({
         </thead>
         <tbody>
           <tr className="border-b bg-accent font-semibold text-accent-foreground">
-            <td className="sticky left-0 z-10 bg-accent px-3 py-2 text-left whitespace-nowrap">Tổng tháng</td>
+            <td className="sticky left-0 z-10 bg-accent px-3 py-2 text-left whitespace-nowrap">{totalLabel}</td>
             {group.accounts.map((account) => (
               <td key={account.id} className={TD}>
                 {formatNumber(spendTotal(account))}

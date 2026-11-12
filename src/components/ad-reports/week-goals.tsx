@@ -1,0 +1,598 @@
+"use client";
+
+import { CheckCircle2, Clock3, Flag, Minus, XCircle } from "lucide-react";
+import { useMemo, useState } from "react";
+import { StaffAvatar } from "@/components/staff/staff-avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  WEEKDAYS,
+  dailyGoals,
+  daysBetween,
+  firstDayOf,
+  goalOf,
+  judge,
+  lastDayOf,
+  phaseOf,
+  sumDays,
+  totalsByDay,
+  weekdayOf,
+  weeksOfMonth,
+  type DayGoal,
+  type Entry,
+  type KpiCheck,
+  type Phase,
+  type TargetValues,
+  type Totals,
+  type Verdict,
+  type Week,
+} from "@/lib/ad-reports/aggregate";
+import { formatDay, monthLabel } from "@/lib/ad-reports/dates";
+import { formatNumber } from "@/lib/ad-reports/number";
+import { targetFor } from "@/lib/ad-reports/targets";
+import type { AdAccountAssignment, AdsStaff } from "@/lib/catalog/types";
+import { cn } from "@/lib/utils";
+import { GlassBar, TONE_TEXT, type Tone } from "./glass";
+import { RangePicker, type DayRange } from "./period-picker";
+import type { TargetsState } from "./targets";
+
+/**
+ * Về đích theo tuần & ngày (như sheet "Báo cáo tuần"): mục tiêu tháng chia đều xuống từng ngày, tuần (T2 → CN, cắt ở
+ * đầu / cuối tháng) = cộng các ngày. Về đích = đủ số điện thoại VÀ giá số / giá mess không vượt mức tối đa.
+ * "Cá nhân về đích thì tổ chức về đích — mỗi ngày về đích thì cả tuần về đích, cả tuần về đích thì cả tháng về đích."
+ *   • Quản lý xem tất cả: bảng mỗi người một dòng × mỗi tuần một cột (+ dòng cả công ty), bấm tên để xem lịch từng ngày.
+ *   • Một người (nhân viên tự xem, hoặc quản lý lọc một người): lịch từng ngày của người đó.
+ * Bấm vào một tuần / một ngày để lọc cả trang Tổng quan theo khoảng đó.
+ */
+
+type Line = {
+  key: string;
+  name: string;
+  avatar: string | null;
+  team: boolean;
+  target: TargetValues | null;
+  goals: Map<string, DayGoal>;
+  byDay: Map<string, Totals>;
+};
+
+type Result = { totals: Totals; goal: DayGoal; verdict: Verdict; phase: Phase; tone: Tone; fill: number };
+
+const isCap = (c: KpiCheck) => c.key === "costPerData" || c.key === "costPerMessage";
+
+/** Kết quả của một dòng trên các ngày `days` (một ngày, một tuần hay cả tháng). */
+function resultOf(line: Line, days: string[], today: string): Result {
+  const phase = phaseOf(days[0], days.at(-1) ?? days[0], today);
+  const passed = days.filter((d) => d <= today);
+  const totals = sumDays(line.byDay, passed);
+  const goal = goalOf(line.goals, days);
+  const verdict = judge(totals, goal, line.target);
+  let tone: Tone;
+  if (phase === "future" || verdict.met === null) tone = "none";
+  else if (verdict.met) tone = "good";
+  else if (phase === "past") tone = "bad";
+  else {
+    // Đang chạy: giá đang vượt, hoặc số điện thoại chậm hơn 15% so với phần mục tiêu tới hôm nay → nhắc (vàng).
+    const expected = goalOf(line.goals, passed).data;
+    const slow = expected !== null && totals.data < expected * 0.85;
+    tone = verdict.checks.some((c) => isCap(c) && !c.met) || slow ? "warning" : "running";
+  }
+  const fill = goal.data ? totals.data / goal.data : verdict.met ? 1 : 0;
+  return { totals, goal, verdict, phase, tone, fill };
+}
+
+const money = (value: number) => `${formatNumber(value)}đ`;
+
+/** Chữ hiện khi rê chuột: từng chỉ tiêu đạt / chưa. */
+function describe(name: string, label: string, r: Result) {
+  if (r.phase === "future") {
+    return `${name} — ${label}: chưa tới${r.goal.data ? ` (cần ${formatNumber(r.goal.data)} số)` : ""}`;
+  }
+  const head =
+    r.verdict.met === null
+      ? r.totals.spend === 0 && r.totals.data === 0
+        ? "chưa có số để xét"
+        : "chưa đặt mục tiêu số điện thoại / giá"
+      : r.verdict.met
+        ? "VỀ ĐÍCH ✓"
+        : r.phase === "current"
+          ? "đang chạy"
+          : "chưa về đích ✗";
+  const lines = r.verdict.checks.map((c) => {
+    const value = c.actual === null ? "chưa có số" : c.key === "data" ? formatNumber(c.actual) : money(c.actual);
+    const goal = c.key === "data" ? formatNumber(c.goal) : money(c.goal);
+    const rule = c.kind === "min" ? `cần ≥ ${goal}` : `tối đa ${goal}`;
+    return `• ${c.label}: ${value} (${rule}) ${c.met ? "✓" : "✗"}${c.key === "budget" ? " — chỉ nhắc" : ""}`;
+  });
+  if (r.verdict.checks.length === 0) lines.push(`• Số điện thoại: ${formatNumber(r.totals.data)}`);
+  return [`${name} — ${label}: ${head}`, ...lines].join("\n");
+}
+
+function StatusIcon({ tone, phase }: { tone: Tone; phase: Phase }) {
+  const size = "size-3.5 shrink-0";
+  if (phase === "future") return <Minus className={cn(size, "text-muted-foreground/50")} aria-label="Chưa tới" />;
+  if (tone === "good") return <CheckCircle2 className={cn(size, "text-emerald-500")} aria-label="Về đích" />;
+  if (tone === "bad") return <XCircle className={cn(size, "text-rose-500")} aria-label="Chưa về đích" />;
+  if (tone === "running") return <Clock3 className={cn(size, "text-sky-500")} aria-label="Đang chạy" />;
+  if (tone === "warning") return <Clock3 className={cn(size, "text-amber-500")} aria-label="Đang chậm" />;
+  return <Minus className={cn(size, "text-muted-foreground/50")} aria-label="Chưa đặt mục tiêu" />;
+}
+
+const OUTLINE: Record<Tone, string> = {
+  good: "outline-emerald-400/70",
+  bad: "outline-rose-400/60",
+  warning: "outline-amber-400/70",
+  running: "outline-sky-400/60",
+  none: "outline-transparent",
+};
+
+/** Số điện thoại / mục tiêu gọn: "12/34", tuần chưa tới: "cần 238". */
+function DataText({ r }: { r: Result }) {
+  if (r.phase === "future") {
+    return <span className="text-muted-foreground">{r.goal.data ? `cần ${formatNumber(r.goal.data)}` : "—"}</span>;
+  }
+  return (
+    <span className="tabular-nums">
+      <span className="font-semibold">{formatNumber(r.totals.data)}</span>
+      {r.goal.data ? <span className="text-muted-foreground">/{formatNumber(r.goal.data)}</span> : <span className="text-muted-foreground"> số</span>}
+    </span>
+  );
+}
+
+/** Ô kết quả của một tuần / cả tháng. */
+function ResultCell({
+  r,
+  title,
+  selected,
+  onClick,
+  extra,
+}: {
+  r: Result;
+  title: string;
+  selected?: boolean;
+  onClick?: () => void;
+  extra?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={cn(
+        "glass-soft grid w-full min-w-[5.5rem] gap-1 rounded-xl px-2 py-1.5 text-left outline-1 -outline-offset-1 transition-transform hover:-translate-y-px",
+        OUTLINE[r.tone],
+        selected && "outline-2 outline-sky-500",
+        r.phase === "future" && "opacity-60",
+      )}
+    >
+      <span className="flex items-center justify-between gap-1 text-xs">
+        <DataText r={r} />
+        <StatusIcon tone={r.tone} phase={r.phase} />
+      </span>
+      <GlassBar size="sm" fill={r.fill} tone={r.tone} label={title.split("\n")[0]} />
+      {extra}
+    </button>
+  );
+}
+
+/** Ô một ngày trên lịch. */
+function DayCell({ day, r, name, selected, onClick }: { day: string; r: Result; name: string; selected: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={describe(name, `ngày ${formatDay(day)}`, r)}
+      className={cn(
+        "glass-soft grid h-[3.6rem] content-between rounded-xl px-1.5 pt-1 pb-1.5 text-left outline-1 -outline-offset-1 transition-transform hover:-translate-y-px",
+        OUTLINE[r.tone],
+        selected && "outline-2 outline-sky-500",
+        r.phase === "future" && "opacity-55",
+      )}
+    >
+      <span className="flex items-center justify-between text-[10px] text-muted-foreground tabular-nums">
+        {Number(day.slice(8))}
+        <StatusIcon tone={r.tone} phase={r.phase} />
+      </span>
+      <span className="truncate text-xs">
+        <DataText r={r} />
+      </span>
+      <GlassBar size="sm" fill={r.fill} tone={r.tone} label={`Ngày ${formatDay(day)}`} />
+    </button>
+  );
+}
+
+const sameRange = (range: DayRange | null, from: string, to: string) => range?.from === from && range?.to === to;
+const weekSpan = (w: Week) => `${w.from.slice(8)}–${formatDay(w.to).slice(0, 5)}`;
+
+/** Lịch từng ngày (T2 → CN) của một dòng, cột cuối = cả tuần, dưới cùng = cả tháng. */
+function DayCalendar({
+  line,
+  weeks,
+  today,
+  range,
+  onPickRange,
+}: {
+  line: Line;
+  weeks: Week[];
+  today: string;
+  range: DayRange | null;
+  onPickRange: (range: DayRange | null) => void;
+}) {
+  const days = weeks.flatMap((w) => w.days);
+  const dayResults = days.map((day) => ({ day, r: resultOf(line, [day], today) }));
+  const judgedDays = dayResults.filter((d) => d.r.phase === "past" && d.r.verdict.met !== null);
+  const weekResults = weeks.map((w) => ({ w, r: resultOf(line, w.days, today) }));
+  const judgedWeeks = weekResults.filter((x) => x.r.phase === "past" && x.r.verdict.met !== null);
+  const month = resultOf(line, days, today);
+  // Hàng lịch = tuần lịch T2 → CN; tuần báo cáo gộp (vd 1–8/11) chiếm 2 hàng, ô "Cả tuần" kéo dài theo.
+  const rowOf = new Map<string, number>();
+  let row = 0;
+  for (const [i, day] of days.entries()) {
+    if (i > 0 && weekdayOf(day) === 0) row += 1;
+    rowOf.set(day, row);
+  }
+
+  return (
+    <div className="grid gap-2">
+      <div className="overflow-x-auto pb-1">
+        <div className="grid min-w-[36rem] grid-cols-[repeat(7,minmax(0,1fr))_minmax(6.5rem,1.3fr)] gap-1.5">
+          {WEEKDAYS.map((d, i) => (
+            <div key={d} className="text-center text-[11px] font-medium text-muted-foreground" style={{ gridRow: 1, gridColumn: i + 1 }}>
+              {d}
+            </div>
+          ))}
+          <div className="text-center text-[11px] font-medium text-muted-foreground" style={{ gridRow: 1, gridColumn: 8 }}>
+            Cả tuần
+          </div>
+          {dayResults.map(({ day, r }) => (
+            <div key={day} style={{ gridRow: (rowOf.get(day) ?? 0) + 2, gridColumn: weekdayOf(day) + 1 }}>
+              <DayCell
+                day={day}
+                r={r}
+                name={line.name}
+                selected={sameRange(range, day, day)}
+                onClick={() => onPickRange(sameRange(range, day, day) ? null : { from: day, to: day })}
+              />
+            </div>
+          ))}
+          {weekResults.map(({ w, r }) => {
+            const first = rowOf.get(w.from) ?? 0;
+            const span = (rowOf.get(w.to) ?? first) - first + 1;
+            return (
+              <div key={w.index} className="grid" style={{ gridRow: `${first + 2} / span ${span}`, gridColumn: 8 }}>
+                <ResultCell
+                  r={r}
+                  title={describe(line.name, `tuần ${w.index} (${weekSpan(w)})`, r)}
+                  selected={sameRange(range, w.from, w.to)}
+                  onClick={() => onPickRange(sameRange(range, w.from, w.to) ? null : { from: w.from, to: w.to })}
+                  extra={
+                    <span className="text-[10px] text-muted-foreground tabular-nums">
+                      Tuần {w.index} · {weekSpan(w)}
+                    </span>
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+        <span>
+          <b className="tabular-nums">
+            {judgedDays.filter((d) => d.r.verdict.met).length}/{judgedDays.length}
+          </b>{" "}
+          ngày về đích
+        </span>
+        <span>
+          <b className="tabular-nums">
+            {judgedWeeks.filter((x) => x.r.verdict.met).length}/{judgedWeeks.length}
+          </b>{" "}
+          tuần về đích
+        </span>
+        <span className={cn("flex items-center gap-1", TONE_TEXT[month.tone])}>
+          <StatusIcon tone={month.tone} phase={month.phase} />
+          Cả tháng:{" "}
+          {month.verdict.met === null
+            ? "chưa đặt mục tiêu"
+            : month.verdict.met
+              ? "về đích"
+              : month.phase === "past"
+                ? "chưa về đích"
+                : `đang chạy — ${formatNumber(month.totals.data)}${month.goal.data ? `/${formatNumber(month.goal.data)}` : ""} số`}
+        </span>
+        <span className="text-muted-foreground">(chỉ tính ngày / tuần đã qua)</span>
+      </p>
+    </div>
+  );
+}
+
+export function WeekGoals({
+  month,
+  today,
+  entries,
+  people,
+  assignments,
+  avatarOf,
+  staffId,
+  who,
+  targetsState,
+  range,
+  onPickRange,
+}: {
+  month: string;
+  today: string;
+  entries: Entry[];
+  /** Mọi nhân viên Ads (để dựng bảng khi xem tất cả). */
+  people: AdsStaff[];
+  assignments: AdAccountAssignment[];
+  avatarOf: (p: AdsStaff) => string | null;
+  /** Đang xem một người (null = tất cả nhân viên / cả công ty). */
+  staffId: string | null;
+  who: string;
+  targetsState: TargetsState;
+  range: DayRange | null;
+  onPickRange: (range: DayRange | null) => void;
+}) {
+  const [focus, setFocus] = useState<string>("team");
+  const weeks = useMemo(() => weeksOfMonth(month), [month]);
+  const targets = targetsState.status === "ready" ? targetsState.targets : null;
+
+  const lines = useMemo(() => {
+    if (!targets) return [];
+    const from = firstDayOf(month);
+    const to = lastDayOf(month);
+    const monthDays = new Set(daysBetween(from, to));
+    const make = (p: AdsStaff): Line => {
+      const target = targetFor(targets, p.id, month);
+      return {
+        key: p.id,
+        name: p.full_name,
+        avatar: avatarOf(p),
+        team: false,
+        target,
+        goals: dailyGoals(target, month),
+        byDay: totalsByDay(entries, p.id, (d) => monthDays.has(d)),
+      };
+    };
+    if (staffId) {
+      const p = people.find((x) => x.id === staffId);
+      return p ? [make(p)] : [];
+    }
+    // Người có TKQC trong tháng hoặc đã có số.
+    const shown = people
+      .filter(
+        (p) =>
+          assignments.some((x) => x.ads_staff_id === p.id && x.from_date <= to && (!x.to_date || x.to_date >= from)) ||
+          entries.some((e) => e.staffId === p.id && monthDays.has(e.day)),
+      )
+      .map(make);
+    // Cả công ty: mục tiêu dòng "Cả nhóm"; chưa đặt số / ngân sách chung thì cộng của từng người.
+    const team = targetFor(targets, null, month);
+    const sum = (pick: (t: TargetValues) => number | null | undefined) =>
+      shown.reduce((s, l) => s + (l.target ? (pick(l.target) ?? 0) : 0), 0) || null;
+    const teamTarget: TargetValues | null =
+      team || shown.some((l) => l.target)
+        ? {
+            monthly_budget: team?.monthly_budget ?? sum((t) => t.monthly_budget),
+            monthly_data: team?.monthly_data ?? sum((t) => t.monthly_data),
+            max_cost_per_data: team?.max_cost_per_data ?? null,
+            max_cost_per_message: team?.max_cost_per_message ?? null,
+          }
+        : null;
+    const teamLine: Line = {
+      key: "team",
+      name: "Cả công ty",
+      avatar: null,
+      team: true,
+      target: teamTarget,
+      goals: dailyGoals(teamTarget, month),
+      byDay: totalsByDay(entries, null, (d) => monthDays.has(d)),
+    };
+    return [teamLine, ...shown];
+  }, [targets, month, staffId, people, assignments, entries, avatarOf]);
+
+  if (targetsState.status === "loading") return <Skeleton className="h-72 w-full rounded-3xl" />;
+  if (!targets || lines.length === 0) return null;
+
+  const focused = lines.find((l) => l.key === focus) ?? lines[0];
+  const anyTarget = lines.some((l) => l.target?.monthly_data || l.target?.max_cost_per_data || l.target?.max_cost_per_message);
+  const staffLines = lines.filter((l) => !l.team);
+  const monthDays = weeks.flatMap((w) => w.days);
+
+  return (
+    <section className="glass-stage grid gap-3 overflow-hidden rounded-3xl border border-white/70 p-3 sm:p-4 dark:border-white/10">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="grid gap-1">
+          <h2 className="flex items-center gap-2 text-base font-semibold">
+            <span className="glass flex size-7 items-center justify-center rounded-full">
+              <Flag className="size-3.5" />
+            </span>
+            Về đích theo tuần & ngày — {who} · {monthLabel(month).toLowerCase()}
+          </h2>
+          <p className="max-w-3xl text-[11px] text-muted-foreground">
+            Mục tiêu tháng chia đều cho từng ngày; tuần (thứ Hai → Chủ nhật) = cộng các ngày. Về đích = đủ số điện thoại
+            và giá số, giá mess không vượt mức tối đa (vượt ngân sách chỉ nhắc). Rê chuột để xem chi tiết; bấm một tuần hay
+            một ngày để lọc cả trang theo khoảng đó.
+          </p>
+        </div>
+        <span className="glass-soft rounded-full px-3 py-1 text-[11px] font-medium italic">
+          Cá nhân về đích → tổ chức về đích · Ngày về đích → tuần về đích → tháng về đích
+        </span>
+      </div>
+
+      {!anyTarget ? (
+        <p className="glass-soft rounded-2xl px-4 py-2.5 text-sm text-muted-foreground">
+          {monthLabel(month)} chưa có mục tiêu số điện thoại / giá số nên chưa xét về đích — dưới đây chỉ là số thực đạt.
+        </p>
+      ) : (
+        !lines.some((l) => l.target?.monthly_data) && (
+          <p className="glass-soft rounded-2xl px-4 py-2.5 text-sm text-amber-800 dark:text-amber-200">
+            {monthLabel(month)} chưa đặt mục tiêu <b>số điện thoại</b> nên đang chỉ xét giá số / giá mess. Đặt “Số điện thoại
+            (data) / tháng” trong nút Mục tiêu để biết mỗi ngày, mỗi tuần cần bao nhiêu số.
+          </p>
+        )
+      )}
+
+      {lines.length > 1 && (
+        <div className="overflow-x-auto">
+          <table className="w-full border-separate border-spacing-1.5">
+            <thead>
+              <tr>
+                <th className="px-1 text-left text-[11px] font-medium text-muted-foreground">Bấm tên để xem từng ngày</th>
+                {weeks.map((w) => (
+                  <th key={w.index} className="px-1 text-left text-[11px] font-medium text-muted-foreground">
+                    <button
+                      type="button"
+                      className={cn("grid text-left hover:text-foreground", sameRange(range, w.from, w.to) && "text-sky-600 dark:text-sky-400")}
+                      onClick={() => onPickRange(sameRange(range, w.from, w.to) ? null : { from: w.from, to: w.to })}
+                    >
+                      <span className="font-semibold">Tuần {w.index}</span>
+                      <span className="tabular-nums">{weekSpan(w)}</span>
+                    </button>
+                  </th>
+                ))}
+                <th className="px-1 text-left text-[11px] font-medium text-muted-foreground">
+                  <span className="grid">
+                    <span className="font-semibold">Cả tháng</span>
+                    <span className="tabular-nums">{monthLabel(month).slice(6)}</span>
+                  </span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((line) => {
+                const cells = weeks.map((w) => {
+                  const r = resultOf(line, w.days, today);
+                  // Dòng cả công ty: bao nhiêu người về đích tuần đó.
+                  const judged =
+                    line.team && r.phase !== "future"
+                      ? staffLines.map((p) => resultOf(p, w.days, today)).filter((x) => x.verdict.met !== null)
+                      : [];
+                  const extra =
+                    judged.length > 0 ? (
+                      <span className="text-[10px] text-muted-foreground tabular-nums">
+                        {judged.filter((x) => x.verdict.met).length}/{judged.length} người về đích
+                      </span>
+                    ) : null;
+                  return { w, r, extra };
+                });
+                const whole = resultOf(line, monthDays, today);
+                return (
+                  <tr key={line.key}>
+                    <td className="min-w-36">
+                      <button
+                        type="button"
+                        onClick={() => setFocus(line.key)}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm transition-colors hover:bg-white/50 dark:hover:bg-white/5",
+                          focused.key === line.key && "glass-soft",
+                          line.team && "font-semibold",
+                        )}
+                      >
+                        {line.team ? (
+                          <span className="flex size-6 items-center justify-center rounded-full bg-linear-to-br from-cyan-400 to-violet-500 text-white">
+                            <Flag className="size-3" />
+                          </span>
+                        ) : (
+                          <StaffAvatar name={line.name} url={line.avatar} className="size-6 text-[10px]" />
+                        )}
+                        <span className="truncate">{line.name}</span>
+                      </button>
+                    </td>
+                    {cells.map(({ w, r, extra }) => (
+                      <td key={w.index}>
+                        <ResultCell
+                          r={r}
+                          title={describe(line.name, `tuần ${w.index} (${weekSpan(w)})`, r)}
+                          selected={sameRange(range, w.from, w.to)}
+                          onClick={() => onPickRange(sameRange(range, w.from, w.to) ? null : { from: w.from, to: w.to })}
+                          extra={extra}
+                        />
+                      </td>
+                    ))}
+                    <td>
+                      <ResultCell r={whole} title={describe(line.name, monthLabel(month).toLowerCase(), whole)} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="glass grid gap-2 rounded-2xl p-3">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          {focused.team ? (
+            <Flag className="size-4 text-muted-foreground" />
+          ) : (
+            <StaffAvatar name={focused.name} url={focused.avatar} className="size-6 text-[10px]" />
+          )}
+          Từng ngày — {focused.name}
+        </div>
+        <DayCalendar line={focused} weeks={weeks} today={today} range={range} onPickRange={onPickRange} />
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+/* Lọc trang theo tuần / ngày                                                                       */
+/* ------------------------------------------------------------------------------------------------ */
+
+/** Nút lọc: Cả tháng · Tuần 1…5 · Hôm qua · Hôm nay · Chọn ngày (lịch). `range` = null → cả tháng. */
+export function DayFilter({
+  month,
+  today,
+  range,
+  onChange,
+}: {
+  month: string;
+  today: string;
+  range: DayRange | null;
+  onChange: (range: DayRange | null) => void;
+}) {
+  const weeks = weeksOfMonth(month);
+  const yesterday = daysBetween(firstDayOf(month), lastDayOf(month)).filter((d) => d < today).at(-1);
+  const chip = (on: boolean) =>
+    cn(
+      "flex h-8 items-center gap-1.5 rounded-full px-3 text-sm whitespace-nowrap transition-colors",
+      on ? "bg-foreground text-background shadow-sm" : "glass-soft hover:brightness-105",
+    );
+  const custom = range !== null && !weeks.some((w) => sameRange(range, w.from, w.to)) && range.from !== range.to;
+  const lastDay = lastDayOf(month);
+
+  return (
+    <div className="glass-stage flex flex-wrap items-center gap-1.5 rounded-2xl border border-white/70 p-1.5 dark:border-white/10" role="group" aria-label="Lọc theo tuần / ngày">
+      <button type="button" className={chip(range === null)} onClick={() => onChange(null)}>
+        Cả tháng
+      </button>
+      {weeks.map((w) => (
+        <button
+          key={w.index}
+          type="button"
+          disabled={w.from > today}
+          className={cn(chip(sameRange(range, w.from, w.to)), w.from > today && "cursor-not-allowed opacity-40")}
+          onClick={() => onChange({ from: w.from, to: w.to })}
+        >
+          Tuần {w.index}
+          <span className="text-xs tabular-nums opacity-70">{weekSpan(w)}</span>
+        </button>
+      ))}
+      {yesterday && (
+        <button type="button" className={chip(sameRange(range, yesterday, yesterday))} onClick={() => onChange({ from: yesterday, to: yesterday })}>
+          Hôm qua
+        </button>
+      )}
+      {month === today.slice(0, 7) && (
+        <button type="button" className={chip(sameRange(range, today, today))} onClick={() => onChange({ from: today, to: today })}>
+          Hôm nay
+        </button>
+      )}
+      <RangePicker
+        label={custom || (range && range.from === range.to) ? "Ngày" : "Chọn ngày"}
+        value={range ?? { from: firstDayOf(month), to: today < lastDay ? today : lastDay }}
+        today={today}
+        onChange={onChange}
+      />
+    </div>
+  );
+}

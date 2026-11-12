@@ -4,7 +4,7 @@ import {
   METRICS, change, checkTargets, compactMetric, daysBetween, entriesOf, formatMetric, funnelCounts, lastDayOf,
   metricOf, monthElapsed, monthsBetween, previousOf, shiftDay, shiftMonth, spikeAlerts, sumDays, totalsByAccount,
   totalsByDay, totalsByMonth, totalsByStaff, totalsByWeekday, weekdayOf, trackPeriods, periodElapsed, trackGoals,
-  scoreBoard, planFor, splitTotal,
+  scoreBoard, planFor, splitTotal, weeksOfMonth, dailyGoals, goalOf, judge, phaseOf, previousRange,
 } from "../src/lib/ad-reports/aggregate.ts";
 
 let passed = 0;
@@ -194,5 +194,48 @@ const tiny = scoreBoard([
 ], 1);
 ok(tiny.length === 1 && tiny[0].id === "big" && tiny[0].score === 100, "người chạy rất ít tiền (2đ ra 5 số) không được xếp hạng", tiny);
 
+console.log("\n== Về đích theo tuần / ngày");
+const span = (w) => `${w.from.slice(8)}-${w.to.slice(8)}`;
+ok(same(weeksOfMonth("2026-10").map(span), ["01-04", "05-11", "12-18", "19-25", "26-31"]), "tuần tháng 10/2026 như sheet (T2 → CN)");
+ok(same(weeksOfMonth("2026-07").map(span), ["01-05", "06-12", "13-19", "20-26", "27-31"]), "tuần tháng 7/2026 như sheet");
+ok(same(weeksOfMonth("2026-02").map((w) => w.days.length), [8, 7, 7, 6]), "tháng 2/2026 (bắt đầu Chủ nhật): ngày 1 gộp vào tuần sau → 4 tuần");
+ok(same(weeksOfMonth("2026-11").map(span), ["01-08", "09-15", "16-22", "23-30"]), "tháng 11/2026: 1/11 (CN) và 30/11 (T2) gộp vào tuần kế bên → 4 tuần");
+ok(same(weeksOfMonth("2026-12").map(span), ["01-06", "07-13", "14-20", "21-27", "28-31"]), "tháng 12/2026: tuần đầu 6 ngày, tuần cuối 4 ngày giữ nguyên");
+ok(weeksOfMonth("2026-10").reduce((s, w) => s + w.days.length, 0) === 31, "cộng số ngày các tuần = số ngày của tháng");
+const dayGoals = dailyGoals({ monthly_budget: 700000000, monthly_data: 1000, max_cost_per_message: null, max_cost_per_data: null }, "2026-11");
+ok(dayGoals.size === 30, "tháng 11 có 30 ngày mục tiêu");
+const allDays = [...dayGoals.keys()];
+const sumGoal = goalOf(dayGoals, allDays);
+ok(sumGoal.data === 1000 && sumGoal.budget === 700000000, "cộng mục tiêu các ngày = mục tiêu tháng", sumGoal);
+ok([...dayGoals.values()].every((g) => g.data === 33 || g.data === 34), "mỗi ngày 33 hoặc 34 số");
+ok([...dayGoals.values()].every((g) => g.budget % 1000 === 0), "ngân sách ngày làm tròn 1.000đ");
+const weekSum = weeksOfMonth("2026-11").reduce((s, w) => s + (goalOf(dayGoals, w.days).data ?? 0), 0);
+ok(weekSum === 1000, "cộng mục tiêu các tuần = mục tiêu tháng", weekSum);
+const noGoal = dailyGoals(null, "2026-11");
+ok(goalOf(noGoal, allDays).data === null && goalOf(noGoal, allDays).budget === null, "chưa đặt mục tiêu → null");
+const capsT = { monthly_budget: null, monthly_data: 1000, max_cost_per_message: 200000, max_cost_per_data: 700000 };
+let verdict = judge({ spend: 7000000, messages: 40, data: 12 }, { budget: 23000000, data: 10 }, capsT);
+ok(verdict.met === true && !verdict.overBudget, "đủ số, giá số 583k ≤ 700k, giá mess 175k ≤ 200k → về đích", verdict);
+verdict = judge({ spend: 7000000, messages: 40, data: 9 }, { budget: null, data: 10 }, capsT);
+ok(verdict.met === false && verdict.checks.find((c) => c.key === "data").met === false, "thiếu 1 số → chưa về đích");
+verdict = judge({ spend: 9000000, messages: 40, data: 12 }, { budget: 8000000, data: 10 }, capsT);
+ok(verdict.met === false && verdict.overBudget, "giá số 750k > 700k → chưa về đích; vượt ngân sách được nhắc", verdict);
+verdict = judge({ spend: 9000000, messages: 60, data: 14 }, { budget: 8000000, data: 10 }, capsT);
+ok(verdict.met === true && verdict.overBudget, "vượt ngân sách nhưng đủ số, giá tốt → vẫn về đích (chỉ nhắc)", verdict);
+verdict = judge({ spend: 500000, messages: 3, data: 0 }, { budget: null, data: null }, capsT);
+ok(verdict.met === false && verdict.checks.find((c) => c.key === "costPerData").actual === null, "tiêu tiền mà chưa có số → giá số không đạt");
+verdict = judge({ spend: 0, messages: 0, data: 0 }, { budget: null, data: null }, capsT);
+ok(verdict.met === null, "chưa tiêu, chưa đặt mục tiêu số → chưa xét");
+ok(phaseOf("2026-11-09", "2026-11-15", "2026-11-12") === "current" && phaseOf("2026-11-02", "2026-11-08", "2026-11-12") === "past"
+  && phaseOf("2026-11-16", "2026-11-22", "2026-11-12") === "future", "tuần đã qua / đang chạy / chưa tới");
+
+let pr = previousRange("2026-11-09", "2026-11-15", "2026-11-20");
+ok(pr.from === "2026-11-02" && pr.to === "2026-11-08", "tuần 9–15/11 so với tuần 2–8/11", pr);
+pr = previousRange("2026-11-09", "2026-11-15", "2026-11-12");
+ok(pr.from === "2026-11-02" && pr.to === "2026-11-05" && pr.keep("2026-11-05") && !pr.keep("2026-11-06"), "tuần đang chạy (tới thứ 5) → so với T2–T5 tuần trước", pr);
+pr = previousRange("2026-11-12", "2026-11-12", "2026-11-12");
+ok(pr.from === "2026-11-11" && pr.label === "ngày 11/11", "một ngày → so với hôm trước", pr);
+pr = previousRange("2026-10-01", "2026-10-04", "2026-11-12");
+ok(pr.from === "2026-09-27" && pr.to === "2026-09-30", "tuần 1 tháng 10 (4 ngày) → 4 ngày liền trước", pr);
 console.log(`\n${passed} ok, ${failed} lỗi`);
 if (failed > 0) process.exit(1);

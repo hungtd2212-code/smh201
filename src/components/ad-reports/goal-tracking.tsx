@@ -21,100 +21,76 @@ import { formatDay } from "@/lib/ad-reports/dates";
 import { targetFor } from "@/lib/ad-reports/targets";
 import type { AdAccountAssignment } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
+import { GlassBar, TONE_DOT, TONE_TEXT, shortMoney, type Tone } from "./glass";
 import { useAdReports } from "./hooks";
 import { revenueByMonth, useRevenue } from "./revenue";
 import { StatsError } from "./shared";
 import type { TargetsState } from "./targets";
 
 /**
- * Theo dõi mục tiêu (kiểu "Monthly / Quarterly / Annual Tracking"): 3 cột Tháng · Quý · Năm. Mỗi thẻ: số hiện tại,
- * thanh tiến độ (phần tô màu = đã hoàn thành, phần trắng = chưa hoàn thành), mục tiêu, và tốt / kém hơn kỳ vọng
- * bao nhiêu %. Mục tiêu đặt theo từng tháng; quý / năm = cộng mục tiêu các tháng trong kỳ.
+ * Theo dõi mục tiêu Tháng · Quý · Năm, dạng kính mờ gọn: mỗi kỳ một tấm kính, mỗi chỉ số một dòng — số hiện tại /
+ * mục tiêu, thanh mảnh (phần tô màu = đã hoàn thành, phần trắng = chưa hoàn thành), ghi chú tốt / kém hơn kỳ vọng.
+ * Mục tiêu đặt theo từng tháng; quý / năm = cộng mục tiêu các tháng trong kỳ.
  */
 
-const THEME: Record<TrackPeriod["key"], { head: string; card: string }> = {
-  month: {
-    head: "bg-cyan-400 text-cyan-950 dark:bg-cyan-700 dark:text-cyan-50",
-    card: "bg-cyan-100/70 dark:bg-cyan-950/50",
-  },
-  quarter: {
-    head: "bg-violet-400 text-violet-950 dark:bg-violet-700 dark:text-violet-50",
-    card: "bg-violet-100/70 dark:bg-violet-950/50",
-  },
-  year: {
-    head: "bg-pink-400 text-pink-950 dark:bg-pink-700 dark:text-pink-50",
-    card: "bg-pink-100/70 dark:bg-pink-950/50",
-  },
+/** Màu pha dưới tấm kính của từng kỳ (như ảnh mẫu: Tháng xanh ngọc, Quý tím, Năm hồng). */
+const TINT: Record<TrackPeriod["key"], string> = {
+  month: "[--glass-tint:oklch(0.9_0.09_205/0.6)] dark:[--glass-tint:oklch(0.45_0.09_205/0.22)]",
+  quarter: "[--glass-tint:oklch(0.9_0.07_290/0.6)] dark:[--glass-tint:oklch(0.45_0.1_290/0.22)]",
+  year: "[--glass-tint:oklch(0.92_0.06_350/0.6)] dark:[--glass-tint:oklch(0.45_0.1_350/0.22)]",
 };
 
-const BAR: Record<TrackItem["status"], string> = {
-  good: "bg-green-500",
-  warning: "bg-amber-500",
-  bad: "bg-red-500",
-  none: "bg-muted-foreground/40",
-};
-const NOTE: Record<TrackItem["status"], string> = {
-  good: "text-green-700 dark:text-green-400",
-  warning: "text-amber-700 dark:text-amber-300",
-  bad: "text-red-700 dark:text-red-400",
-  none: "text-muted-foreground",
+const DOT: Record<TrackPeriod["key"], string> = {
+  month: "from-cyan-300 to-sky-500",
+  quarter: "from-violet-300 to-indigo-500",
+  year: "from-pink-300 to-fuchsia-500",
 };
 
-function fmt(item: TrackItem, value: number | null) {
+const TONE: Record<TrackItem["status"], Tone> = { good: "good", warning: "warning", bad: "bad", none: "none" };
+
+function fmt(item: TrackItem, value: number | null, full = false) {
   if (value === null) return "–";
   if (item.unit === "percent") return `${value.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`;
-  if (item.unit === "money") return `${Math.round(value).toLocaleString("vi-VN")}đ`;
+  if (item.unit === "money") return full ? `${Math.round(value).toLocaleString("vi-VN")}đ` : shortMoney(value);
   return Math.round(value).toLocaleString("vi-VN");
 }
 
-function TrackCard({ item, period, elapsed }: { item: TrackItem; period: TrackPeriod; elapsed: number }) {
+/** "Tháng 11", "Quý 4", "Năm 2026". */
+function periodName(period: TrackPeriod) {
+  const m = Number(period.from.slice(5, 7));
+  if (period.key === "month") return `Tháng ${m}/${period.from.slice(0, 4)}`;
+  if (period.key === "quarter") return `Quý ${Math.floor((m - 1) / 3) + 1}`;
+  return `Năm ${period.from.slice(0, 4)}`;
+}
+
+function TrackRow({ item, elapsed }: { item: TrackItem; elapsed: number }) {
   const sign = item.kind === "progress" ? "≥" : "≤";
-  const width = Math.min(100, Math.max(item.fill * 100, item.actual ? 4 : 0));
-  const label = item.kind === "cap" && item.fill >= 1 ? "Đạt" : `${Math.round(item.fill * 100)}%`;
+  const done = item.kind === "cap" && item.fill >= 1 ? "Đạt" : `${Math.round(item.fill * 100)}%`;
   const showPace = item.kind !== "cap" && elapsed > 0 && elapsed < 1;
+  const tone = TONE[item.status];
   return (
-    <div className={cn("grid gap-3 rounded-2xl px-5 py-4", THEME[period.key].card)}>
-      <div>
-        <div className="text-base font-semibold">
-          {item.label} ({period.label})
-        </div>
-        <div className="text-xs text-muted-foreground tabular-nums">
-          {formatDay(period.from).slice(0, 5)} – {formatDay(period.to)} ({period.label})
-        </div>
-      </div>
-      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1.5">
-        <span className="text-sm text-muted-foreground">Hiện tại</span>
-        <span className={cn("text-center text-sm font-medium", NOTE[item.status])}>{item.note}</span>
-        <span className="text-right text-sm text-muted-foreground">Mục tiêu</span>
-        <span className="text-lg font-bold tabular-nums">{fmt(item, item.actual)}</span>
-        <div
-          className="relative h-8 overflow-hidden rounded-full bg-white shadow-inner dark:bg-white/15"
-          role="progressbar"
-          aria-valuenow={Math.round(item.fill * 100)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`${item.label}: ${label}`}
+    <div className="grid gap-1.5 py-2.5 first:pt-1.5 last:pb-0.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">{item.label}</span>
+        <span
+          className="text-sm whitespace-nowrap tabular-nums"
+          title={`Hiện tại ${fmt(item, item.actual, true)} · Mục tiêu ${sign}${fmt(item, item.goal, true)}`}
         >
-          <div className={cn("flex h-full items-center justify-end rounded-full pr-3", BAR[item.status])} style={{ width: `${width}%` }}>
-            {width >= 18 && <span className="text-xs font-semibold text-white tabular-nums">{label}</span>}
-          </div>
-          {width < 18 && (
-            <span className="absolute inset-y-0 flex items-center text-xs font-semibold text-muted-foreground tabular-nums" style={{ left: `calc(${width}% + 8px)` }}>
-              {label}
-            </span>
-          )}
-          {showPace && (
-            <span
-              className="absolute inset-y-1 w-0.5 rounded bg-foreground/40"
-              style={{ left: `${elapsed * 100}%` }}
-              title="Mức kỳ vọng tới hôm nay"
-            />
-          )}
-        </div>
-        <span className="text-right text-lg font-bold whitespace-nowrap tabular-nums">
-          {sign}
-          {fmt(item, item.goal)}
+          <span className="font-semibold">{fmt(item, item.actual)}</span>
+          <span className="text-muted-foreground">
+            {" "}
+            / {sign}
+            {fmt(item, item.goal)}
+          </span>
         </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <GlassBar fill={item.fill} tone={tone} pace={showPace ? elapsed : null} label={`${item.label}: ${done}`} />
+        <span className="w-8 shrink-0 text-right text-[11px] font-semibold tabular-nums">{done}</span>
+      </div>
+      <div className={cn("flex items-center gap-1.5 text-[11px] leading-tight", TONE_TEXT[tone])}>
+        <span className={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[tone])} />
+        {item.note}
       </div>
     </div>
   );
@@ -157,7 +133,7 @@ export function GoalTrackingSection({
   }
   if (state.status === "error") return <StatsError message={state.message} />;
   if (!byDay || targetsState.status === "loading" || revenue.status === "loading") {
-    return <Skeleton className="h-96 w-full rounded-xl" />;
+    return <Skeleton className="h-64 w-full rounded-3xl" />;
   }
   const targets = targetsState.status === "ready" ? targetsState.targets : [];
   const targetOf = (month: string) => targetFor(targets, staffId, month);
@@ -176,43 +152,66 @@ export function GoalTrackingSection({
   const monthName = `tháng ${Number(thisMonth.slice(5))}/${thisMonth.slice(0, 4)}`;
 
   return (
-    <section className="grid gap-3">
+    <section className="glass-stage grid gap-3 overflow-hidden rounded-3xl border border-white/70 p-3 sm:p-4 dark:border-white/10">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="grid gap-0.5">
-          <h2 className="flex items-center gap-2 text-lg font-semibold">
-            <Target className="size-5 text-muted-foreground" />
+        <div className="grid gap-1">
+          <h2 className="flex items-center gap-2 text-base font-semibold">
+            <span className="glass flex size-7 items-center justify-center rounded-full">
+              <Target className="size-3.5" />
+            </span>
             Tiến độ mục tiêu — {who}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Phần tô màu: đã hoàn thành · phần trắng: chưa hoàn thành. Vạch đứng: mức cần đạt tới hôm nay. Xanh = đúng / vượt
-            kỳ vọng, vàng = hơi chậm, đỏ = chậm hoặc vượt mức cho phép.
-            {revenue.status === "not-migrated" && " Doanh thu cần chạy file 013 mới có số."}
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className="h-1.5 w-4 rounded-full bg-linear-to-r from-emerald-400 to-teal-500" />
+              đã hoàn thành
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="glass-track h-1.5 w-4 rounded-full" />
+              chưa hoàn thành
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-px bg-slate-900/45 dark:bg-white/60" />
+              mức cần đạt tới hôm nay
+            </span>
+            <span>Xanh = đúng / vượt kỳ vọng · vàng = hơi chậm · đỏ = chậm hoặc vượt mức cho phép</span>
+            {revenue.status === "not-migrated" && <span>Doanh thu cần chạy file 013 mới có số.</span>}
           </p>
         </div>
         {onEditTargets && (
-          <Button size="sm" variant="outline" onClick={onEditTargets}>
+          <Button size="sm" variant="outline" className="glass rounded-full" onClick={onEditTargets}>
             <Target />
             {anyGoal ? "Sửa mục tiêu" : "Đặt mục tiêu"}
           </Button>
         )}
       </div>
       {!anyGoal ? (
-        <p className="rounded-xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
+        <p className="glass rounded-2xl px-4 py-3 text-sm text-muted-foreground">
           Chưa có mục tiêu {monthName}
           {staffId ? " cho người này" : " cho cả công ty"}.
           {onEditTargets ? " Bấm “Đặt mục tiêu” để đặt từ đầu tháng." : " Quản lý sẽ đặt mục tiêu cho bạn từ đầu tháng."}
         </p>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-3">
           {columns.map(({ period, elapsed, items }) => (
-            <div key={period.key} className="grid content-start gap-3">
-              <div className={cn("rounded-2xl px-5 py-3.5 text-xl font-bold", THEME[period.key].head)}>
-                Theo dõi {period.label.toLowerCase()}
+            <div key={period.key} className={cn("glass grid content-start rounded-2xl px-3.5 pt-3 pb-3", TINT[period.key])}>
+              <div className="grid gap-0.5 border-b border-slate-900/5 pb-2 dark:border-white/10">
+                <span className="flex items-center gap-2 text-sm font-semibold whitespace-nowrap">
+                  <span className={cn("size-2.5 shrink-0 rounded-full bg-linear-to-br shadow-sm", DOT[period.key])} />
+                  {periodName(period)}
+                </span>
+                <span className="pl-[1.125rem] text-[11px] text-muted-foreground tabular-nums">
+                  {formatDay(period.from).slice(0, 5)} – {formatDay(period.to).slice(0, 5)} · đã qua {Math.round(elapsed * 100)}%
+                </span>
               </div>
               {items.length === 0 ? (
-                <p className="rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">Chưa có mục tiêu.</p>
+                <p className="pt-2 text-xs text-muted-foreground">Chưa có mục tiêu.</p>
               ) : (
-                items.map((item) => <TrackCard key={item.key} item={item} period={period} elapsed={elapsed} />)
+                <div className="divide-y divide-slate-900/5 dark:divide-white/10">
+                  {items.map((item) => (
+                    <TrackRow key={item.key} item={item} elapsed={elapsed} />
+                  ))}
+                </div>
               )}
             </div>
           ))}
