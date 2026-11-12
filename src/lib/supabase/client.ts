@@ -9,5 +9,7 @@ export function getSupabaseBrowserClient() {
     );
   }
   // createBrowserClient tự tái sử dụng một client duy nhất trong trình duyệt.
-  return createBrowserClient(SUPABASE_URL, SUPABASE_KEY);
+  // worker: nhịp "còn sống" của Realtime (dãy người đang online) chạy trong Web Worker, để tab nằm
+  // nền lâu không bị trình duyệt hãm chậm rồi rớt khỏi danh sách online.
+  return createBrowserClient(SUPABASE_URL, SUPABASE_KEY, { realtime: { worker: true } });
 }

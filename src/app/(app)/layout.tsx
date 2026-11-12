@@ -1,5 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { CatalogProvider } from "@/components/catalog-provider";
+import { OnlineUsers } from "@/components/online-users";
 import { SecurityAlertBell } from "@/components/safety/security-alert-bell";
 import { PageAccessGate } from "@/components/staff/page-access-gate";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -21,11 +22,12 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
         <header className="sticky top-0 z-20 flex h-13 shrink-0 items-center gap-2 border-b bg-background/90 px-4 backdrop-blur">
           <SidebarTrigger aria-label="Ẩn / hiện menu" />
           <Separator orientation="vertical" className="mx-1 h-4!" />
-          <span className="text-sm text-muted-foreground">
+          <span className="min-w-0 truncate text-sm text-muted-foreground">
             Cơ sở {APP.branch.name}
           </span>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <SecurityAlertBell />
+            <OnlineUsers />
             <ThemeToggle />
           </div>
         </header>
