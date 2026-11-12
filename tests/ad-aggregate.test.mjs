@@ -4,7 +4,7 @@ import {
   METRICS, change, checkTargets, compactMetric, daysBetween, entriesOf, formatMetric, funnelCounts, lastDayOf,
   metricOf, monthElapsed, monthsBetween, previousOf, shiftDay, shiftMonth, spikeAlerts, sumDays, totalsByAccount,
   totalsByDay, totalsByMonth, totalsByStaff, totalsByWeekday, weekdayOf, trackPeriods, periodElapsed, trackGoals,
-  scoreBoard, planFor, splitTotal, weeksOfMonth, dailyGoals, goalOf, judge, phaseOf, previousRange,
+  scoreBoard, planFor, splitTotal, weeksOfMonth, dailyGoals, goalOf, judge, phaseOf, previousRange, carryGoals,
 } from "../src/lib/ad-reports/aggregate.ts";
 
 let passed = 0;
@@ -237,5 +237,28 @@ pr = previousRange("2026-11-12", "2026-11-12", "2026-11-12");
 ok(pr.from === "2026-11-11" && pr.label === "ngày 11/11", "một ngày → so với hôm trước", pr);
 pr = previousRange("2026-10-01", "2026-10-04", "2026-11-12");
 ok(pr.from === "2026-09-27" && pr.to === "2026-09-30", "tuần 1 tháng 10 (4 ngày) → 4 ngày liền trước", pr);
+console.log("\n== Dồn phần thiếu của tuần không đạt");
+const novWeeks = weeksOfMonth("2026-11"); // 1–8 (8 ngày), 9–15, 16–22, 23–30 (8 ngày)
+const novBase = dailyGoals({ monthly_budget: 30000000, monthly_data: 300, max_cost_per_message: null, max_cost_per_data: null }, "2026-11");
+ok(same(novWeeks.map((w) => goalOf(novBase, w.days).data), [80, 70, 70, 80]), "đầu tháng chia đều: 80 / 70 / 70 / 80");
+const actual = (byWeek) => (days) => byWeek[novWeeks.findIndex((w) => w.from === days[0])] ?? 0;
+let cg = carryGoals(novBase, novWeeks, actual([80, 70]), "2026-11-05", "spread");
+ok(same(cg.plans.map((p) => p.goal), [80, 70, 70, 80]), "tuần 1 chưa qua hết → chưa dồn gì", cg.plans.map((p) => p.goal));
+cg = carryGoals(novBase, novWeeks, actual([50, 0]), "2026-11-12", "next");
+ok(same(cg.plans.map((p) => p.goal), [80, 100, 70, 80]), "dồn sang tuần sau: tuần 1 thiếu 30 → tuần 2 cần 100", cg.plans.map((p) => p.goal));
+ok(same(cg.plans.map((p) => p.carriedIn), [0, 30, 0, 0]), "ghi rõ tuần 2 nhận 30 số dồn");
+ok(goalOf(cg.goals, novWeeks[1].days).data === 100, "mục tiêu các ngày tuần 2 cộng lại = 100");
+ok(goalOf(cg.goals, novWeeks[1].days).budget === goalOf(novBase, novWeeks[1].days).budget, "ngân sách không dồn");
+cg = carryGoals(novBase, novWeeks, actual([50, 90]), "2026-11-16", "next");
+ok(same(cg.plans.map((p) => p.goal), [80, 100, 80, 80]), "tuần 2 (cần 100) được 90 → thiếu 10 dồn tiếp sang tuần 3", cg.plans.map((p) => p.goal));
+cg = carryGoals(novBase, novWeeks, actual([50, 0]), "2026-11-12", "spread");
+ok(cg.plans[1].carriedIn + cg.plans[2].carriedIn + cg.plans[3].carriedIn === 30, "chia đều cho các tuần còn lại: tổng phần dồn = 30", cg.plans.map((p) => p.carriedIn));
+ok(cg.plans[3].carriedIn >= cg.plans[1].carriedIn, "tuần 8 ngày nhận nhiều hơn tuần 7 ngày", cg.plans.map((p) => p.carriedIn));
+cg = carryGoals(novBase, novWeeks, actual([120, 70]), "2026-11-16", "spread");
+ok(same(cg.plans.map((p) => p.goal), [80, 70, 70, 80]), "tuần vượt mục tiêu → không trừ bớt tuần sau");
+cg = carryGoals(novBase, novWeeks, actual([80, 70, 70, 10]), "2026-12-01", "next");
+ok(same(cg.plans.map((p) => p.goal), [80, 70, 70, 80]), "tuần cuối thiếu → không còn tuần để dồn");
+cg = carryGoals(dailyGoals(null, "2026-11"), novWeeks, actual([0, 0]), "2026-11-20", "spread");
+ok(cg.plans.every((p) => p.goal === null), "chưa đặt mục tiêu số → không dồn");
 console.log(`\n${passed} ok, ${failed} lỗi`);
 if (failed > 0) process.exit(1);

@@ -1,11 +1,12 @@
 "use client";
 
 import { CheckCircle2, Clock3, Flag, Minus, XCircle } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { StaffAvatar } from "@/components/staff/staff-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   WEEKDAYS,
+  carryGoals,
   dailyGoals,
   daysBetween,
   firstDayOf,
@@ -17,6 +18,7 @@ import {
   totalsByDay,
   weekdayOf,
   weeksOfMonth,
+  type CarryMode,
   type DayGoal,
   type Entry,
   type KpiCheck,
@@ -25,6 +27,7 @@ import {
   type Totals,
   type Verdict,
   type Week,
+  type WeekPlan,
 } from "@/lib/ad-reports/aggregate";
 import { formatDay, monthLabel } from "@/lib/ad-reports/dates";
 import { formatNumber } from "@/lib/ad-reports/number";
@@ -38,6 +41,8 @@ import type { TargetsState } from "./targets";
 /**
  * Về đích theo tuần & ngày (như sheet "Báo cáo tuần"): mục tiêu tháng chia đều xuống từng ngày, tuần (T2 → CN, cắt ở
  * đầu / cuối tháng) = cộng các ngày. Về đích = đủ số điện thoại VÀ giá số / giá mess không vượt mức tối đa.
+ * Tuần đã qua mà chưa đủ số: phần thiếu dồn sang tuần sau hoặc chia đều cho các tuần còn lại (người xem chọn; nhớ trên
+ * máy). Ô "Cả tháng" vẫn so với mục tiêu tháng gốc.
  * "Cá nhân về đích thì tổ chức về đích — mỗi ngày về đích thì cả tuần về đích, cả tuần về đích thì cả tháng về đích."
  *   • Quản lý xem tất cả: bảng mỗi người một dòng × mỗi tuần một cột (+ dòng cả công ty), bấm tên để xem lịch từng ngày.
  *   • Một người (nhân viên tự xem, hoặc quản lý lọc một người): lịch từng ngày của người đó.
@@ -50,20 +55,58 @@ type Line = {
   avatar: string | null;
   team: boolean;
   target: TargetValues | null;
+  /** Mục tiêu từng ngày chia đều đầu tháng (dùng cho ô "Cả tháng"). */
+  baseGoals: Map<string, DayGoal>;
+  /** Mục tiêu từng ngày sau khi dồn phần thiếu của các tuần không đạt. */
   goals: Map<string, DayGoal>;
+  /** Kế hoạch từng tuần (cùng thứ tự với các tuần của tháng). */
+  plans: WeekPlan[];
   byDay: Map<string, Totals>;
 };
+
+/* Cách dồn phần thiếu — người xem chọn, nhớ trên máy (localStorage). */
+const CARRY_KEY = "smh:week-carry";
+const DEFAULT_CARRY: CarryMode = "spread";
+const carryListeners = new Set<() => void>();
+function readCarry(): CarryMode {
+  try {
+    const v = window.localStorage.getItem(CARRY_KEY);
+    return v === "next" || v === "spread" ? v : DEFAULT_CARRY;
+  } catch {
+    return DEFAULT_CARRY;
+  }
+}
+function subscribeCarry(listener: () => void) {
+  carryListeners.add(listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    carryListeners.delete(listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+function useCarryMode() {
+  const mode = useSyncExternalStore(subscribeCarry, readCarry, () => DEFAULT_CARRY);
+  const setMode = (next: CarryMode) => {
+    try {
+      window.localStorage.setItem(CARRY_KEY, next);
+    } catch {
+      // Không lưu được (chế độ riêng tư…) thì chỉ đổi trong lần xem này.
+    }
+    for (const l of carryListeners) l();
+  };
+  return [mode, setMode] as const;
+}
 
 type Result = { totals: Totals; goal: DayGoal; verdict: Verdict; phase: Phase; tone: Tone; fill: number };
 
 const isCap = (c: KpiCheck) => c.key === "costPerData" || c.key === "costPerMessage";
 
-/** Kết quả của một dòng trên các ngày `days` (một ngày, một tuần hay cả tháng). */
-function resultOf(line: Line, days: string[], today: string): Result {
+/** Kết quả của một dòng trên các ngày `days` (một ngày, một tuần hay cả tháng). `goals`: mặc định mục tiêu đã dồn. */
+function resultOf(line: Line, days: string[], today: string, goals = line.goals): Result {
   const phase = phaseOf(days[0], days.at(-1) ?? days[0], today);
   const passed = days.filter((d) => d <= today);
   const totals = sumDays(line.byDay, passed);
-  const goal = goalOf(line.goals, days);
+  const goal = goalOf(goals, days);
   const verdict = judge(totals, goal, line.target);
   let tone: Tone;
   if (phase === "future" || verdict.met === null) tone = "none";
@@ -71,7 +114,7 @@ function resultOf(line: Line, days: string[], today: string): Result {
   else if (phase === "past") tone = "bad";
   else {
     // Đang chạy: giá đang vượt, hoặc số điện thoại chậm hơn 15% so với phần mục tiêu tới hôm nay → nhắc (vàng).
-    const expected = goalOf(line.goals, passed).data;
+    const expected = goalOf(goals, passed).data;
     const slow = expected !== null && totals.data < expected * 0.85;
     tone = verdict.checks.some((c) => isCap(c) && !c.met) || slow ? "warning" : "running";
   }
@@ -81,10 +124,18 @@ function resultOf(line: Line, days: string[], today: string): Result {
 
 const money = (value: number) => `${formatNumber(value)}đ`;
 
-/** Chữ hiện khi rê chuột: từng chỉ tiêu đạt / chưa. */
-function describe(name: string, label: string, r: Result) {
+/** Dòng giải thích mục tiêu tuần có phần dồn: "70 chia đều + 30 dồn từ tuần trước = 100 số". */
+const carryText = (plan?: WeekPlan) =>
+  plan && plan.carriedIn > 0 && plan.base !== null
+    ? `• Mục tiêu tuần: ${formatNumber(plan.base)} chia đều + ${formatNumber(plan.carriedIn)} dồn từ tuần trước = ${formatNumber(plan.base + plan.carriedIn)} số`
+    : null;
+
+/** Chữ hiện khi rê chuột: từng chỉ tiêu đạt / chưa. `plan`: kế hoạch tuần (để ghi phần dồn). */
+function describe(name: string, label: string, r: Result, plan?: WeekPlan) {
+  const carry = carryText(plan);
   if (r.phase === "future") {
-    return `${name} — ${label}: chưa tới${r.goal.data ? ` (cần ${formatNumber(r.goal.data)} số)` : ""}`;
+    const head = `${name} — ${label}: chưa tới${r.goal.data ? ` (cần ${formatNumber(r.goal.data)} số)` : ""}`;
+    return carry ? `${head}\n${carry}` : head;
   }
   const head =
     r.verdict.met === null
@@ -103,7 +154,18 @@ function describe(name: string, label: string, r: Result) {
     return `• ${c.label}: ${value} (${rule}) ${c.met ? "✓" : "✗"}${c.key === "budget" ? " — chỉ nhắc" : ""}`;
   });
   if (r.verdict.checks.length === 0) lines.push(`• Số điện thoại: ${formatNumber(r.totals.data)}`);
+  if (carry) lines.unshift(carry);
   return [`${name} — ${label}: ${head}`, ...lines].join("\n");
+}
+
+/** Nhãn nhỏ "+30 dồn" trên ô tuần nhận phần thiếu của tuần trước. */
+function CarryBadge({ plan }: { plan?: WeekPlan }) {
+  if (!plan || plan.carriedIn <= 0) return null;
+  return (
+    <span className="w-fit rounded-full bg-amber-100/90 px-1.5 text-[10px] font-semibold text-amber-800 tabular-nums dark:bg-amber-900/50 dark:text-amber-200">
+      +{formatNumber(plan.carriedIn)} dồn
+    </span>
+  );
 }
 
 function StatusIcon({ tone, phase }: { tone: Tone; phase: Phase }) {
@@ -219,9 +281,9 @@ function DayCalendar({
   const days = weeks.flatMap((w) => w.days);
   const dayResults = days.map((day) => ({ day, r: resultOf(line, [day], today) }));
   const judgedDays = dayResults.filter((d) => d.r.phase === "past" && d.r.verdict.met !== null);
-  const weekResults = weeks.map((w) => ({ w, r: resultOf(line, w.days, today) }));
+  const weekResults = weeks.map((w, i) => ({ w, r: resultOf(line, w.days, today), plan: line.plans[i] }));
   const judgedWeeks = weekResults.filter((x) => x.r.phase === "past" && x.r.verdict.met !== null);
-  const month = resultOf(line, days, today);
+  const month = resultOf(line, days, today, line.baseGoals);
   // Hàng lịch = tuần lịch T2 → CN; tuần báo cáo gộp (vd 1–8/11) chiếm 2 hàng, ô "Cả tuần" kéo dài theo.
   const rowOf = new Map<string, number>();
   let row = 0;
@@ -253,19 +315,20 @@ function DayCalendar({
               />
             </div>
           ))}
-          {weekResults.map(({ w, r }) => {
+          {weekResults.map(({ w, r, plan }) => {
             const first = rowOf.get(w.from) ?? 0;
             const span = (rowOf.get(w.to) ?? first) - first + 1;
             return (
               <div key={w.index} className="grid" style={{ gridRow: `${first + 2} / span ${span}`, gridColumn: 8 }}>
                 <ResultCell
                   r={r}
-                  title={describe(line.name, `tuần ${w.index} (${weekSpan(w)})`, r)}
+                  title={describe(line.name, `tuần ${w.index} (${weekSpan(w)})`, r, plan)}
                   selected={sameRange(range, w.from, w.to)}
                   onClick={() => onPickRange(sameRange(range, w.from, w.to) ? null : { from: w.from, to: w.to })}
                   extra={
-                    <span className="text-[10px] text-muted-foreground tabular-nums">
+                    <span className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground tabular-nums">
                       Tuần {w.index} · {weekSpan(w)}
+                      <CarryBadge plan={plan} />
                     </span>
                   }
                 />
@@ -332,6 +395,7 @@ export function WeekGoals({
   onPickRange: (range: DayRange | null) => void;
 }) {
   const [focus, setFocus] = useState<string>("team");
+  const [carryMode, setCarryMode] = useCarryMode();
   const weeks = useMemo(() => weeksOfMonth(month), [month]);
   const targets = targetsState.status === "ready" ? targetsState.targets : null;
 
@@ -340,17 +404,16 @@ export function WeekGoals({
     const from = firstDayOf(month);
     const to = lastDayOf(month);
     const monthDays = new Set(daysBetween(from, to));
+    // Mục tiêu chia đều đầu tháng, rồi dồn phần thiếu của các tuần đã qua mà chưa đủ số.
+    const plan = (target: TargetValues | null, byDay: Map<string, Totals>) => {
+      const baseGoals = dailyGoals(target, month);
+      const { goals, plans } = carryGoals(baseGoals, weeks, (days) => sumDays(byDay, days).data, today, carryMode);
+      return { baseGoals, goals, plans };
+    };
     const make = (p: AdsStaff): Line => {
       const target = targetFor(targets, p.id, month);
-      return {
-        key: p.id,
-        name: p.full_name,
-        avatar: avatarOf(p),
-        team: false,
-        target,
-        goals: dailyGoals(target, month),
-        byDay: totalsByDay(entries, p.id, (d) => monthDays.has(d)),
-      };
+      const byDay = totalsByDay(entries, p.id, (d) => monthDays.has(d));
+      return { key: p.id, name: p.full_name, avatar: avatarOf(p), team: false, target, byDay, ...plan(target, byDay) };
     };
     if (staffId) {
       const p = people.find((x) => x.id === staffId);
@@ -377,17 +440,18 @@ export function WeekGoals({
             max_cost_per_message: team?.max_cost_per_message ?? null,
           }
         : null;
+    const teamByDay = totalsByDay(entries, null, (d) => monthDays.has(d));
     const teamLine: Line = {
       key: "team",
       name: "Cả công ty",
       avatar: null,
       team: true,
       target: teamTarget,
-      goals: dailyGoals(teamTarget, month),
-      byDay: totalsByDay(entries, null, (d) => monthDays.has(d)),
+      byDay: teamByDay,
+      ...plan(teamTarget, teamByDay),
     };
     return [teamLine, ...shown];
-  }, [targets, month, staffId, people, assignments, entries, avatarOf]);
+  }, [targets, month, weeks, today, carryMode, staffId, people, assignments, entries, avatarOf]);
 
   if (targetsState.status === "loading") return <Skeleton className="h-72 w-full rounded-3xl" />;
   if (!targets || lines.length === 0) return null;
@@ -408,14 +472,38 @@ export function WeekGoals({
             Về đích theo tuần & ngày — {who} · {monthLabel(month).toLowerCase()}
           </h2>
           <p className="max-w-3xl text-[11px] text-muted-foreground">
-            Mục tiêu tháng chia đều cho từng ngày; tuần (thứ Hai → Chủ nhật) = cộng các ngày. Về đích = đủ số điện thoại
-            và giá số, giá mess không vượt mức tối đa (vượt ngân sách chỉ nhắc). Rê chuột để xem chi tiết; bấm một tuần hay
-            một ngày để lọc cả trang theo khoảng đó.
+            Đầu tháng mục tiêu chia đều cho từng ngày; tuần (thứ Hai → Chủ nhật) = cộng các ngày. Tuần đã qua mà chưa đủ số
+            thì phần thiếu được dồn tiếp (chọn cách dồn bên phải). Về đích = đủ số điện thoại và giá số, giá mess không vượt
+            mức tối đa (vượt ngân sách chỉ nhắc). Rê chuột để xem chi tiết; bấm một tuần hay một ngày để lọc cả trang.
           </p>
         </div>
-        <span className="glass-soft rounded-full px-3 py-1 text-[11px] font-medium italic">
-          Cá nhân về đích → tổ chức về đích · Ngày về đích → tuần về đích → tháng về đích
-        </span>
+        <div className="grid justify-items-end gap-1.5">
+          <span className="glass-soft rounded-full px-3 py-1 text-[11px] font-medium italic">
+            Cá nhân về đích → tổ chức về đích · Ngày về đích → tuần về đích → tháng về đích
+          </span>
+          <div className="glass-soft flex flex-wrap items-center gap-1 rounded-full p-1 text-[11px]" role="group" aria-label="Tuần không đạt thì phần thiếu">
+            <span className="pr-1 pl-2 text-muted-foreground">Tuần không đạt:</span>
+            {(
+              [
+                ["spread", "Chia đều các tuần còn lại"],
+                ["next", "Dồn sang tuần sau"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={carryMode === key}
+                onClick={() => setCarryMode(key)}
+                className={cn(
+                  "rounded-full px-2.5 py-1 font-medium whitespace-nowrap transition-colors",
+                  carryMode === key ? "bg-foreground text-background shadow-sm" : "hover:bg-white/70 dark:hover:bg-white/10",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {!anyTarget ? (
@@ -459,22 +547,24 @@ export function WeekGoals({
             </thead>
             <tbody>
               {lines.map((line) => {
-                const cells = weeks.map((w) => {
+                const cells = weeks.map((w, i) => {
                   const r = resultOf(line, w.days, today);
+                  const plan = line.plans[i];
                   // Dòng cả công ty: bao nhiêu người về đích tuần đó.
                   const judged =
                     line.team && r.phase !== "future"
                       ? staffLines.map((p) => resultOf(p, w.days, today)).filter((x) => x.verdict.met !== null)
                       : [];
                   const extra =
-                    judged.length > 0 ? (
-                      <span className="text-[10px] text-muted-foreground tabular-nums">
-                        {judged.filter((x) => x.verdict.met).length}/{judged.length} người về đích
+                    judged.length > 0 || (plan && plan.carriedIn > 0) ? (
+                      <span className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground tabular-nums">
+                        {judged.length > 0 && `${judged.filter((x) => x.verdict.met).length}/${judged.length} người về đích`}
+                        <CarryBadge plan={plan} />
                       </span>
                     ) : null;
-                  return { w, r, extra };
+                  return { w, r, plan, extra };
                 });
-                const whole = resultOf(line, monthDays, today);
+                const whole = resultOf(line, monthDays, today, line.baseGoals);
                 return (
                   <tr key={line.key}>
                     <td className="min-w-36">
@@ -497,11 +587,11 @@ export function WeekGoals({
                         <span className="truncate">{line.name}</span>
                       </button>
                     </td>
-                    {cells.map(({ w, r, extra }) => (
+                    {cells.map(({ w, r, plan, extra }) => (
                       <td key={w.index}>
                         <ResultCell
                           r={r}
-                          title={describe(line.name, `tuần ${w.index} (${weekSpan(w)})`, r)}
+                          title={describe(line.name, `tuần ${w.index} (${weekSpan(w)})`, r, plan)}
                           selected={sameRange(range, w.from, w.to)}
                           onClick={() => onPickRange(sameRange(range, w.from, w.to) ? null : { from: w.from, to: w.to })}
                           extra={extra}

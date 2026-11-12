@@ -773,6 +773,53 @@ export type Phase = "past" | "current" | "future";
 export const phaseOf = (from: string, to: string, today: string): Phase =>
   today > to ? "past" : today < from ? "future" : "current";
 
+/** Tuần đã qua mà chưa đủ số: "next" = dồn hết sang tuần sau; "spread" = chia đều cho các tuần còn lại (theo số ngày). */
+export type CarryMode = "next" | "spread";
+
+/** Mục tiêu số điện thoại của một tuần: phần chia đều đầu tháng + phần thiếu dồn từ các tuần trước. */
+export type WeekPlan = { week: Week; base: number | null; carriedIn: number; goal: number | null };
+
+/**
+ * Mục tiêu số điện thoại có dồn phần thiếu: đầu tháng chia đều; mỗi tuần đã qua hết mà chưa đủ số thì phần còn thiếu
+ * dồn sang tuần sau (mode "next") hoặc chia đều cho các tuần còn lại theo số ngày (mode "spread"). Tuần vượt mục tiêu
+ * thì KHÔNG trừ bớt các tuần sau. Tuần cuối tháng không đủ thì không còn tuần nào để dồn.
+ * Trả về mục tiêu từng ngày mới (số điện thoại của tuần chia đều cho các ngày trong tuần; ngân sách giữ nguyên) và kế
+ * hoạch từng tuần. `dataOf(days)` = số điện thoại thực đạt của các ngày đó.
+ */
+export function carryGoals(
+  base: Map<string, DayGoal>,
+  weeks: Week[],
+  dataOf: (days: string[]) => number,
+  today: string,
+  mode: CarryMode,
+): { goals: Map<string, DayGoal>; plans: WeekPlan[] } {
+  const plans: WeekPlan[] = weeks.map((week) => {
+    const b = goalOf(base, week.days).data;
+    return { week, base: b, carriedIn: 0, goal: b };
+  });
+  for (const [i, plan] of plans.entries()) {
+    if (plan.base === null || plan.week.to >= today) continue; // chưa đặt mục tiêu, hoặc tuần chưa qua hết
+    const short = plan.base + plan.carriedIn - dataOf(plan.week.days);
+    const rest = plans.slice(i + 1);
+    if (short <= 0 || rest.length === 0) continue;
+    if (mode === "next") {
+      rest[0].carriedIn += short;
+    } else {
+      const parts = splitTotal(short, rest.map((r) => r.week.days.length));
+      for (const [j, part] of parts.entries()) rest[j].carriedIn += part;
+    }
+  }
+  const goals = new Map(base);
+  for (const plan of plans) {
+    if (plan.base === null) continue;
+    plan.goal = plan.base + plan.carriedIn;
+    if (plan.carriedIn === 0) continue;
+    const parts = splitTotal(plan.goal, plan.week.days.map(() => 1));
+    for (const [k, day] of plan.week.days.entries()) goals.set(day, { budget: base.get(day)?.budget ?? null, data: parts[k] });
+  }
+  return { goals, plans };
+}
+
 /* ------------------------------------------------------------------------------------------------ */
 /* Vinh danh                                                                                        */
 /* ------------------------------------------------------------------------------------------------ */
