@@ -51,8 +51,9 @@ function Body() {
   const load = useCallback(async () => {
     try {
       const next = await fetchAutoStatus();
-      if (next && next.pending < pendingRef.current) setVersion((v) => v + 1);
-      pendingRef.current = next?.pending ?? 0;
+      const total = next ? next.pending + next.pancake_pending : 0;
+      if (next && total < pendingRef.current) setVersion((v) => v + 1);
+      pendingRef.current = total;
       setStatus(next);
       setError(null);
       return next;
@@ -68,7 +69,7 @@ function Body() {
     return () => clearTimeout(first);
   }, [allowed, load]);
 
-  const waiting = (status?.pending ?? 0) > 0;
+  const waiting = (status?.pending ?? 0) + (status?.pancake_pending ?? 0) > 0;
   useEffect(() => {
     if (!waiting) return;
     const started = Date.now();
@@ -80,7 +81,7 @@ function Body() {
         // Không đọc được lúc này thì lần sau thử lại; lịch chạy mỗi phút cũng tự đọc.
       }
       const next = await load();
-      if (!next || next.pending === 0 || Date.now() - started > WATCH_LIMIT_MS) clearInterval(timer);
+      if (!next || next.pending + next.pancake_pending === 0 || Date.now() - started > WATCH_LIMIT_MS) clearInterval(timer);
     }, WATCH_MS);
     return () => clearInterval(timer);
   }, [waiting, load]);

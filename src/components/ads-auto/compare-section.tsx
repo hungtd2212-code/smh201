@@ -19,6 +19,7 @@ import {
   STATUS_ORDER,
   compareRow,
   defaultRange,
+  isHiddenIdle,
   needsLook,
   summarize,
   type AutoStatus,
@@ -26,6 +27,7 @@ import {
   type ComparedRow,
   type MatchStatus,
   type MessageMetric,
+  type PancakeUnassigned,
   type Verdict,
 } from "@/lib/ads-auto/compare";
 import { fetchCompare, pullAuto } from "@/lib/ads-auto/repo";
@@ -77,6 +79,7 @@ export function CompareSection({
   const [metric, setMetric] = useState<MessageMetric>("conversations");
   const [filter, setFilter] = useState<Filter>("all");
   const [rows, setRows] = useState<CompareRow[] | null>(null);
+  const [unassigned, setUnassigned] = useState<PancakeUnassigned>({ messages: 0, phones: 0 });
   const [error, setError] = useState<string | null>(null);
   const [pulling, setPulling] = useState(false);
 
@@ -84,7 +87,7 @@ export function CompareSection({
     let alive = true;
     const timer = setTimeout(() => {
       fetchCompare(range.from, range.to)
-        .then((data) => alive && (setRows(data), setError(null)))
+        .then((data) => alive && (setRows(data.rows), setUnassigned(data.unassigned), setError(null)))
         .catch((err) => alive && setError(err instanceof Error ? err.message : String(err)));
     }, 0);
     return () => {
@@ -100,7 +103,7 @@ export function CompareSection({
   );
   const summary = useMemo(() => summarize(compared), [compared]);
   const shown = compared.filter((r) =>
-    filter === "all" ? r.status !== "idle" : filter === "look" ? needsLook(r.status) : r.status === filter,
+    filter === "all" ? !isHiddenIdle(r) : filter === "look" ? needsLook(r.status) : r.status === filter,
   );
   const accountName = (id: string) => accounts.get(id)?.name ?? names.adAccount(id) ?? "TKQC đã xoá";
   // Nhóm theo ngày (ngày mới nhất trước, như thứ tự cơ sở dữ liệu trả về), trong ngày xếp theo tên TKQC.
@@ -124,6 +127,7 @@ export function CompareSection({
     }
   }
 
+  const shownAll = compared.filter((r) => !isHiddenIdle(r)).length;
   const spendGap = summary.fbSpend - summary.manualSpend;
   const msgGap = summary.fbMessages - summary.manualMessages;
 
@@ -169,7 +173,7 @@ export function CompareSection({
       ) : (
         <>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Lọc theo kết quả">
-            <FilterChip active={filter === "all"} onClick={() => setFilter("all")} label="Tất cả" count={compared.length - summary.counts.idle} />
+            <FilterChip active={filter === "all"} onClick={() => setFilter("all")} label="Tất cả" count={shownAll} />
             <FilterChip
               active={filter === "look"}
               onClick={() => setFilter("look")}
@@ -188,15 +192,25 @@ export function CompareSection({
             ))}
           </div>
 
-          {summary.compared > 0 && (
-            <dl className="grid gap-2 sm:grid-cols-2">
-              <Totals label="Chi tiêu" unit="đ" manual={summary.manualSpend} fb={summary.fbSpend} gap={spendGap} />
-              <Totals label="Tin nhắn" manual={summary.manualMessages} fb={summary.fbMessages} gap={msgGap} />
-              <p className="text-xs text-muted-foreground sm:col-span-2">
-                Tổng trên {summary.compared} dòng có cả số nhân viên và số Facebook (tính bằng đồng).
+          {(summary.compared > 0 || summary.pancakeMessages + summary.pancakePhones > 0) && (
+            <dl className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {summary.compared > 0 && (
+                <>
+                  <Totals label="Chi tiêu" unit="đ" manual={summary.manualSpend} fb={summary.fbSpend} gap={spendGap} />
+                  <Totals label="Tin nhắn" manual={summary.manualMessages} fb={summary.fbMessages} gap={msgGap} />
+                </>
+              )}
+              <PancakeTotals messages={summary.pancakeMessages} phones={summary.pancakePhones} />
+              <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-3">
+                {summary.compared > 0 &&
+                  `Chi tiêu, tin nhắn: tổng trên ${summary.compared} dòng có cả số nhân viên và số Facebook (tính bằng đồng). `}
+                Pancake: tổng mọi TKQC trong khoảng ngày.
+                {unassigned.messages + unassigned.phones > 0 &&
+                  ` Ngoài ra ${formatNumber(unassigned.messages)} tin nhắn, ${formatNumber(unassigned.phones)} SĐT Pancake đến từ quảng cáo chưa gắn được TKQC nào trong hệ thống (TKQC chưa thêm vào ERP, hoặc đang tra).`}
               </p>
             </dl>
           )}
+          <PancakeNote status={status} />
 
           {byDay.length === 0 ? (
             <p className="rounded-lg border px-3 py-6 text-center text-sm text-muted-foreground">
@@ -208,13 +222,14 @@ export function CompareSection({
             </p>
           ) : (
             <div className="overflow-x-auto rounded-lg border">
-              <table className="w-full min-w-[46rem] text-sm">
+              <table className="w-full min-w-[54rem] text-sm">
                 <thead className="bg-muted/50 text-xs text-muted-foreground">
                   <tr>
                     <th rowSpan={2} className="px-3 py-2 text-left font-medium">TKQC</th>
                     <th rowSpan={2} className="px-3 py-2 text-left font-medium">NV Ads</th>
                     <th colSpan={3} className="border-l px-3 pt-2 pb-0.5 text-center font-medium">Chi tiêu (đ)</th>
-                    <th colSpan={3} className="border-l px-3 pt-2 pb-0.5 text-center font-medium">Tin nhắn</th>
+                    <th colSpan={4} className="border-l px-3 pt-2 pb-0.5 text-center font-medium">Tin nhắn</th>
+                    <th className="border-l px-3 pt-2 pb-0.5 text-center font-medium">SĐT</th>
                     <th rowSpan={2} className="border-l px-3 py-2 text-left font-medium">Kết quả</th>
                   </tr>
                   <tr>
@@ -224,12 +239,14 @@ export function CompareSection({
                     <th className="border-l px-3 pb-2 text-right font-normal">NV nhập</th>
                     <th className="px-3 pb-2 text-right font-normal">Facebook</th>
                     <th className="px-3 pb-2 text-right font-normal">Lệch</th>
+                    <th className="border-l border-dashed px-3 pb-2 text-right font-normal">Pancake</th>
+                    <th className="border-l px-3 pb-2 text-right font-normal">Pancake</th>
                   </tr>
                 </thead>
                 {byDay.map(([day, list]) => (
                   <tbody key={day} className="border-t">
                     <tr>
-                      <th colSpan={9} className="bg-muted/25 px-3 py-1.5 text-left text-xs font-semibold tabular-nums">
+                      <th colSpan={11} className="bg-muted/25 px-3 py-1.5 text-left text-xs font-semibold tabular-nums">
                         {dayLabel(day)}
                       </th>
                     </tr>
@@ -245,6 +262,8 @@ export function CompareSection({
                         <td className={cn("px-3 py-2 text-right", r.messages_verdict && VERDICT_TEXT[r.messages_verdict])}>
                           {signed(r.messages_diff, String)}
                         </td>
+                        <td className="border-l border-dashed px-3 py-2 text-right">{r.pancake_messages ?? "—"}</td>
+                        <td className="border-l px-3 py-2 text-right">{r.pancake_phones ?? "—"}</td>
                         <td className="border-l px-3 py-2">
                           <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap", STATUS_STYLE[r.status].chip)}>
                             <span className={cn("size-2 rounded-full", STATUS_STYLE[r.status].dot)} aria-hidden />
@@ -261,7 +280,9 @@ export function CompareSection({
           <p className="text-xs text-muted-foreground">
             Khớp: chi tiêu lệch ≤ 1.000đ hoặc ≤ 0,5% và tin nhắn bằng nhau. Lệch nhẹ: chi tiêu lệch ≤ 3%, tin nhắn lệch 1 hoặc
             ≤ 5% (thường do Facebook cập nhật số sau khi nhân viên đã nhập). “Lệch” = Facebook trừ số nhân viên. Ẩn các ngày
-            TKQC không chạy (0đ, nhân viên không nhập).
+            TKQC không chạy (0đ, nhân viên không nhập, Pancake không có khách). Cột Pancake: số khách nhắn tin và số khách để
+            lại số điện thoại từ quảng cáo của TKQC đó, theo thống kê quảng cáo của Pancake; chỉ để tham khảo, không tính vào
+            Kết quả. “—” = chưa có số Pancake ngày đó.
           </p>
         </>
       )}
@@ -296,6 +317,49 @@ function FilterChip({
       {label}
       <span className={cn("tabular-nums", active ? "text-background/70" : "text-muted-foreground")}>{count}</span>
     </button>
+  );
+}
+
+function PancakeTotals({ messages, phones }: { messages: number; phones: number }) {
+  return (
+    <div className="grid grid-cols-3 gap-2 rounded-lg border px-3 py-2">
+      <div>
+        <dt className="text-xs text-muted-foreground">Pancake · Tin nhắn</dt>
+        <dd className="font-semibold tabular-nums">{formatNumber(messages)}</dd>
+      </div>
+      <div>
+        <dt className="text-xs text-muted-foreground">SĐT</dt>
+        <dd className="font-semibold tabular-nums">{formatNumber(phones)}</dd>
+      </div>
+      <div>
+        <dt className="text-xs text-muted-foreground">SĐT / tin nhắn</dt>
+        <dd className="font-semibold tabular-nums">
+          {messages > 0 ? `${(Math.round((phones / messages) * 1000) / 10).toLocaleString("vi-VN")}%` : "—"}
+        </dd>
+      </div>
+    </div>
+  );
+}
+
+/** Tình trạng kéo số Pancake: đang kéo, page lỗi. */
+function PancakeNote({ status }: { status: AutoStatus }) {
+  const errors = status.pancake_pages.filter((p) => p.last_error);
+  if (status.pancake_pending === 0 && errors.length === 0) return null;
+  return (
+    <div className="grid gap-1 text-sm">
+      {status.pancake_pending > 0 && (
+        <p className="flex items-center gap-2 rounded-lg bg-sky-50 px-3 py-2 text-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+          <Loader2 className="size-4 animate-spin" />
+          Đang kéo số Pancake: còn {formatNumber(status.pancake_pending)} lượt (mỗi page một ngày là một lượt)… Cột Pancake sẽ tự
+          điền dần.
+        </p>
+      )}
+      {errors.map((p) => (
+        <p key={p.pancake_page_id} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+          Pancake · {p.name ?? p.pancake_page_id}: {p.last_error}
+        </p>
+      ))}
+    </div>
   );
 }
 

@@ -28,6 +28,22 @@ export type CompareRow = {
   auto_new_contacts: number | null;
   auto_connections: number | null;
   auto_fetched_at: string | null;
+  /** Số khách nhắn tin từ quảng cáo của TKQC này, theo thống kê quảng cáo của Pancake (null = Pancake không có). */
+  pancake_messages: number | null;
+  /** Số khách để lại số điện thoại, theo Pancake. */
+  pancake_phones: number | null;
+};
+
+/** Số Pancake của những quảng cáo chưa gắn được vào TKQC nào trong ERP (trong khoảng ngày đang xem). */
+export type PancakeUnassigned = { messages: number; phones: number };
+
+/** Tình trạng hỏi số Pancake của một page. */
+export type PancakePage = {
+  pancake_page_id: string;
+  name: string | null;
+  last_ok_at: string | null;
+  last_error: string | null;
+  last_error_at: string | null;
 };
 
 /** Một TKQC trong phần "Kết nối Facebook". */
@@ -61,6 +77,10 @@ export type AutoStatus = {
   last_auto_at: string | null;
   /** Số lượt hỏi Facebook đang chờ trả lời. */
   pending: number;
+  /** Số việc Pancake còn lại: (page, ngày) chưa hỏi xong + quảng cáo đang tra TKQC. */
+  pancake_pending: number;
+  /** Các page Pancake đang được hỏi số (đang bật, có token). */
+  pancake_pages: PancakePage[];
   accounts: AutoAccount[];
 };
 
@@ -174,13 +194,24 @@ export type CompareSummary = {
   fbMessages: number;
   /** Số dòng có cả hai bên (đem ra so được). */
   compared: number;
+  /** Tổng số Pancake trên mọi dòng (đã gắn TKQC). */
+  pancakeMessages: number;
+  pancakePhones: number;
 };
+
+/** Dòng có số Pancake (khách nhắn tin hoặc để lại số). */
+export const hasPancake = (row: CompareRow) => (row.pancake_messages ?? 0) > 0 || (row.pancake_phones ?? 0) > 0;
+
+/** Ẩn ở bộ lọc "Tất cả": TKQC không chạy hôm đó và Pancake cũng không có khách nào. */
+export const isHiddenIdle = (row: ComparedRow) => row.status === "idle" && !hasPancake(row);
 
 export function summarize(rows: ComparedRow[]): CompareSummary {
   const counts = Object.fromEntries(STATUS_ORDER.map((s) => [s, 0])) as Record<MatchStatus, number>;
-  const sum = { manualSpend: 0, fbSpend: 0, manualMessages: 0, fbMessages: 0, compared: 0 };
+  const sum = { manualSpend: 0, fbSpend: 0, manualMessages: 0, fbMessages: 0, compared: 0, pancakeMessages: 0, pancakePhones: 0 };
   for (const row of rows) {
     counts[row.status]++;
+    sum.pancakeMessages += row.pancake_messages ?? 0;
+    sum.pancakePhones += row.pancake_phones ?? 0;
     if (row.spend_verdict !== null) {
       sum.compared++;
       sum.manualSpend += row.manual_spend ?? 0;

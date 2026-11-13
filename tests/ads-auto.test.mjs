@@ -8,6 +8,8 @@ import {
   compareRow,
   countVerdict,
   defaultRange,
+  hasPancake,
+  isHiddenIdle,
   needsLook,
   spendVerdict,
   summarize,
@@ -46,6 +48,7 @@ const base = {
   manual_spend: 500000, manual_messages: 10, manual_at: "2026-11-11T15:00:00Z",
   auto_spend: 500000, auto_currency: "VND", auto_conversations: 10, auto_new_contacts: 8, auto_connections: 11,
   auto_fetched_at: "2026-11-12T01:00:00Z",
+  pancake_messages: 9, pancake_phones: 4,
 };
 
 console.log("\n== So một dòng");
@@ -80,7 +83,16 @@ const rows = [
 const s = summarize(rows);
 ok(s.counts.match === 1 && s.counts.off === 1 && s.counts.no_manual === 1 && s.counts.not_facebook === 1 && s.counts.idle === 0, "đếm theo kết quả", s.counts);
 ok(s.compared === 2 && s.manualSpend === 1_000_000 && s.fbSpend === 1_400_000 && s.manualMessages === 20 && s.fbMessages === 22, "tổng chỉ tính dòng có cả hai bên", s);
+ok(s.pancakeMessages === 36 && s.pancakePhones === 16, "cộng số Pancake mọi dòng", s);
 ok(needsLook("off") && needsLook("near") && needsLook("no_manual") && needsLook("no_auto") && !needsLook("match") && !needsLook("idle") && !needsLook("not_facebook"), "dòng cần xem lại");
+
+console.log("\n== Pancake");
+const idle = compareRow({ ...base, manual_spend: null, manual_messages: null, auto_spend: 0, auto_conversations: 0, pancake_messages: 0, pancake_phones: 0 }, "conversations", true);
+ok(idle.status === "idle" && isHiddenIdle(idle), "không chạy, Pancake 0 khách → ẩn");
+const late = compareRow({ ...base, manual_spend: null, manual_messages: null, auto_spend: 0, auto_conversations: 0, pancake_messages: 0, pancake_phones: 1 }, "conversations", true);
+ok(late.status === "idle" && !isHiddenIdle(late) && hasPancake(late), "không chạy nhưng Pancake có khách để lại số → vẫn hiện");
+ok(!hasPancake({ ...base, pancake_messages: null, pancake_phones: null }), "chưa có số Pancake");
+ok(compareRow({ ...base, pancake_messages: 50 }, "conversations", true).status === "match", "số Pancake không tính vào kết quả khớp / lệch");
 
 console.log("\n== TKQC");
 const acc = {
