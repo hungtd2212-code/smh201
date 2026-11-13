@@ -1,6 +1,6 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isNotMigrated } from "@/lib/supabase/errors";
-import type { PancakeImport, PancakePage, PancakeSyncResult } from "./pancake";
+import type { PancakeChatResult, PancakeImport, PancakePage, PancakeSyncResult } from "./pancake";
 
 /** Đọc / ghi phần kết nối Pancake (supabase/023_pancake_sync.sql). Chỉ Admin, COO, Trưởng Telesale. */
 
@@ -61,4 +61,34 @@ export async function pancakeSyncNow(): Promise<PancakeSyncResult> {
   const { data, error } = await getSupabaseBrowserClient().rpc("pancake_sync_now");
   if (error) throw pancakeError(error);
   return (data ?? {}) as PancakeSyncResult;
+}
+
+const CHAT_NOT_READY = "Phần xem cuộc chat cần chạy file supabase/024_pancake_chat.sql trên Supabase trước.";
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Tải cuộc chat Pancake của một lead (30 tin gần nhất, hoặc 30 tin cũ hơn khi truyền currentCount).
+ * Cơ sở dữ liệu hỏi Pancake hộ (token không về trình duyệt); hàm này chờ câu trả lời, tối đa ~25 giây.
+ */
+export async function loadPancakeChat(leadId: string, currentCount?: number): Promise<PancakeChatResult> {
+  const supabase = getSupabaseBrowserClient();
+  const chatError = (error: { message: string; code?: string }) =>
+    new Error(isNotMigrated(error) ? CHAT_NOT_READY : error.message);
+  const { data, error } = await supabase.rpc("pancake_chat_open", {
+    p_lead_id: leadId,
+    p_current_count: currentCount && currentCount > 0 ? currentCount : null,
+  });
+  if (error) throw chatError(error);
+  const start = data as PancakeChatResult | { state: "pending"; request_id: number };
+  if (start.state !== "pending") return start;
+
+  const started = Date.now();
+  for (let i = 0; Date.now() - started < 25000; i++) {
+    await sleep(i < 4 ? 350 : 800);
+    const { data: answer, error: readError } = await supabase.rpc("pancake_chat_read", { p_request_id: start.request_id });
+    if (readError) throw chatError(readError);
+    const result = answer as PancakeChatResult | { state: "pending" };
+    if (result.state !== "pending") return result;
+  }
+  return { state: "error", message: "Pancake không trả lời kịp — bấm Tải lại" };
 }

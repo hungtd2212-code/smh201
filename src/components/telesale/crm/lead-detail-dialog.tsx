@@ -20,11 +20,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { duplicateCount, missingForStatus, vnDateTime } from "@/lib/leads/crm";
+import { hasPancakeConversation, safeHttpUrl } from "@/lib/leads/pancake";
 import { updateLead } from "@/lib/leads/repo";
 import type { Lead, LeadPatch, LeadStatusRow } from "@/lib/leads/types";
 import { softDeleteRecords } from "@/lib/safety/repo";
 import { cn } from "@/lib/utils";
 import { ConsultHistory } from "./consult-history";
+import { PancakeChat } from "./pancake-chat";
 import { StatusPicker } from "./status-chip";
 
 const NONE = "__none";
@@ -115,12 +117,27 @@ type Props = {
   onDeleted: (id: string) => void;
 };
 
-/** Bấm vào một dòng của bảng Lead → cửa sổ này: thông tin khách, chăm sóc, nguồn số, khai thác thông tin. */
+/**
+ * Bấm vào một dòng của bảng Lead → cửa sổ gần kín màn hình: bên trái thông tin khách, chăm sóc, nguồn số, khai
+ * thác thông tin; bên phải cuộc chat Pancake của khách (máy nhỏ: cuộc chat nằm dưới).
+ */
 export function LeadDetailDialog(props: Props) {
   return (
     <Dialog open={props.lead !== null} onOpenChange={(open) => !open && props.onClose()}>
-      <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-4xl">
-        {props.lead && <DetailForm key={`${props.lead.id}-${props.pendingStatusId}`} {...props} lead={props.lead} />}
+      <DialogContent className="h-[calc(100svh-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-[calc(100vw-2rem)] lg:grid-cols-[minmax(0,1fr)_minmax(22rem,32rem)] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden 2xl:max-w-[1600px]">
+        {props.lead && (
+          <>
+            <div className="min-h-0 p-4 lg:overflow-y-auto">
+              <DetailForm key={`${props.lead.id}-${props.pendingStatusId}`} {...props} lead={props.lead} />
+            </div>
+            <PancakeChat
+              key={props.lead.id}
+              leadId={props.lead.id}
+              pancakeUrl={props.lead.pancake_url}
+              className="h-[75svh] border-t lg:h-auto lg:border-t-0 lg:border-l"
+            />
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -366,12 +383,7 @@ function DetailForm({
           <Info label="Chiến dịch">{names.campaign(lead.campaign_id)}</Info>
           <Info label="Nhân viên Ads">{names.adsStaff(lead.ads_staff_id)}</Info>
           <Info label="Hội thoại Pancake">
-            {lead.pancake_url ? (
-              <a href={lead.pancake_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                Mở
-                <ExternalLink className="size-3" />
-              </a>
-            ) : null}
+            {lead.pancake_url ? (hasPancakeConversation(lead.pancake_url) ? "Xem ở khung chat" : <PancakeLink url={lead.pancake_url} />) : null}
           </Info>
         </dl>
       </fieldset>
@@ -391,7 +403,7 @@ function DetailForm({
         />
       </div>
 
-      <DialogFooter className="gap-2 sm:justify-between">
+      <DialogFooter className="sticky bottom-0 z-10 gap-2 bg-popover sm:justify-between lg:rounded-br-none">
         {canDelete ? (
           <Button type="button" variant="ghost" className="text-destructive" onClick={() => setConfirmingDelete(true)}>
             <Trash2 />
@@ -458,5 +470,17 @@ function Info({ label, children }: { label: string; children: React.ReactNode })
       <dt className="shrink-0 text-muted-foreground">{label}:</dt>
       <dd className={cn("min-w-0 truncate", !children && "text-muted-foreground")}>{children || "—"}</dd>
     </div>
+  );
+}
+
+/** Link Pancake không đúng dạng hội thoại (nhập tay) → vẫn cho mở như trước. */
+function PancakeLink({ url }: { url: string }) {
+  const href = safeHttpUrl(url);
+  if (!href) return <>{url}</>;
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+      Mở
+      <ExternalLink className="size-3" />
+    </a>
   );
 }

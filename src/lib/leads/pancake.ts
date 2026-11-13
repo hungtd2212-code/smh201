@@ -146,3 +146,100 @@ export function pancakeHealth(conn: PancakePage, now: Date = new Date()): Pancak
 /** Link mở đúng hội thoại trong Pancake. */
 export const pancakeConversationUrl = (pancakePageId: string, conversationId: string) =>
   `https://pancake.vn/${encodeURIComponent(pancakePageId)}?c_id=${encodeURIComponent(conversationId)}`;
+
+// ---------------------------------------------------------------------------
+// Cuộc chat Pancake trong cửa sổ chi tiết lead (supabase/024_pancake_chat.sql)
+// ---------------------------------------------------------------------------
+
+export type PancakeChatAttachment = {
+  type: string | null;
+  url: string | null;
+  preview: string | null;
+  title: string | null;
+  link: string | null;
+  text: string | null;
+  mime: string | null;
+};
+
+export type PancakeChatMessage = {
+  id: string;
+  at: string | null;
+  /** Tin của page (nhân viên trả lời) — hiện bên phải. */
+  from_page: boolean;
+  sender: string | null;
+  text: string;
+  removed: boolean;
+  kind: string | null;
+  attachments: PancakeChatAttachment[];
+};
+
+export type PancakeChatResult =
+  | { state: "ok"; pancake_page_id: string; conversation_id: string; customer: string | null; count: number; messages: PancakeChatMessage[] }
+  | { state: "no_link" }
+  | { state: "not_connected" }
+  | { state: "error"; message: string };
+
+/** Mỗi lần Pancake trả tối đa 30 tin; lô có từ 20 tin trở lên thì có thể còn tin cũ hơn. */
+export const CHAT_MORE_THRESHOLD = 20;
+
+/** Lead có link hội thoại Pancake dạng pancake.vn/<page>?c_id=<hội thoại> (đúng như hàm SQL đọc link). */
+export function hasPancakeConversation(url: string | null | undefined): boolean {
+  return /(?:pancake\.vn|pages\.fm)\/[A-Za-z0-9_.-]{3,80}\/?\?(?:[^#]*&)?c_id=[A-Za-z0-9_.-]{3,200}/.test(url ?? "");
+}
+
+/** Chỉ cho link http(s) làm ảnh / đường dẫn (không chạy "javascript:" lọt từ dữ liệu ngoài). */
+export function safeHttpUrl(url: string | null | undefined): string | null {
+  const u = (url ?? "").trim();
+  return /^https?:\/\/[^\s]+$/i.test(u) ? u : null;
+}
+
+/** Pancake đôi khi trả chữ còn mã HTML (&amp; …) — đổi lại thành chữ thường để hiện. */
+export function decodeChatText(text: string | null | undefined): string {
+  return (text ?? "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&#x27;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/** Ghép lô tin mới vào danh sách đang có: bỏ trùng theo mã tin, xếp cũ → mới. */
+export function mergeChatMessages(current: PancakeChatMessage[], incoming: PancakeChatMessage[]): PancakeChatMessage[] {
+  const byId = new Map<string, PancakeChatMessage>();
+  for (const m of current) byId.set(m.id, m);
+  for (const m of incoming) if (m.id) byId.set(m.id, m);
+  return [...byId.values()].sort((a, b) => {
+    const ta = a.at ? Date.parse(a.at) : 0;
+    const tb = b.at ? Date.parse(b.at) : 0;
+    return ta - tb || a.id.localeCompare(b.id);
+  });
+}
+
+/** Ngày "dd/mm/yyyy" và giờ "HH:mm" theo giờ Việt Nam, để chia cuộc chat theo ngày. */
+export function chatDayTime(iso: string | null | undefined): { day: string; time: string } | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+      .formatToParts(date)
+      .map((x) => [x.type, x.value]),
+  );
+  return { day: `${p.day}/${p.month}/${p.year}`, time: `${p.hour}:${p.minute}` };
+}
+
+/** Lời báo lỗi khi tải cuộc chat, nói rõ cần làm gì. */
+export function explainChatError(message: string): string {
+  if (/invalid\s*access[_ ]?token|access[_ ]?token.*(invalid|expired)/i.test(message))
+    return "Pancake không nhận token của page này — quản lý vào Telesale → Cài đặt → Kết nối Pancake để dán lại token";
+  return message;
+}
