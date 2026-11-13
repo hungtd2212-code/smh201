@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { TkqcPageManager } from "@/components/catalog/tkqc-page-manager";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Marketing — TKQC & Page" };
-
-export default function TkqcPagePage() {
-  return <TkqcPageManager />;
+/** Địa chỉ cũ: trang TKQC & Page nay là một thẻ của Marketing → Cài đặt. */
+export default function OldAddress() {
+  redirect("/marketing/cai-dat?tab=tkqc");
 }

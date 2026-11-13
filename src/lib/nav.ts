@@ -55,7 +55,7 @@ const HR_MODULE = "Hành chính Nhân sự";
 /** Người gửi và xem báo cáo ads hằng ngày: Quản trị, Trưởng Marketing và Nhân viên Ads. */
 const ADS_PEOPLE: StaffRole[] = ["super_admin", "admin", "marketing_manager", "ads_staff"];
 
-/** Quản trị và Trưởng Marketing (phần thử nghiệm "Ads tự động"). */
+/** Quản trị và Trưởng Marketing ("Ads tự động", "Cài đặt" của Marketing). */
 const MARKETING_MANAGERS: StaffRole[] = ["super_admin", "admin", "marketing_manager"];
 
 export type NavModule = {
@@ -91,8 +91,8 @@ export const NAV_SECTIONS: NavSection[] = [
         title: "Marketing",
         icon: Megaphone,
         pages: [
-          // Tạm thời chỉ có 3 mục này (chủ phòng khám, 11–12/11/2026). Các trang Chiến dịch & Bài post,
-          // TKQC & Page, Nhân viên Ads vẫn mở được bằng đường dẫn — quản lý có lối vào từ màn Nhập liệu.
+          // Chủ phòng khám muốn menu gọn (11–12/11/2026). Ba trang danh mục TKQC & Page, Chiến dịch & Bài post,
+          // Nhân viên Ads gom thành các thẻ của một mục "Cài đặt" ở cuối (13/11/2026).
           { title: "Nhập liệu", href: "/marketing/nhap-lieu", roles: ADS_PEOPLE, icon: ClipboardPenLine },
           { title: "Tổng quan", href: "/marketing/tong-quan", roles: ADS_PEOPLE, icon: LayoutDashboard },
           { title: "Phân tích", href: "/marketing/phan-tich", roles: ADS_PEOPLE, icon: ChartLine },
@@ -104,6 +104,13 @@ export const NAV_SECTIONS: NavSection[] = [
             roles: MARKETING_MANAGERS,
             icon: FlaskConical,
             hint: "Kéo chi tiêu, tin nhắn từ Facebook và đối chiếu với số nhân viên nhập tay",
+          },
+          {
+            title: "Cài đặt",
+            href: "/marketing/cai-dat",
+            roles: MARKETING_MANAGERS,
+            icon: Settings,
+            hint: "TKQC & Page, Chiến dịch & Bài post, Nhân viên Ads",
           },
         ],
       },

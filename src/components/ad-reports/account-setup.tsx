@@ -229,11 +229,11 @@ export function AccountSetup({ isManager, me }: { isManager: boolean; me: AdsSta
       {isManager && (
         <p className="text-sm text-muted-foreground">
           Chuyển một TKQC sang nhân viên khác (từ một ngày nhất định): trang{" "}
-          <Link href="/marketing/tkqc-page" className="font-medium text-foreground underline underline-offset-2">
+          <Link href="/marketing/cai-dat?tab=tkqc" className="font-medium text-foreground underline underline-offset-2">
             TKQC &amp; Page
           </Link>
           . Danh sách nhân viên quảng cáo:{" "}
-          <Link href="/marketing/nhan-vien-ads" className="font-medium text-foreground underline underline-offset-2">
+          <Link href="/marketing/cai-dat?tab=nhan-vien-ads" className="font-medium text-foreground underline underline-offset-2">
             Nhân viên Ads
           </Link>
           .

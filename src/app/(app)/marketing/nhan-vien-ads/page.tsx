@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { AdsStaffManager } from "@/components/catalog/ads-staff-manager";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Marketing — Nhân viên Ads" };
-
-export default function AdsStaffPage() {
-  return <AdsStaffManager />;
+/** Địa chỉ cũ: trang Nhân viên Ads nay là một thẻ của Marketing → Cài đặt. */
+export default function OldAddress() {
+  redirect("/marketing/cai-dat?tab=nhan-vien-ads");
 }

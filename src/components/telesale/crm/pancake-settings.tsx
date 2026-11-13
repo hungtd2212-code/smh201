@@ -259,8 +259,8 @@ function HowTo({ noPages }: { noPages: boolean }) {
       {noPages && (
         <p className="mb-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
           Trong ERP chưa có page nào. Thêm page trước ở{" "}
-          <Link href="/marketing/tkqc-page" className="font-medium underline">
-            Marketing → TKQC &amp; Page
+          <Link href="/marketing/cai-dat?tab=tkqc" className="font-medium underline">
+            Marketing → Cài đặt → TKQC &amp; Page
           </Link>
           , rồi quay lại đây kết nối.
         </p>

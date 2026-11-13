@@ -249,7 +249,7 @@ function OwnerFix({ mismatch: m }: { mismatch: OwnerMismatch }) {
       </Hint>
       <div>
         <Button asChild size="sm" variant="outline">
-          <a href="/marketing/tkqc-page" target="_blank" rel="noreferrer">
+          <a href="/marketing/cai-dat?tab=tkqc" target="_blank" rel="noreferrer">
             <ExternalLink />
             Mở TKQC & Page
           </a>

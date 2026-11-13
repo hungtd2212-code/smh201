@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { CampaignsManager } from "@/components/catalog/campaigns-manager";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Marketing — Chiến dịch & Bài post" };
-
-export default function CampaignsPage() {
-  return <CampaignsManager />;
+/** Địa chỉ cũ: trang Chiến dịch & Bài post nay là một thẻ của Marketing → Cài đặt. */
+export default function OldAddress() {
+  redirect("/marketing/cai-dat?tab=chien-dich");
 }
