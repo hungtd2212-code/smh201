@@ -15,10 +15,11 @@ import { hasRole, MANAGER_ROLES } from "@/lib/leads/crm";
 import { fetchAssignMode, saveAssignMode } from "@/lib/leads/repo";
 import type { AssignMode } from "@/lib/leads/types";
 import { cn } from "@/lib/utils";
+import { PancakeSettings } from "./pancake-settings";
 import { StatusSettings } from "./status-settings";
 import { useLeadStatuses } from "./use-lead-statuses";
 
-/** Telesale → Cài đặt: trạng thái khách hàng và cách chia số. */
+/** Telesale → Cài đặt: trạng thái khách hàng, cách chia số, kết nối Pancake. */
 export function TelesaleSettings() {
   const staff = useCurrentStaff();
   const canManage = staff.status === "ok" && hasRole(MANAGER_ROLES, staff.role);
@@ -29,7 +30,7 @@ export function TelesaleSettings() {
       <PageHeader
         icon={Settings2}
         title="Cài đặt Telesale"
-        description="Trạng thái khách hàng và cách chia số cho nhân viên Telesale."
+        description="Trạng thái khách hàng, cách chia số cho nhân viên Telesale và kết nối Pancake."
       />
       <CatalogGate>
         {!canManage && (
@@ -47,6 +48,7 @@ export function TelesaleSettings() {
           <div className="grid items-start gap-5 xl:grid-cols-2">
             <StatusSettings statuses={statuses} canManage={canManage} onChanged={reload} />
             <AssignSettings canManage={canManage} />
+            {canManage && <PancakeSettings />}
           </div>
         )}
       </CatalogGate>
