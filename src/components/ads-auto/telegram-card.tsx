@@ -41,7 +41,8 @@ const when = (iso: string | null) => {
 
 /**
  * "Báo cáo Telegram": mỗi sáng (10h) gửi vào nhóm báo cáo ngày hôm qua, mỗi nhân viên Ads một tin theo mẫu nhân
- * viên đang tự báo (Chi tiêu Facebook · Mess, Data theo Pancake · giá · tỷ lệ xin số). Nút cài đặt chỉ Quản trị thấy.
+ * viên đang tự báo, bản chi tiết (file 033): Chi tiêu + Mess trình theo Facebook · Mess pan, Data theo Pancake · giá · tỷ lệ xin số.
+ * Nút cài đặt chỉ Quản trị thấy.
  */
 export function TelegramCard({ today }: { today: string }) {
   const staff = useCurrentStaff();
@@ -391,8 +392,9 @@ function Preview({
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          Chi tiêu theo Facebook; Mess và Data (số điện thoại) theo thống kê quảng cáo của Pancake. Số gộp theo nhân viên đang cầm
-          TKQC ngày đó. Giá mess = chi tiêu / mess, giá Data = chi tiêu / data, tỷ lệ xin số = data / mess.
+          Chi tiêu và Mess trình theo trình quản lý quảng cáo Facebook (lượt bắt đầu trò chuyện qua tin nhắn); Mess pan và Data (số
+          điện thoại) theo thống kê quảng cáo của Pancake. Số gộp theo nhân viên đang cầm TKQC ngày đó. Giá = chi tiêu chia cho số
+          tương ứng; tỷ lệ xin số = Data / Mess trình.
         </p>
         {data && (
           <ConfirmActionDialog

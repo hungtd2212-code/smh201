@@ -9,7 +9,7 @@ const { db, read, ok, section, one, all, addUser, as, errOf, finish } = await cr
 const U = {};
 for (const name of ["owner", "mm", "tl", "ads1", "ads2"]) U[name] = await addUser(name);
 
-section("Chạy schema.sql → 031, rồi 032");
+section("Chạy schema.sql → 031, rồi 032 + 033");
 await db.exec(`
   create schema realtime;
   create table realtime.messages (id bigserial primary key, topic text, extension text);
@@ -75,9 +75,9 @@ const A2 = await addAccount("Dương_smh_001", "2222222222", duong);
 const A3 = await addAccount("Dương_smh_002", "3333333333", duong);
 
 // Số của ngày hôm qua (D1): Facebook chi tiêu + Pancake tin nhắn / SĐT.
-await db.query(`insert into public.ads_auto_daily (report_date, ad_account_id, fb_account_id, spend, currency) values
-  ($1::date, $2, '1111111111', 764868, 'VND'), ($1::date, $3, '2222222222', 1500000, 'VND'), ($1::date, $4, '3333333333', 460184, 'VND'),
-  ($5::date, $2, '1111111111', 100000, 'VND')`, [D[1], A1, A2, A3, D[2]]);
+await db.query(`insert into public.ads_auto_daily (report_date, ad_account_id, fb_account_id, spend, currency, conversations) values
+  ($1::date, $2, '1111111111', 764868, 'VND', 4), ($1::date, $3, '2222222222', 1500000, 'VND', 2), ($1::date, $4, '3333333333', 460184, 'VND', 1),
+  ($5::date, $2, '1111111111', 100000, 'VND', 0)`, [D[1], A1, A2, A3, D[2]]);
 await db.query(`insert into public.ads_pancake_daily (report_date, pancake_page_id, ad_id, fb_account_id, messages, phones) values
   ($1::date, 'p1', '120200000000000001', '1111111111', 3, 1), ($1::date, 'p2', '120200000000000002', null, 2, 0),
   ($1::date, 'p2', '120200000000000009', '9999999999', 4, 2)`, [D[1]]);
@@ -93,6 +93,9 @@ await db.exec(read("032_telegram_report.sql"));
 ok(true, "032 chạy không lỗi");
 await db.exec(read("032_telegram_report.sql"));
 ok(true, "chạy lại 032 lần hai không lỗi");
+await db.exec(read("033_telegram_report_detail.sql"));
+await db.exec(read("033_telegram_report_detail.sql"));
+ok(true, "033 (mẫu tin chi tiết) chạy hai lần không lỗi");
 const job = await all(`select schedule, command from cron.job where jobname = 'smh-telegram'`);
 ok(job.length === 1 && job[0].schedule === "20 seconds" && job[0].command === "select private.telegram_tick()", "lịch 20 giây một lần", job);
 ok(JSON.stringify(await as(U.mm, cmpSql, [D[3], D[0]])) === cmpBefore, "bảng đối chiếu ra đúng như trước");
@@ -112,10 +115,12 @@ section("Soạn báo cáo theo mẫu");
 const dd = `${Number(D[1].slice(8))}/${Number(D[1].slice(5, 7))}`;
 const report = await all(`select seq, title, body from private.telegram_report($1::date)`, [D[1]]);
 ok(report.length === 2 && report[0].title === "Dương" && report[1].title === "An", "mỗi nhân viên một tin, chi tiêu nhiều lên trước", report.map((r) => r.title));
-ok(report[0].body === [`BC ngày ${dd} - Dương`, "Chi tiêu: 1.960.184", "Mess: 0", "Giá mess: 0", "Data: 0", "Giá Data: 0", "Tỷ lệ xin số: 0%"].join("\n"),
-  "Dương: cộng 2 TKQC, không có khách → giá 0, tỷ lệ 0%", report[0].body);
-ok(report[1].body === [`BC ngày ${dd} - An`, "Chi tiêu: 764.868", "Mess: 5", "Giá mess: 152.974", "Data: 1", "Giá Data: 764.868", "Tỷ lệ xin số: 20%"].join("\n"),
-  "An: chi tiêu Facebook, mess + data theo Pancake (cả quảng cáo tra TKQC qua Facebook)", report[1].body);
+ok(report[0].body === [`BC ngày ${dd} - Dương`, "Chi tiêu: 1.960.184", "", "Mess trình: 3", "Giá mess trình: 653.395", "Mess pan: 0", "Giá mess pan: 0",
+  "-------", "Data: 0", "Giá Data: 0", "Tỷ lệ xin số: 0%"].join("\n"),
+  "Dương: cộng 2 TKQC; Pancake không có khách → giá mess pan 0, tỷ lệ 0%", report[0].body);
+ok(report[1].body === [`BC ngày ${dd} - An`, "Chi tiêu: 764.868", "", "Mess trình: 4", "Giá mess trình: 191.217", "Mess pan: 5", "Giá mess pan: 152.974",
+  "-------", "Data: 1", "Giá Data: 764.868", "Tỷ lệ xin số: 25%"].join("\n"),
+  "An: mẫu chi tiết — mess trình (Facebook), mess pan (Pancake, cả quảng cáo tra TKQC qua Facebook), tỷ lệ = data / mess trình", report[1].body);
 ok(!report.some((r) => r.body.includes("9999")) , "quảng cáo của TKQC ngoài hệ thống không tính vào ai");
 ok((await all(`select 1 from private.telegram_report($1::date)`, [D[5]])).length === 0, "ngày không ai chạy → không có tin");
 ok((await one(`select private.telegram_data_missing($1::date) t`, [D[1]])).t === null, "hôm qua đủ số");
