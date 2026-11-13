@@ -1,4 +1,5 @@
-// Kiểm thử supabase/024_pancake_chat.sql (xem cuộc chat Pancake trong cửa sổ chi tiết lead) trên Postgres chạy
+// Kiểm thử supabase/024_pancake_chat.sql (xem cuộc chat Pancake trong cửa sổ chi tiết lead) và
+// supabase/025_pancake_reply.sql (trả lời khách ngay trong khung chat) trên Postgres chạy
 // trong bộ nhớ. Không gọi Pancake thật: pg_net được thay bằng bản giả, "Pancake" trả lời bằng dữ liệu dựng sẵn
 // theo mẫu của tài liệu developer.pancake.biz (GET /pages/{id}/conversations/{conv}/messages).
 //
@@ -24,6 +25,13 @@ await db.exec(`
                                timeout_milliseconds int default 5000)
   returns bigint language sql as $$
     insert into net.http_request_queue values (nextval('net.request_seq'), url, params, timeout_milliseconds) returning id
+  $$;
+  alter table net.http_request_queue add column method text not null default 'GET', add column body jsonb, add column headers jsonb;
+  create function net.http_post(url text, body jsonb default '{}', params jsonb default '{}',
+                                headers jsonb default '{"Content-Type": "application/json"}', timeout_milliseconds int default 5000)
+  returns bigint language sql as $$
+    insert into net.http_request_queue (id, url, params, timeout_milliseconds, method, body, headers)
+    values (nextval('net.request_seq'), url, params, timeout_milliseconds, 'POST', body, headers) returning id
   $$;
   create schema cron;
   create table cron.job (jobid bigserial primary key, jobname text unique, schedule text, command text);
@@ -186,5 +194,120 @@ ok(/permission denied/.test(e ?? ""), "hàm nội bộ không gọi thẳng đư
 await db.exec(`update public.leads set deleted_at = now() where id = '${leadA}'`);
 e = await errOf(U.tl, `select public.pancake_chat_open($1)`, [leadA]);
 ok(/không xem được số này/.test(e ?? ""), "số đã vào thùng rác → không mở chat", e);
+
+// ===========================================================================
+section("025: chạy file; xem chat vẫn như cũ");
+await db.exec(`update public.leads set deleted_at = null where id = '${leadA}'; delete from private.pancake_chat_requests;`);
+const before025 = JSON.stringify(await all(`select * from public.leads order by id`));
+await db.exec(read("025_pancake_reply.sql"));
+ok(true, "025 chạy không lỗi");
+await db.exec(read("025_pancake_reply.sql"));
+ok(true, "chạy lại 025 lần hai không lỗi");
+ok(JSON.stringify(await all(`select * from public.leads order by id`)) === before025, "dữ liệu lead giữ nguyên");
+r = (await as(U.sale1, `select public.pancake_chat_open($1) r`, [leadA]))[0].r;
+ok(r.state === "pending" && (await queued()).at(-1).url.endsWith("/pages/111222333/conversations/111222333_555/messages"), "mở chat vẫn chạy", r);
+e = await errOf(U.sale2, `select public.pancake_chat_open($1)`, [leadA]);
+ok(/không xem được số này/.test(e ?? ""), "vẫn chặn Telesale khác", e);
+ok((await as(U.sale1, `select public.pancake_chat_open($1) r`, [leadNoLink]))[0].r.state === "no_link"
+  && (await as(U.sale1, `select public.pancake_chat_open($1) r`, [leadOther]))[0].r.state === "not_connected"
+  && (await as(U.sale1, `select public.pancake_chat_open($1) r`, [leadName]))[0].r.state === "pending", "không có link / chưa kết nối / link tên page như cũ");
+id = await open(U.sale1, leadA);
+await answer(id, 200, { success: true, conv_from: { name: "Văn Nguyễn" }, messages: [
+  { id: "ad1", type: "INBOX", inserted_at: "2026-11-10T15:31:00", from: { id: "111222333", name: "Smile Hub" }, message: "",
+    attachments: [{ type: "ad_click", url: "https://www.facebook.com/122105543367533959", ad_id: "120200000000000001",
+      post_attachments: [{ type: "video_inline", url: "https://content.pancake.vn/ad.jpg", description: "🦷 TRỒNG RĂNG IMPLANT – ĐỪNG CHỈ HỎI GIÁ" }] }] },
+] });
+r = await read1(U.sale1, id);
+const ad = r.messages?.[0]?.attachments?.[0];
+ok(ad && ad.type === "ad_click" && ad.ad_image === "https://content.pancake.vn/ad.jpg" && /TRỒNG RĂNG IMPLANT/.test(ad.ad_text) && ad.url === "https://www.facebook.com/122105543367533959",
+  "thẻ quảng cáo: có ảnh, nội dung bài và link bài", ad);
+
+section("Gửi tin trả lời: ai được gửi, gửi gì");
+const send = (uid, lead, text, replyTo = null) => as(uid, `select public.pancake_chat_send($1, $2, $3) r`, [lead, text, replyTo]).then((x) => x[0].r);
+r = await send(U.sale1, leadA, "  Dạ em chào anh ạ \n");
+q = await queued();
+let post = q.at(-1);
+const postRow = await one(`select method, body, headers from net.http_request_queue where id = $1`, [post.id]);
+ok(r.state === "pending" && r.request_id === Number(post.id), "Telesale quản lý số gửi được → gửi lượt gửi Pancake", r);
+ok(postRow.method === "POST" && post.url === "https://pages.fm/api/public_api/v1/pages/111222333/conversations/111222333_555/messages"
+  && post.params.page_access_token === TOKEN && JSON.stringify(postRow.body) === JSON.stringify({ action: "reply_inbox", message: "Dạ em chào anh ạ" })
+  && postRow.headers["Content-Type"] === "application/json",
+  "POST đúng địa chỉ, token ở tham số, nội dung đã cắt khoảng trắng hai đầu", { url: post.url, body: postRow.body });
+ok(!JSON.stringify(r).includes(TOKEN), "trình duyệt không nhận token");
+const sendId = r.request_id;
+e = await errOf(U.sale2, `select public.pancake_chat_send($1, 'x y z')`, [leadA]);
+ok(/không xem được số này/.test(e ?? ""), "Telesale khác không trả lời được số của người khác", e);
+e = await errOf(U.ads1, `select public.pancake_chat_send($1, 'x y z')`, [leadA]);
+ok(/không xem được số này/.test(e ?? ""), "nhân viên Ads không gửi được", e);
+ok((await send(U.page1, leadSale2, "Chào chị")).state === "pending", "trực page trả lời được mọi số");
+e = await errOf(U.sale1, `select public.pancake_chat_send($1, '   ')`, [leadA]);
+ok(/Chưa nhập tin nhắn/.test(e ?? ""), "tin trống → từ chối", e);
+e = await errOf(U.sale1, `select public.pancake_chat_send($1, repeat('a', 2001))`, [leadA]);
+ok(/dài quá/.test(e ?? ""), "quá 2.000 ký tự → từ chối", e);
+e = await errOf(U.sale1, `select public.pancake_chat_send($1, 'Chào anh')`, [leadNoLink]);
+ok(/không có cuộc chat Pancake/.test(e ?? ""), "số không có cuộc chat → từ chối", e);
+e = await errOf(U.sale1, `select public.pancake_chat_send($1, 'Chào anh')`, [leadOther]);
+ok(/chưa kết nối Pancake/.test(e ?? ""), "page chưa kết nối → từ chối", e);
+e = await errOf(U.sale1, `select public.pancake_chat_send($1, 'Dạ em chào anh ạ')`, [leadA]);
+ok(/vừa gửi rồi/.test(e ?? ""), "bấm gửi hai lần cùng một tin → chặn lần sau", e);
+r = await send(U.sale1, leadA, "Dạ em cảm ơn ạ", "111222333_cmt_42");
+let row = await one(`select body from net.http_request_queue where id = $1`, [r.request_id]);
+ok(JSON.stringify(row.body) === JSON.stringify({ action: "reply_comment", message: "Dạ em cảm ơn ạ", message_id: "111222333_cmt_42" }),
+  "cuộc chat là bình luận → trả lời đúng bình luận của khách", row.body);
+e = await errOf(U.sale1, `select public.pancake_chat_send($1, 'abc', 'x y''z')`, [leadA]);
+ok(/Mã bình luận không hợp lệ/.test(e ?? ""), "mã bình luận lạ → từ chối", e);
+
+section("Kết quả gửi");
+const result = async (uid, rid) => (await as(uid, `select public.pancake_chat_send_result($1) r`, [rid]))[0].r;
+r = await result(U.sale1, sendId);
+ok(r.state === "pending", "Pancake chưa trả lời → đang gửi", r);
+e = await errOf(U.sale2, `select public.pancake_chat_send_result($1)`, [sendId]);
+ok(/Không tìm thấy lượt gửi/.test(e ?? ""), "người khác không xem được lượt gửi của mình", e);
+await answer(sendId, 200, { success: true, id: "111222333_m_9001" });
+r = await result(U.sale1, sendId);
+ok(r.state === "sent" && r.id === "111222333_m_9001", "Pancake nhận → đã gửi", r);
+ok((await result(U.sale1, sendId)).state === "sent", "hỏi lại kết quả vẫn trả \"đã gửi\"");
+let log = await one(`select * from private.pancake_chat_sends where request_id = $1`, [sendId]);
+ok(log.outcome === "sent" && log.sent_by === U.sale1 && log.message === "Dạ em chào anh ạ" && log.lead_id === leadA && log.pancake_message_id === "111222333_m_9001" && log.finished_at,
+  "nhật ký ghi ai gửi, gửi gì, cho số nào, kết quả", { outcome: log.outcome, by: log.sent_by === U.sale1 });
+
+const failCases = [
+  [200, { success: false, message: "(#10) This message is sent outside of allowed window." }, /Pancake không gửi được: \(#10\) This message is sent outside of allowed window/],
+  [200, { success: false, message_code: "invalid_upload_fb_attachments_result" }, /invalid_upload_fb_attachments_result/],
+  [401, { success: false, message: "Invalid access_token" }, /Token của page này sai/],
+  [429, "", /gửi quá nhanh/],
+  [500, "<html>oops</html>", /Pancake không gửi được: lỗi 500/],
+];
+let n = 0;
+for (const [status, body, want] of failCases) {
+  const rid = (await send(U.tl, leadA, `Tin thử ${++n}`)).request_id;
+  await answer(rid, status, body);
+  r = await result(U.tl, rid);
+  log = await one(`select outcome, error from private.pancake_chat_sends where request_id = $1`, [rid]);
+  ok(r.state === "error" && want.test(r.message) && log.outcome === "failed" && log.error === r.message, `${status} → ${r.message}`, r);
+}
+r = await send(U.tl, leadA, "Tin thử 1");
+ok(r.state === "pending", "tin gửi lỗi thì gửi lại ngay được (không bị chặn \"vừa gửi\")", r);
+let rid = (await send(U.tl, leadA, "Tin quá giờ")).request_id;
+await db.query(`insert into net._http_response (id, status_code, content, timed_out) values ($1, null, null, true)`, [rid]);
+r = await result(U.tl, rid);
+ok(r.state === "error" && /tin có thể chưa tới khách/.test(r.message), "pg_net quá giờ → báo tin có thể chưa tới", r);
+rid = (await send(U.tl, leadA, "Tin chờ lâu")).request_id;
+await db.exec(`update private.pancake_chat_sends set created_at = now() - interval '1 minute' where request_id = ${rid}`);
+r = await result(U.tl, rid);
+ok(r.state === "error" && /không trả lời kịp/.test(r.message), "chờ quá 45 giây → báo lỗi, không chờ mãi", r);
+
+section("Chống gửi dồn dập, bảo mật");
+await db.exec(`insert into private.pancake_chat_sends (request_id, lead_id, pancake_page_id, conversation_id, action, message, sent_by)
+  select -g, '${leadA}', '111222333', '111222333_555', 'reply_inbox', 'tin ' || g, '${U.sale1}' from generate_series(1, 20) g`);
+e = await errOf(U.sale1, `select public.pancake_chat_send($1, 'Một tin nữa')`, [leadA]);
+ok(/Gửi quá nhanh/.test(e ?? ""), "20 tin / phút / người → chặn", e);
+e = await errOf(U.owner, `select * from private.pancake_chat_sends`);
+ok(/permission denied/.test(e ?? ""), "nhật ký gửi không đọc thẳng được qua ứng dụng", e);
+e = await errOf(U.sale1, `select * from private.pancake_chat_access($1)`, [leadA]);
+ok(/permission denied/.test(e ?? ""), "hàm kiểm tra quyền (có token) không gọi thẳng được", e);
+await db.exec(`update public.leads set deleted_at = now() where id = '${leadSale2}'`);
+e = await errOf(U.page1, `select public.pancake_chat_send($1, 'Chào')`, [leadSale2]);
+ok(/không xem được số này/.test(e ?? ""), "số đã vào thùng rác → không gửi", e);
 
 finish();

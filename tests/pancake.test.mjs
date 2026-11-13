@@ -1,16 +1,20 @@
 // Kiểm thử phần tính toán của kết nối Pancake (src/lib/leads/pancake.ts).
 // Chạy:  npm run test:ui
 import {
+  chatDayLabel,
   chatDayTime,
   decodeChatText,
   explainChatError,
   hasPancakeConversation,
+  lastCustomerMessage,
   mergeChatMessages,
+  outsideMessengerWindow,
   pancakeConversationUrl,
   pancakeHealth,
   pancakeTokenProblem,
   parsePancakePageId,
   safeHttpUrl,
+  splitChatPhones,
 } from "../src/lib/leads/pancake.ts";
 
 let passed = 0;
@@ -90,6 +94,28 @@ ok(dt && dt.day === "14/11/2026" && dt.time === "00:30", "giờ tin nhắn theo 
 ok(chatDayTime(null) === null && chatDayTime("không phải ngày") === null, "không có giờ → không hiện");
 ok(/quản lý vào Telesale → Cài đặt/.test(explainChatError("Pancake báo lỗi: Invalid access_token")), "lỗi token tiếng Anh → nói rõ ai làm gì");
 ok(explainChatError("Pancake không thấy cuộc chat này") === "Pancake không thấy cuộc chat này", "lỗi khác giữ nguyên");
+
+console.log("\n== Ô trả lời, giao diện như Pancake");
+const nowVN = new Date("2026-11-13T08:00:00Z"); // 15:00 13/11 giờ Việt Nam
+ok(chatDayLabel("2026-11-13T01:00:00Z", nowVN) === "Hôm nay" && chatDayLabel("2026-11-12T10:00:00Z", nowVN) === "Hôm qua"
+  && chatDayLabel("2026-11-10T10:00:00Z", nowVN) === "10/11/2026" && chatDayLabel(null, nowVN) === null, "nhãn ngày: Hôm nay / Hôm qua / dd/mm/yyyy");
+ok(chatDayLabel("2026-11-12T17:30:00Z", nowVN) === "Hôm nay", "00:30 sáng nay (giờ VN) là Hôm nay dù giờ UTC là hôm qua");
+let parts = splitChatPhones("Sô zalo 0356396686", "0965613037");
+ok(parts.length === 2 && parts[1].text === "0356396686" && parts[1].phone === "other", "số khác → tô xanh", parts);
+parts = splitChatPhones("0965613037", "0965613037");
+ok(parts.length === 1 && parts[0].phone === "lead", "số của chính lead → tô cam", parts);
+parts = splitChatPhones("Gọi em +84 965 613 037 hoặc 0912.345.678 nhé", "0965613037");
+ok(parts.filter((x) => x.phone).map((x) => `${x.text}:${x.phone}`).join("|") === "+84 965 613 037:lead|0912.345.678:other", "số có dấu cách / chấm / +84 vẫn nhận ra", parts);
+ok(splitChatPhones("Mã đơn 1234567890123456", null).every((x) => !x.phone) && splitChatPhones("Giá 45000000đ", null).every((x) => !x.phone),
+  "dãy số dài / tiền không bị tô nhầm");
+ok(splitChatPhones("Chào anh", null).length === 1 && splitChatPhones("", null).length === 0, "không có số → giữ nguyên chữ");
+const cm = (id, at, from_page, kind = "INBOX") => ({ id, at, from_page, sender: null, text: id, removed: false, kind, attachments: [] });
+const conv1 = [cm("k1", "2026-11-11T08:00:00Z", false), cm("p1", "2026-11-11T08:05:00Z", true)];
+ok(lastCustomerMessage(conv1)?.id === "k1" && lastCustomerMessage([cm("p", null, true)]) === null, "tìm tin cuối của khách");
+ok(outsideMessengerWindow(conv1, nowVN) === true && outsideMessengerWindow([cm("k", "2026-11-13T01:00:00Z", false)], nowVN) === false,
+  "khách nhắn quá 24 giờ → cảnh báo; trong 24 giờ → không");
+ok(outsideMessengerWindow([cm("c", "2026-11-01T01:00:00Z", false, "COMMENT")], nowVN) === false, "bình luận không tính giới hạn 24 giờ Messenger");
+ok(/24 giờ/.test(explainChatError("Pancake không gửi được: (#10) This message is sent outside of allowed window.")), "lỗi ngoài 24 giờ của Facebook → nói rõ");
 
 console.log(`\n${passed} ok, ${failed} lỗi`);
 if (failed > 0) process.exit(1);

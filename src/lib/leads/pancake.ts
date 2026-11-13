@@ -159,6 +159,9 @@ export type PancakeChatAttachment = {
   link: string | null;
   text: string | null;
   mime: string | null;
+  /** Thẻ quảng cáo khách bấm "Gửi tin nhắn" (type ad_click): ảnh và nội dung bài quảng cáo. */
+  ad_image?: string | null;
+  ad_text?: string | null;
 };
 
 export type PancakeChatMessage = {
@@ -237,9 +240,64 @@ export function chatDayTime(iso: string | null | undefined): { day: string; time
   return { day: `${p.day}/${p.month}/${p.year}`, time: `${p.hour}:${p.minute}` };
 }
 
-/** Lời báo lỗi khi tải cuộc chat, nói rõ cần làm gì. */
+/** Lời báo lỗi khi tải / gửi cuộc chat, nói rõ cần làm gì. */
 export function explainChatError(message: string): string {
   if (/invalid\s*access[_ ]?token|access[_ ]?token.*(invalid|expired)/i.test(message))
     return "Pancake không nhận token của page này — quản lý vào Telesale → Cài đặt → Kết nối Pancake để dán lại token";
+  if (/outside of (the )?allowed window|24[- ]?h|24 hours|\(#10\)/i.test(message))
+    return "Facebook chỉ cho page nhắn trong 24 giờ kể từ tin cuối của khách — tin chưa gửi. Gọi điện cho khách, hoặc chờ khách nhắn lại.";
   return message;
+}
+
+export type PancakeSendResult = { state: "sent"; id: string | null } | { state: "error"; message: string };
+
+/** Nhãn ngày giữa cuộc chat như Pancake: "Hôm nay", "Hôm qua", hoặc dd/mm/yyyy. */
+export function chatDayLabel(iso: string | null | undefined, now: Date = new Date()): string | null {
+  const day = chatDayTime(iso)?.day;
+  if (!day) return null;
+  if (day === chatDayTime(now.toISOString())?.day) return "Hôm nay";
+  if (day === chatDayTime(new Date(now.getTime() - 86_400_000).toISOString())?.day) return "Hôm qua";
+  return day;
+}
+
+/** Số điện thoại về dạng 0xxxxxxxxx để so khớp (+84 / 84 → 0, bỏ dấu cách, chấm, gạch). */
+const normalizePhone = (raw: string) => {
+  const digits = raw.replace(/\D/g, "");
+  return digits.startsWith("84") && digits.length >= 11 ? "0" + digits.slice(2) : digits;
+};
+
+export type ChatTextPart = { text: string; phone?: "lead" | "other" };
+
+/**
+ * Tách chữ trong tin nhắn để tô số điện thoại như Pancake: số của chính lead này tô cam, số khác tô xanh.
+ */
+export function splitChatPhones(text: string, leadPhone: string | null | undefined): ChatTextPart[] {
+  const parts: ChatTextPart[] = [];
+  const lead = leadPhone ? normalizePhone(leadPhone) : null;
+  const re = /(?:\+?84|0)(?:[\s.-]?\d){8,10}(?!\d)/g;
+  let last = 0;
+  for (const match of text.matchAll(re)) {
+    const start = match.index ?? 0;
+    const phone = normalizePhone(match[0]);
+    if (!/^0\d{9,10}$/.test(phone)) continue;
+    if (start > 0 && /\d/.test(text[start - 1])) continue; // nằm giữa một dãy số dài hơn
+    if (start > last) parts.push({ text: text.slice(last, start) });
+    parts.push({ text: match[0], phone: lead && phone === lead ? "lead" : "other" });
+    last = start + match[0].length;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last) });
+  return parts;
+}
+
+/** Tin cuối cùng của khách — để biết trả lời Messenger hay trả lời bình luận, và đã quá 24 giờ chưa. */
+export function lastCustomerMessage(messages: PancakeChatMessage[]): PancakeChatMessage | null {
+  for (let i = messages.length - 1; i >= 0; i--) if (!messages[i].from_page) return messages[i];
+  return null;
+}
+
+/** Facebook chỉ cho page nhắn Messenger trong 24 giờ kể từ tin cuối của khách. */
+export function outsideMessengerWindow(messages: PancakeChatMessage[], now: Date = new Date()): boolean {
+  const last = lastCustomerMessage(messages);
+  if (!last?.at || last.kind === "COMMENT") return false;
+  return now.getTime() - Date.parse(last.at) > 24 * 3_600_000;
 }

@@ -1,6 +1,6 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isNotMigrated } from "@/lib/supabase/errors";
-import type { PancakeChatResult, PancakeImport, PancakePage, PancakeSyncResult } from "./pancake";
+import type { PancakeChatResult, PancakeImport, PancakePage, PancakeSendResult, PancakeSyncResult } from "./pancake";
 
 /** Đọc / ghi phần kết nối Pancake (supabase/023_pancake_sync.sql). Chỉ Admin, COO, Trưởng Telesale. */
 
@@ -91,4 +91,34 @@ export async function loadPancakeChat(leadId: string, currentCount?: number): Pr
     if (result.state !== "pending") return result;
   }
   return { state: "error", message: "Pancake không trả lời kịp — bấm Tải lại" };
+}
+
+const SEND_NOT_READY = "Phần trả lời khách cần chạy file supabase/025_pancake_reply.sql trên Supabase trước.";
+
+/**
+ * Gửi tin trả lời khách qua Pancake (Messenger, hoặc trả lời bình luận khi có replyTo). Cơ sở dữ liệu gửi hộ —
+ * token không về trình duyệt; hàm này chờ Pancake xác nhận, tối đa ~30 giây. Lỗi nhập (tin trống, quá dài,
+ * không được gửi…) ném ra Error.
+ */
+export async function sendPancakeReply(leadId: string, message: string, replyTo?: string | null): Promise<PancakeSendResult> {
+  const supabase = getSupabaseBrowserClient();
+  const sendError = (error: { message: string; code?: string }) =>
+    new Error(isNotMigrated(error) ? SEND_NOT_READY : error.message);
+  const { data, error } = await supabase.rpc("pancake_chat_send", {
+    p_lead_id: leadId,
+    p_message: message,
+    p_reply_to: replyTo ?? null,
+  });
+  if (error) throw sendError(error);
+  const start = data as { state: "pending"; request_id: number };
+
+  const started = Date.now();
+  for (let i = 0; Date.now() - started < 30000; i++) {
+    await sleep(i < 4 ? 400 : 900);
+    const { data: answer, error: readError } = await supabase.rpc("pancake_chat_send_result", { p_request_id: start.request_id });
+    if (readError) throw sendError(readError);
+    const result = answer as PancakeSendResult | { state: "pending" };
+    if (result.state !== "pending") return result;
+  }
+  return { state: "error", message: "Pancake chưa xác nhận — tin có thể chưa tới khách, bấm tải lại khung chat để xem trước khi gửi lại" };
 }

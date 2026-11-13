@@ -130,16 +130,26 @@ export function LeadDetailDialog(props: Props) {
             <div className="p-4 lg:min-h-0 lg:overflow-y-auto">
               <DetailForm key={`${props.lead.id}-${props.pendingStatusId}`} {...props} lead={props.lead} />
             </div>
-            <PancakeChat
-              key={props.lead.id}
-              leadId={props.lead.id}
-              pancakeUrl={props.lead.pancake_url}
-              className="h-[75svh] border-t lg:h-auto lg:border-t-0 lg:border-l"
-            />
+            <LeadChat lead={props.lead} />
           </>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Khung chat Pancake bên phải cửa sổ (tên page để ghi "Trả lời từ …"). */
+function LeadChat({ lead }: { lead: Lead }) {
+  const names = useCatalogNames();
+  return (
+    <PancakeChat
+      key={lead.id}
+      leadId={lead.id}
+      pancakeUrl={lead.pancake_url}
+      leadPhone={lead.phone}
+      pageName={names.page(lead.page_id) ?? null}
+      className="h-[80svh] border-t lg:h-auto lg:border-t-0 lg:border-l"
+    />
   );
 }
 
