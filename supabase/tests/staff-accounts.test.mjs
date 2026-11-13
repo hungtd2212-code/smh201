@@ -312,4 +312,77 @@ ok((await ownerOfAccount(leadAccount)) === leadRow.id, "Lead Ads thêm được 
 const staffAccount = (await as(lead2, ADD_ACCOUNT, ["ADS BA 01", "900000000000002", "self_built", "personal", (await adsRow(ads3)).id]))[0].id;
 ok((await ownerOfAccount(staffAccount)) === (await adsRow(ads3)).id, "Lead Ads thêm được TKQC cho một Nhân viên quảng cáo");
 
+// ---------------------------------------------------------------------------
+section("021: thêm 2 chức vụ Kế toán");
+// 021 dựa vào 005 (vai trò), 008 + 015 (vị trí) và quyền xem lead đang có nên chạy thẳng ở đây.
+e = await createErr(U.adm, "ke.toan.truoc", "accountant");
+ok(/Chọn vị trí/.test(e ?? ""), "(trước 021) vị trí Kế toán viên chưa dùng được", e);
+const leadId = (await one(`insert into public.leads (full_name, phone) values ('Khách thử', '0911222333') returning id`)).id;
+await db.query(`insert into public.lead_touches (lead_id, phone, result) values ($1, '0911222333', 'new')`, [leadId]);
+const LEADS = `select id from public.leads`;
+const TOUCHES = `select id from public.lead_touches`;
+const LEAD_LOG = `select id from public.audit_log where table_name = 'leads'`;
+const seen = async (uid, sql) => (await as(uid, sql)).length;
+const leadsBefore021 = { sale: await seen(U.sale1, LEADS), touches: await seen(U.sale1, TOUCHES), log: await seen(U.sale1, LEAD_LOG) };
+ok(leadsBefore021.sale === 1 && leadsBefore021.touches === 1 && leadsBefore021.log >= 1, "(trước 021) Telesale xem được lead, lượt chạm và lịch sử lead", leadsBefore021);
+const staffBefore021 = JSON.stringify(await all(`select to_jsonb(s) j from public.staff s order by user_id`));
+await db.exec(read("021_accounting_positions.sql"));
+ok(true, "021 chạy không lỗi");
+await db.exec(read("021_accounting_positions.sql"));
+ok(true, "chạy lại 021 lần hai không lỗi");
+ok(JSON.stringify(await all(`select to_jsonb(s) j from public.staff s order by user_id`)) === staffBefore021, "021 không đổi dòng nhân sự nào đang có");
+ok((await one(positionChecks)).n === 1, "chỉ còn đúng một ràng buộc danh sách vị trí");
+
+const chief = await create(U.adm, "kt.truong", "chief_accountant", hq, "Kế toán trưởng Một");
+row = await one(`select role, position, page_access, accepts_leads from public.staff where user_id = $1`, [chief]);
+ok(row.role === "chief_accountant" && row.position === "chief_accountant" && row.page_access.length === 0 && !row.accepts_leads,
+  "vị trí Kế toán trưởng → vai trò Kế toán trưởng, chưa có quyền xem trang nào, không nhận lead", row);
+const acct = await create(U.adm, "kt.vien", "accountant", hq, "Kế toán viên Một");
+row = await one(`select role, position, page_access from public.staff where user_id = $1`, [acct]);
+ok(row.role === "accountant" && row.position === "accountant" && row.page_access.length === 0, "vị trí Kế toán viên → vai trò Kế toán viên, chưa có quyền xem trang nào", row);
+user = await one(`select email from auth.users where id = $1`, [acct]);
+ok(user.email === "kt.vien@smilehub.local", "… có tài khoản đăng nhập bằng tên đăng nhập", user);
+e = await createErr(U.mm, "kt.hai", "accountant");
+ok(/Chỉ Quản trị được thêm người/.test(e ?? ""), "Trưởng Marketing thêm Kế toán viên → bị từ chối", e);
+e = await createErr(chief, "kt.ba", "accountant");
+ok(/Chỉ Quản trị được thêm người/.test(e ?? ""), "Kế toán trưởng tự thêm Kế toán viên → bị từ chối", e);
+
+for (const [who, uid] of [["Kế toán trưởng", chief], ["Kế toán viên", acct]]) {
+  const got = { leads: await seen(uid, LEADS), touches: await seen(uid, TOUCHES), log: await seen(uid, LEAD_LOG) };
+  ok(got.leads === 0 && got.touches === 0 && got.log === 0, `${who} không xem được lead, lượt chạm, lịch sử lead`, got);
+  await as(uid, `update public.leads set full_name = 'Bị sửa' where id = $1`, [leadId]).catch(() => null);
+  ok((await one(`select full_name from public.leads where id = $1`, [leadId])).full_name === "Khách thử", `${who} không sửa được lead`);
+  ok((await seen(uid, `select id from public.branches`)) >= 1 && (await seen(uid, `select id from public.services`)) >= 1,
+    `${who} vẫn xem được danh mục chung (cơ sở, dịch vụ)`);
+  ok((await seen(uid, `select user_id from public.staff where user_id = '${uid}'`)) === 1, `${who} đọc được dòng nhân sự của chính mình (đăng nhập được)`);
+  e = await errOf(uid, `select public.set_accepts_leads($1, true)`, [uid]);
+  ok(/staff_accounting_no_leads_check/.test(e ?? ""), `${who} tự bật nhận lead → bị từ chối`, e);
+}
+const leadsAfter021 = { sale: await seen(U.sale1, LEADS), touches: await seen(U.sale1, TOUCHES), log: await seen(U.sale1, LEAD_LOG) };
+ok(JSON.stringify(leadsAfter021) === JSON.stringify(leadsBefore021), "Telesale vẫn xem lead như trước 021", leadsAfter021);
+const page2 = await create(U.adm, "trucpage2", "page", hq, "Trực page 2");
+ok((await seen(U.adm, LEADS)) === 1 && (await seen(page2, LEADS)) === 1, "Quản trị và Trực page vẫn xem lead như trước");
+
+await as(U.adm, UPDATE, [acct, "Kế toán viên Một", "chief_accountant", hq]);
+row = await one(`select role, position from public.staff where user_id = $1`, [acct]);
+ok(row.role === "chief_accountant" && row.position === "chief_accountant", "đổi vị trí Kế toán viên → Kế toán trưởng: vai trò đổi theo", row);
+await as(U.adm, UPDATE, [acct, "Kế toán viên Một", "telesale", hq]);
+ok((await seen(acct, LEADS)) === 1, "chuyển người từ Kế toán sang Telesale → xem được lead như Telesale");
+await as(U.adm, `select public.set_accepts_leads($1, true)`, [acct]);
+await as(U.adm, UPDATE, [acct, "Kế toán viên Một", "accountant", hq]);
+row = await one(`select role, accepts_leads from public.staff where user_id = $1`, [acct]);
+ok(row.role === "accountant" && !row.accepts_leads, "chuyển Telesale đang nhận lead sang Kế toán → tự ra khỏi vòng chia lead", row);
+ok((await seen(acct, LEADS)) === 0, "… và lại không xem được lead");
+await as(U.adm, UPDATE, [tele, "Telesale Một", "lead_telesale", hq]);
+ok((await one(`select role from public.staff where user_id = $1`, [tele])).role === "lead", "6 vị trí cũ vẫn dùng được như trước");
+e = await createErr(U.adm, "bac.si2", "bac_si");
+ok(/Chọn vị trí/.test(e ?? ""), "vị trí chưa khai báo → vẫn bị từ chối", e);
+checkErr = null;
+try {
+  await db.query(`update public.staff set position = 'bac_si' where user_id = $1`, [tele]);
+} catch (err) {
+  checkErr = err.message;
+}
+ok(/staff_position_check/.test(checkErr ?? ""), "cột vị trí chỉ nhận 8 vị trí đã khai báo", checkErr);
+
 finish();

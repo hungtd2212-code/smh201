@@ -9,6 +9,7 @@ import { MISSING_COLUMN } from "@/lib/supabase/errors";
 /**
  * Vai trò của một tài khoản. Mã giữ nguyên như trong cơ sở dữ liệu:
  * lead = Trưởng Telesale, sale = Telesale, page = Trực page.
+ * chief_accountant / accountant (file 021): chưa có quyền riêng nào ngoài việc KHÔNG xem được lead.
  */
 export type StaffRole =
   | "super_admin"
@@ -17,7 +18,9 @@ export type StaffRole =
   | "ads_staff"
   | "lead"
   | "sale"
-  | "page";
+  | "page"
+  | "chief_accountant"
+  | "accountant";
 
 export const ROLE_LABELS: Record<StaffRole, string> = {
   super_admin: "Quản trị cấp cao",
@@ -27,6 +30,8 @@ export const ROLE_LABELS: Record<StaffRole, string> = {
   lead: "Trưởng Telesale",
   sale: "Telesale",
   page: "Trực page",
+  chief_accountant: "Kế toán trưởng",
+  accountant: "Kế toán viên",
 };
 
 /** Thứ tự hiển thị các vai trò trong ô chọn. */
@@ -38,6 +43,8 @@ export const ROLE_ORDER: StaffRole[] = [
   "lead",
   "sale",
   "page",
+  "chief_accountant",
+  "accountant",
 ];
 
 /** Quản trị cấp cao, Quản trị và Trưởng Telesale: hoàn tác lead, bật/tắt nhận lead của người khác, sửa dịch vụ. */

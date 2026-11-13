@@ -60,5 +60,11 @@ ok(got === "/marketing/phan-tich", "Trực page không được xem Leads → tr
 got = homeFor("lead_ads", "marketing_manager", []);
 ok(got === DEFAULT_HOME, "chưa được tick trang nào → Leads (trang đó tự báo chưa có quyền)", got);
 
+console.log("Kế toán: chưa có trang riêng, mở trang đầu tiên được tick");
+got = homeFor("chief_accountant", "chief_accountant", ["/thu-chi/phieu-thu-chi", "/thu-chi/so-quy"]);
+ok(got === "/thu-chi/phieu-thu-chi", "Kế toán trưởng được tick Thu chi → trang đầu tiên được tick", got);
+got = homeFor("accountant", "accountant", ["/thu-ngan/thu-tien"]);
+ok(got === "/thu-ngan/thu-tien", "Kế toán viên được tick Thu ngân → trang đó", got);
+
 console.log(`\n${passed} ok, ${failed} lỗi`);
 if (failed) process.exit(1);

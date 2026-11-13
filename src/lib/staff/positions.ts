@@ -4,9 +4,26 @@ import { ROLE_LABELS, type StaffRole } from "@/hooks/use-current-staff";
  * Vị trí công việc khi thêm người (Cài đặt → Tài khoản & Phân quyền). Mỗi vị trí đi kèm một vai trò
  * quyết định được đọc / ghi dữ liệu nào (supabase/008_staff_accounts.sql, hàm role_of_position).
  */
-export type Position = "coo" | "lead_ads" | "ads_staff" | "page" | "lead_telesale" | "telesale";
+export type Position =
+  | "coo"
+  | "lead_ads"
+  | "ads_staff"
+  | "page"
+  | "lead_telesale"
+  | "telesale"
+  | "chief_accountant"
+  | "accountant";
 
-export const POSITION_ORDER: Position[] = ["coo", "lead_ads", "ads_staff", "page", "lead_telesale", "telesale"];
+export const POSITION_ORDER: Position[] = [
+  "coo",
+  "lead_ads",
+  "ads_staff",
+  "page",
+  "lead_telesale",
+  "telesale",
+  "chief_accountant",
+  "accountant",
+];
 
 export const POSITION_LABELS: Record<Position, string> = {
   coo: "COO",
@@ -15,6 +32,8 @@ export const POSITION_LABELS: Record<Position, string> = {
   page: "Trực page",
   lead_telesale: "Trưởng Telesale",
   telesale: "Telesale",
+  chief_accountant: "Kế toán trưởng",
+  accountant: "Kế toán viên",
 };
 
 export const POSITION_ROLE: Record<Position, StaffRole> = {
@@ -24,6 +43,8 @@ export const POSITION_ROLE: Record<Position, StaffRole> = {
   page: "page",
   lead_telesale: "lead",
   telesale: "sale",
+  chief_accountant: "chief_accountant",
+  accountant: "accountant",
 };
 
 /**
@@ -33,6 +54,8 @@ export const POSITION_ROLE: Record<Position, StaffRole> = {
 export const POSITION_MIGRATION: Partial<Record<Position, string>> = {
   lead_telesale: "015_telesale_positions.sql",
   telesale: "015_telesale_positions.sql",
+  chief_accountant: "021_accounting_positions.sql",
+  accountant: "021_accounting_positions.sql",
 };
 
 /** Tên hiện ở cột "Vị trí": vị trí nếu có, không thì vai trò (tài khoản tạo trước khi có vị trí). */

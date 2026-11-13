@@ -1,4 +1,5 @@
 import type { StaffRole } from "@/hooks/use-current-staff";
+import type { Position } from "@/lib/staff/positions";
 
 /**
  * Các bảng danh mục dùng chung: kênh, dịch vụ, page, chiến dịch (supabase/002_marketing_lead.sql)
@@ -170,7 +171,7 @@ export type StaffMember = {
   /** Tên đăng nhập (null = tài khoản cũ đăng nhập bằng email). Các cột dưới do file 008 thêm vào. */
   username: string | null;
   /** Vị trí (xem src/lib/staff/positions.ts); null = tài khoản tạo trước khi có vị trí. */
-  position: "coo" | "lead_ads" | "ads_staff" | "page" | "lead_telesale" | "telesale" | null;
+  position: Position | null;
   /** Nơi làm việc (branches.id). */
   branch_id: string | null;
   /** Trang được xem; null = menu theo vai trò như trước. */
