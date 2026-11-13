@@ -1,17 +1,20 @@
 "use client";
 
-import { ChevronDown, CircleHelp, KeyRound, Loader2, RefreshCw, Search, Send, Unplug } from "lucide-react";
+import { vi } from "date-fns/locale";
+import { CalendarDays, ChevronDown, CircleHelp, KeyRound, Loader2, RefreshCw, Search, Send, Unplug } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/safety/confirm-action-dialog";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAdminRole, useCurrentStaff } from "@/hooks/use-current-staff";
-import { addDays, formatDay } from "@/lib/ad-reports/dates";
+import { addDays, dateToIso, formatDay, isoToDate } from "@/lib/ad-reports/dates";
 import {
   TELEGRAM_NOT_READY,
   cleanBotToken,
@@ -353,17 +356,7 @@ function Preview({
       </CollapsibleTrigger>
       <CollapsibleContent className="grid gap-3 px-3 pb-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Label htmlFor="tg-day" className="text-sm text-muted-foreground">
-            Ngày
-          </Label>
-          <Input
-            id="tg-day"
-            type="date"
-            className="w-auto"
-            value={day}
-            max={addDays(today, -1)}
-            onChange={(e) => e.target.value && setDay(e.target.value)}
-          />
+          <DayPicker value={day} lastDay={addDays(today, -1)} onChange={setDay} />
           {canSend && data && !data.missing && data.messages.length > 0 && (
             <Button size="sm" onClick={() => setConfirmOpen(true)}>
               <Send />
@@ -412,6 +405,45 @@ function Preview({
         )}
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+/** Chọn ngày báo cáo: Hôm qua / Hôm kia / lịch; hiện ngày/tháng/năm. Không chọn được hôm nay trở đi. */
+function DayPicker({ value, lastDay, onChange }: { value: string; lastDay: string; onChange: (day: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const dayBefore = addDays(lastDay, -1);
+  const custom = value !== lastDay && value !== dayBefore;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="sm" variant={value === lastDay ? "default" : "outline"} onClick={() => onChange(lastDay)}>
+        Hôm qua
+      </Button>
+      <Button size="sm" variant={value === dayBefore ? "default" : "outline"} onClick={() => onChange(dayBefore)}>
+        Hôm kia
+      </Button>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button size="sm" variant={custom ? "default" : "outline"} className="tabular-nums">
+            <CalendarDays />
+            {formatDay(value)}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-auto p-2">
+          <Calendar
+            mode="single"
+            locale={vi}
+            defaultMonth={isoToDate(value)}
+            selected={isoToDate(value)}
+            disabled={{ after: isoToDate(lastDay) }}
+            onSelect={(date) => {
+              if (!date) return;
+              onChange(dateToIso(date));
+              setOpen(false);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
 
