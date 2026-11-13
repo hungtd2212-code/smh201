@@ -91,10 +91,10 @@ export function AppSidebar() {
                       <SidebarMenuItem data-nav-module={mod.title} className="scroll-mb-2">
                         <CollapsibleTrigger asChild>
                           {/* Khi đang đóng mà chứa trang hiện tại thì tô sáng để biết mình đang ở đâu. */}
-                          {/* Mục cha to và đậm hơn mục con một chút để nhìn ra nhóm. */}
+                          {/* Mục cha to hơn mục con một chút, nét chữ mảnh (Inter 450), màu dịu, icon nét mảnh: thanh thoát. */}
                           <SidebarMenuButton
                             isActive={hasCurrentPage && !open}
-                            className="text-[0.9375rem] font-semibold [&>svg:first-child]:size-[1.125rem]"
+                            className="text-[0.9375rem] font-[450] tracking-[-0.006em] text-sidebar-foreground/85 [&>svg]:stroke-[1.6] [&>svg:first-child]:size-[1.125rem]"
                           >
                             <mod.icon />
                             <span>{mod.title}</span>
