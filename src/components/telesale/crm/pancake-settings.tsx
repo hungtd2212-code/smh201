@@ -207,6 +207,7 @@ export function PancakeSettings() {
 
       <ConnectDialog
         editing={editing}
+        conns={conns ?? []}
         onClose={() => setEditing(null)}
         onSaved={async (id) => {
           setEditing(null);
@@ -310,10 +311,12 @@ function ImportLog({ imports, connName }: { imports: PancakeImport[]; connName: 
 
 function ConnectDialog({
   editing,
+  conns,
   onClose,
   onSaved,
 }: {
   editing: PancakePage | "new" | null;
+  conns: PancakePage[];
   onClose: () => void;
   onSaved: (id: string) => Promise<void>;
 }) {
@@ -321,7 +324,13 @@ function ConnectDialog({
     <Dialog open={editing !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-lg">
         {editing && (
-          <ConnectForm key={editing === "new" ? "new" : editing.id} conn={editing === "new" ? null : editing} onClose={onClose} onSaved={onSaved} />
+          <ConnectForm
+            key={editing === "new" ? "new" : editing.id}
+            conn={editing === "new" ? null : editing}
+            others={conns.filter((c) => editing === "new" || c.id !== editing.id)}
+            onClose={onClose}
+            onSaved={onSaved}
+          />
         )}
       </DialogContent>
     </Dialog>
@@ -330,15 +339,21 @@ function ConnectDialog({
 
 function ConnectForm({
   conn,
+  others,
   onClose,
   onSaved,
 }: {
   conn: PancakePage | null;
+  /** Các kết nối khác: để ẩn page đã kết nối và bắt lỗi dán lại token của page khác. */
+  others: PancakePage[];
   onClose: () => void;
   onSaved: (id: string) => Promise<void>;
 }) {
   const { catalogs } = useCatalogs();
-  const pages = catalogs.pages.filter((p) => !p.deleted_at && (p.is_active || p.id === conn?.page_id));
+  const connectedPageIds = new Set(others.map((c) => c.page_id));
+  const pages = catalogs.pages.filter(
+    (p) => !p.deleted_at && (p.is_active || p.id === conn?.page_id) && !connectedPageIds.has(p.id),
+  );
   const channelName = (id: string) => catalogs.channels.find((c) => c.id === id)?.name;
   const [pageId, setPageId] = useState(conn?.page_id ?? NONE);
   const [rawId, setRawId] = useState(conn?.pancake_page_id ?? "");
@@ -349,7 +364,14 @@ function ConnectForm({
 
   const parsedId = parsePancakePageId(rawId);
   const showParsed = parsedId !== null && parsedId !== rawId.trim();
-  const tokenProblem = pancakeTokenProblem(token);
+  // Mỗi page có token riêng: 4 ký tự cuối trùng token của page khác = gần như chắc chắn dán lại token cũ.
+  const reused =
+    token.trim().length >= 20 ? others.find((c) => c.token_hint && c.token_hint === token.trim().slice(-4)) : undefined;
+  const tokenProblem =
+    pancakeTokenProblem(token) ??
+    (reused
+      ? `Token này là của page “${catalogs.pages.find((p) => p.id === reused.page_id)?.name ?? reused.pancake_page_id}” (dán lại token cũ). Mỗi page có token riêng — copy lại ở đúng page này.`
+      : null);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
