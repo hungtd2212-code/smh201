@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { LeadsDashboardLoader } from "@/components/telesale/leads-dashboard-loader";
+import { LeadsPageLoader } from "@/components/telesale/crm/leads-page-loader";
 
-export const metadata: Metadata = { title: "Telesale — Leads" };
+export const metadata: Metadata = { title: "Telesale — Lead" };
 
 export default function LeadsPage() {
-  return <LeadsDashboardLoader />;
+  return <LeadsPageLoader />;
 }

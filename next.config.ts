@@ -17,6 +17,8 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/telesale", destination: "/telesale/leads", permanent: false },
+      // "Chia lead / Chia ca" cũ: phần chia số nay nằm ở Telesale → Cài đặt.
+      { source: "/telesale/chia-lead", destination: "/telesale/cai-dat", permanent: false },
     ];
   },
 };

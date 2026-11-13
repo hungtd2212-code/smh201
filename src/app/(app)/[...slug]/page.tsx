@@ -14,7 +14,7 @@ import { NAV_PAGES } from "@/lib/nav";
 /** Các trang đã xây thật (có thư mục riêng) — không dựng trang giữ chỗ cho chúng. */
 const BUILT_PAGES = new Set([
   "/telesale/leads",
-  "/telesale/chia-lead",
+  "/telesale/cai-dat",
   "/marketing/nhap-lieu",
   "/marketing/tong-quan",
   "/marketing/phan-tich",

@@ -7,7 +7,6 @@ import {
   CreditCard,
   FlaskConical,
   House,
-  Inbox,
   Landmark,
   LayoutDashboard,
   Megaphone,
@@ -40,6 +39,15 @@ export type NavPage = {
   /** Biểu tượng nhỏ cạnh tên trang trong menu (không bắt buộc). */
   icon?: React.ComponentType<{ className?: string }>;
 };
+
+/** Người chỉnh trạng thái khách hàng và cách chia số (Telesale → Cài đặt): Quản trị, COO, Trưởng Telesale. */
+const TELESALE_MANAGERS: StaffRole[] = ["super_admin", "admin", "lead"];
+
+/**
+ * Địa chỉ trang đã đổi: tài khoản được tick trang cũ thì coi như được tick trang mới
+ * (không phải sửa lại quyền của từng người).
+ */
+const RENAMED_PAGES: Record<string, string> = { "/telesale/chia-lead": "/telesale/cai-dat" };
 
 /** Người gửi và xem báo cáo ads hằng ngày: Quản trị, Trưởng Marketing và Nhân viên Ads. */
 const ADS_PEOPLE: StaffRole[] = ["super_admin", "admin", "marketing_manager", "ads_staff"];
@@ -85,28 +93,11 @@ export const NAV_SECTIONS: NavSection[] = [
         ],
       },
       {
-        title: "Nhập lead",
-        icon: Inbox,
-        pages: [
-          {
-            title: "Nhập lead (trực page)",
-            href: "/nhap-lead/nhap",
-            hint: "Dán số, link bài post, tự điền Bài → Camp → TKQC → Nhân viên Ads, “Số tôi đã dán” (giai đoạn 2). Hiện tại trực page vẫn dán lead ở Telesale → Leads → Thêm lead",
-          },
-          {
-            title: "Công trực page",
-            href: "/nhap-lead/cong",
-            hint: "Bảng công theo người × ngày / tháng, đơn giá theo loại số (giai đoạn 5)",
-          },
-        ],
-      },
-      {
         title: "Telesale",
         icon: Phone,
         pages: [
-          { title: "Leads", href: "/telesale/leads" },
-          { title: "Nhắc gọi lại", href: "/telesale/nhac-goi-lai" },
-          { title: "Chia lead / Chia ca", href: "/telesale/chia-lead" },
+          { title: "Lead", href: "/telesale/leads" },
+          { title: "Cài đặt", href: "/telesale/cai-dat", roles: TELESALE_MANAGERS },
         ],
       },
       {
@@ -294,7 +285,7 @@ function roleNav(role: StaffRole): NavSection[] {
 export function navSectionsFor(role: StaffRole | null, pageAccess: string[] | null = null): NavSection[] {
   if (!role || role === "super_admin") return NAV_SECTIONS;
   if (pageAccess) {
-    const allowed = new Set(pageAccess);
+    const allowed = new Set(pageAccess.map((href) => RENAMED_PAGES[href] ?? href));
     return filterNav((page) => allowed.has(page.href));
   }
   return roleNav(role);

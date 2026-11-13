@@ -21,6 +21,7 @@ export function NumberInput({
   suffix,
   label,
   describedBy,
+  placeholder = "Nhập liệu",
 }: {
   id: string;
   value: string;
@@ -33,6 +34,8 @@ export function NumberInput({
   /** Tên ô cho trình đọc màn hình (khi không có nhãn đi kèm). */
   label?: string;
   describedBy?: string;
+  /** Chữ mờ khi ô còn trống (mặc định "Nhập liệu" như ở màn Nhập liệu ads). */
+  placeholder?: string;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const pendingCaret = useRef<number | null>(null);
@@ -73,7 +76,7 @@ export function NumberInput({
           enterKeyHint="next"
           data-number-input=""
           autoComplete="off"
-          placeholder="Nhập liệu"
+          placeholder={placeholder}
           aria-label={label}
           aria-invalid={invalid || undefined}
           aria-describedby={describedBy}
