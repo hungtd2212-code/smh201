@@ -40,6 +40,7 @@ export function StatusPicker({
   onPick,
   disabled,
   align = "start",
+  variant = "inline",
 }: {
   statuses: LeadStatusRow[];
   value: string | null;
@@ -48,16 +49,26 @@ export function StatusPicker({
   onPick: (statusId: string) => void;
   disabled?: boolean;
   align?: "start" | "end";
+  /**
+   * "inline": nhãn nhỏ gọn trong ô bảng. "field": ô chọn to, rõ, kín bề ngang như một ô nhập (cửa sổ chi tiết lead) —
+   * chưa có tình trạng thì viền vàng nhắc chọn.
+   */
+  variant?: "inline" | "field";
 }) {
   const [open, setOpen] = useState(false);
   const current = statuses.find((s) => s.id === value);
   const options = selectableStatuses(statuses, value);
   const legacy = !current && legacyStatus && legacyStatus !== "so_moi" ? getLeadStatus(legacyStatus).label : null;
 
+  const field = variant === "field";
+  const unset = !current && !legacy;
+
   const label = current ? (
-    <StatusChip status={current} />
+    <StatusChip status={current} className={field ? "px-3 py-1 text-sm" : undefined} />
   ) : legacy ? (
-    <span className="truncate text-xs text-muted-foreground italic">Cũ: {legacy}</span>
+    <span className={cn("truncate text-muted-foreground italic", field ? "text-sm" : "text-xs")}>Cũ: {legacy}</span>
+  ) : field ? (
+    <span className="truncate text-sm font-medium">Chưa xử lý — bấm để chọn tình trạng</span>
   ) : (
     <span className="text-xs text-muted-foreground">Chưa xử lý</span>
   );
@@ -66,19 +77,44 @@ export function StatusPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label="Đổi tình trạng"
-          className="group inline-flex max-w-full items-center gap-1 rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          onClick={(event) => event.stopPropagation()}
-        >
-          {label}
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground opacity-60 group-hover:opacity-100" />
-        </button>
+        {field ? (
+          <button
+            type="button"
+            aria-label="Đổi tình trạng"
+            className={cn(
+              "group flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border-2 px-2 text-left shadow-xs transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              unset
+                ? "border-dashed border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/70"
+                : "border-primary/30 bg-background hover:border-primary/60 hover:bg-accent/50 data-[state=open]:border-primary/60",
+            )}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span className="flex min-w-0 items-center">{label}</span>
+            <span
+              className={cn(
+                "flex shrink-0 items-center gap-1 text-xs font-medium",
+                unset ? "text-amber-800 dark:text-amber-300" : "text-muted-foreground group-hover:text-foreground",
+              )}
+            >
+              {unset ? "Chọn" : "Đổi"}
+              <ChevronDown className="size-4" />
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label="Đổi tình trạng"
+            className="group inline-flex max-w-full items-center gap-1 rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {label}
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground opacity-60 group-hover:opacity-100" />
+          </button>
+        )}
       </PopoverTrigger>
       <PopoverContent
         align={align}
-        className="w-56 gap-1 p-1.5"
+        className={cn("gap-1 p-1.5", field ? "w-(--radix-popover-trigger-width) min-w-56" : "w-56")}
         onClick={(event) => event.stopPropagation()}
       >
         {options.length === 0 && (

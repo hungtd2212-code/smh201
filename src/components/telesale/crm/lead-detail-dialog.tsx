@@ -306,14 +306,13 @@ function DetailForm({
         <fieldset className="grid content-start gap-3 rounded-lg border p-3">
           <legend className="px-1 text-sm font-semibold">Chăm sóc</legend>
           <Field label="Tình trạng">
-            <div className="flex min-h-9 items-center">
-              <StatusPicker
-                statuses={statuses}
-                value={form.status_id}
-                legacyStatus={lead.status}
-                onPick={(id) => set("status_id", id)}
-              />
-            </div>
+            <StatusPicker
+              variant="field"
+              statuses={statuses}
+              value={form.status_id}
+              legacyStatus={lead.status}
+              onPick={(id) => set("status_id", id)}
+            />
           </Field>
           <Field label="Lịch hẹn" htmlFor="d-appt" error={errors.appointment_at}>
             <Input
