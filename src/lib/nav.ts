@@ -55,6 +55,9 @@ const HR_MODULE = "Hành chính Nhân sự";
 /** Người gửi và xem báo cáo ads hằng ngày: Quản trị, Trưởng Marketing và Nhân viên Ads. */
 const ADS_PEOPLE: StaffRole[] = ["super_admin", "admin", "marketing_manager", "ads_staff"];
 
+/** Quản trị và Trưởng Marketing (phần thử nghiệm "Ads tự động"). */
+const MARKETING_MANAGERS: StaffRole[] = ["super_admin", "admin", "marketing_manager"];
+
 export type NavModule = {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -93,6 +96,15 @@ export const NAV_SECTIONS: NavSection[] = [
           { title: "Nhập liệu", href: "/marketing/nhap-lieu", roles: ADS_PEOPLE, icon: ClipboardPenLine },
           { title: "Tổng quan", href: "/marketing/tong-quan", roles: ADS_PEOPLE, icon: LayoutDashboard },
           { title: "Phân tích", href: "/marketing/phan-tich", roles: ADS_PEOPLE, icon: ChartLine },
+          // Thử nghiệm (13/11/2026): tự kéo số Facebook + đối chiếu với số nhân viên nhập tay. Tách riêng, không ghi
+          // vào Nhập liệu; chủ phòng khám xem ổn rồi mới quyết định dùng tiếp thế nào.
+          {
+            title: "Ads tự động",
+            href: "/marketing/ads-tu-dong",
+            roles: MARKETING_MANAGERS,
+            icon: FlaskConical,
+            hint: "Kéo chi tiêu, tin nhắn từ Facebook và đối chiếu với số nhân viên nhập tay",
+          },
         ],
       },
       {
