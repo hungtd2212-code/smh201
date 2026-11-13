@@ -21,8 +21,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { vnDateTime } from "@/lib/leads/crm";
 import {
   IMPORT_OUTCOMES,
+  PANCAKE_ID_HINT,
   pancakeConversationUrl,
   pancakeHealth,
+  pancakeTokenProblem,
   parsePancakePageId,
   type PancakeImport,
   type PancakePage,
@@ -112,7 +114,7 @@ export function PancakeSettings() {
       const added = (first.added ?? 0) + (second.added ?? 0);
       const checked = checkId ? fresh?.find((c) => c.id === checkId) : undefined;
       if (checked?.last_error) {
-        toast.error("Pancake chưa nhận kết nối", { description: checked.last_error });
+        toast.error("Pancake chưa nhận kết nối", { description: pancakeHealth(checked).label });
       } else if (checked && !checked.last_ok_at) {
         toast.message("Đã lưu — Pancake trả lời chậm", { description: "Tình trạng sẽ tự cập nhật trong 1–2 phút." });
       } else {
@@ -234,8 +236,8 @@ function HowTo({ noPages }: { noPages: boolean }) {
           <strong>Page Access Token</strong>: mở Pancake, chọn page → Cài đặt → Công cụ → copy “Page Access Token”.
         </li>
         <li>
-          <strong>ID page</strong>: dãy số trên thanh địa chỉ khi mở page trong Pancake (pancake.vn/…). Dán cả link cũng
-          được.
+          <strong>ID page</strong>: tự điền khi chọn page đã thêm ở TKQC &amp; Page. Nếu phải gõ thì là dãy số ID của
+          page (vd 1500650126455233), không phải tên page.
         </li>
       </ol>
       <p>Token như mật khẩu của page: chỉ dán vào đây, không gửi qua tin nhắn.</p>
@@ -347,12 +349,14 @@ function ConnectForm({
 
   const parsedId = parsePancakePageId(rawId);
   const showParsed = parsedId !== null && parsedId !== rawId.trim();
+  const tokenProblem = pancakeTokenProblem(token);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (pageId === NONE) return setError("Chọn page trong ERP");
-    if (!parsedId) return setError("Không nhận ra ID page Pancake — dán dãy số hoặc link của page trên Pancake");
+    if (!parsedId) return setError(PANCAKE_ID_HINT);
     if (!conn && !token.trim()) return setError("Dán Page Access Token của page");
+    if (tokenProblem) return setError(tokenProblem);
     setSaving(true);
     setError(null);
     try {
@@ -389,12 +393,10 @@ function ConnectForm({
           onValueChange={(value) => {
             setPageId(value);
             setError(null);
-            // Page có link Facebook dạng số thì điền sẵn ID.
+            // Page có link Facebook dạng số thì điền đúng ID của page đó (thay cả chữ đang có trong ô).
             const url = catalogs.pages.find((p) => p.id === value)?.url;
-            if (!rawId.trim() && url) {
-              const guess = parsePancakePageId(url);
-              if (guess && /^\d{6,}$/.test(guess)) setRawId(guess);
-            }
+            const guess = url ? parsePancakePageId(url) : null;
+            if (guess && /^\d{6,}$/.test(guess)) setRawId(guess);
           }}
         >
           <SelectTrigger className="w-full" aria-label="Page trong ERP">
@@ -418,7 +420,7 @@ function ConnectForm({
         <Input
           id="pancake-id"
           value={rawId}
-          placeholder="vd 105738241234567, hoặc dán link pancake.vn/…"
+          placeholder="Tự điền khi chọn page — hoặc gõ dãy số, vd 1500650126455233"
           autoComplete="off"
           onChange={(e) => {
             setRawId(e.target.value);
@@ -426,9 +428,7 @@ function ConnectForm({
           }}
         />
         {showParsed && <p className="text-xs text-muted-foreground">ID nhận được: {parsedId}</p>}
-        {rawId.trim() !== "" && parsedId === null && (
-          <p className="text-xs text-destructive">Không nhận ra ID page trong chữ vừa dán</p>
-        )}
+        {rawId.trim() !== "" && parsedId === null && <p className="text-xs text-destructive">{PANCAKE_ID_HINT}</p>}
       </div>
 
       <div className="grid gap-1.5">
@@ -444,7 +444,9 @@ function ConnectForm({
             setToken(e.target.value);
             setError(null);
           }}
+          aria-invalid={Boolean(tokenProblem)}
         />
+        {tokenProblem && <p className="text-xs text-destructive">{tokenProblem}</p>}
       </div>
 
       {!conn && (
