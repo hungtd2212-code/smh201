@@ -124,10 +124,10 @@ type Props = {
 export function LeadDetailDialog(props: Props) {
   return (
     <Dialog open={props.lead !== null} onOpenChange={(open) => !open && props.onClose()}>
-      <DialogContent className="h-[calc(100svh-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-[calc(100vw-2rem)] lg:grid-cols-[minmax(0,1fr)_minmax(22rem,32rem)] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden 2xl:max-w-[1600px]">
+      <DialogContent className="h-[calc(100svh-2rem)] auto-rows-max gap-0 overflow-y-auto p-0 sm:max-w-[calc(100vw-2rem)] lg:grid-cols-[minmax(0,1fr)_minmax(24rem,40%)] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden 2xl:max-w-[1600px]">
         {props.lead && (
           <>
-            <div className="min-h-0 p-4 lg:overflow-y-auto">
+            <div className="p-4 lg:min-h-0 lg:overflow-y-auto">
               <DetailForm key={`${props.lead.id}-${props.pendingStatusId}`} {...props} lead={props.lead} />
             </div>
             <PancakeChat
