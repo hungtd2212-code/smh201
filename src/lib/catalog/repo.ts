@@ -318,6 +318,28 @@ export async function addAdAccount(values: {
 }
 
 /**
+ * Nút bút ở Cài đặt TKQC: sửa tên, ID, loại tài khoản, thanh toán (supabase/028_edit_ad_account.sql). Nhân viên Ads
+ * sửa TKQC mình đang cầm; quản lý sửa mọi TKQC. Không đổi người phụ trách (việc đó ở trang TKQC & Page).
+ */
+export async function updateAdAccount(
+  id: string,
+  values: { name: string; accountId: string; accountKind: AdAccountKind; paymentKind: AdPaymentKind },
+): Promise<void> {
+  const { error } = await getSupabaseBrowserClient().rpc("update_ad_account", {
+    p_id: id,
+    p_name: values.name,
+    p_account_id: values.accountId,
+    p_account_kind: values.accountKind,
+    p_payment_kind: values.paymentKind,
+  });
+  if (!error) return;
+  if (isNotMigrated(error)) {
+    throw new Error("Cơ sở dữ liệu chưa được cập nhật cho nút sửa TKQC (file supabase/028_edit_ad_account.sql chưa chạy).");
+  }
+  throw new Error(error.message);
+}
+
+/**
  * Nút thùng rác ở Cài đặt TKQC. Trả về "trashed" (đã chuyển vào Thùng rác) hoặc "deactivated"
  * (TKQC đã có báo cáo → chỉ chuyển sang Ngừng dùng để giữ số liệu cũ).
  */

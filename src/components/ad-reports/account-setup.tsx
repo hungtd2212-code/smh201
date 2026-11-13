@@ -1,12 +1,20 @@
 "use client";
 
-import { Plus, Save, Trash2 } from "lucide-react";
+import { Pencil, Plus, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useCatalogs } from "@/components/catalog-provider";
 import { ConfirmActionDialog } from "@/components/safety/confirm-action-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -17,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { adsRunners } from "@/lib/catalog/ads-runners";
-import { addAdAccount, removeAdAccount } from "@/lib/catalog/repo";
+import { addAdAccount, removeAdAccount, updateAdAccount } from "@/lib/catalog/repo";
 import {
   ACCOUNT_KIND_LABELS,
   PAYMENT_KIND_LABELS,
@@ -36,8 +44,8 @@ export function useAccountOwner() {
 }
 
 /**
- * Nhập liệu → Cài đặt TKQC. Nhân viên Ads tự khai báo các TKQC mình đang cầm (nút "+ Thêm TKQC"), xoá
- * bằng nút thùng rác. Quản lý thấy TKQC của mọi người, lọc theo nhân viên / TKQC, thêm cho bất kỳ ai.
+ * Nhập liệu → Cài đặt TKQC. Nhân viên Ads tự khai báo các TKQC mình đang cầm (nút "+ Thêm TKQC"), sửa bằng nút
+ * bút, xoá bằng nút thùng rác. Quản lý thấy TKQC của mọi người, lọc theo nhân viên / TKQC, thêm / sửa cho bất kỳ ai.
  */
 export function AccountSetup({ isManager, me }: { isManager: boolean; me: AdsStaff | undefined }) {
   const { catalogs, reload } = useCatalogs();
@@ -46,6 +54,7 @@ export function AccountSetup({ isManager, me }: { isManager: boolean; me: AdsSta
   const [accountFilter, setAccountFilter] = useState(ALL);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<AdAccount | null>(null);
+  const [editing, setEditing] = useState<AdAccount | null>(null);
 
   if (!catalogs.adAccountSetupReady) {
     return (
@@ -158,7 +167,9 @@ export function AccountSetup({ isManager, me }: { isManager: boolean; me: AdsSta
               <th className="px-3 py-2 font-medium">Loại tài khoản</th>
               <th className="px-3 py-2 font-medium">Thanh toán</th>
               {isManager && <th className="px-3 py-2 font-medium">Nhân viên quảng cáo</th>}
-              <th className="w-14 px-3 py-2" />
+              <th className="w-24 px-3 py-2">
+                <span className="sr-only">Sửa / xoá</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -187,7 +198,16 @@ export function AccountSetup({ isManager, me }: { isManager: boolean; me: AdsSta
                         {owner ? (names.get(owner) ?? "…") : <span className="text-muted-foreground">Chưa giao</span>}
                       </td>
                     )}
-                    <td className="px-2 py-1 text-right">
+                    <td className="px-2 py-1 text-right whitespace-nowrap">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Sửa TKQC ${account.name}`}
+                        title="Sửa thông tin"
+                        onClick={() => setEditing(account)}
+                      >
+                        <Pencil />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon-sm"
@@ -219,6 +239,23 @@ export function AccountSetup({ isManager, me }: { isManager: boolean; me: AdsSta
           .
         </p>
       )}
+
+      <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent className="sm:max-w-lg">
+          {editing && (
+            <EditForm
+              account={editing}
+              ownerName={isManager ? (names.get(ownerOf(editing.id) ?? "") ?? null) : null}
+              onCancel={() => setEditing(null)}
+              onSaved={async (name) => {
+                await reload();
+                setEditing(null);
+                toast.success(`Đã lưu TKQC ${name}`);
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <ConfirmActionDialog
         open={removing !== null}
@@ -261,14 +298,12 @@ function AddForm({
   onSaved: (name: string) => Promise<void>;
 }) {
   const [staffId, setStaffId] = useState<string>(defaultStaff ?? "");
-  const [name, setName] = useState("");
-  const [accountId, setAccountId] = useState("");
-  const [kind, setKind] = useState<AdAccountKind | "">("");
-  const [payment, setPayment] = useState<AdPaymentKind | "">("");
+  const [values, setValues] = useState<FieldValues>(EMPTY_FIELDS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const complete = name.trim() !== "" && accountId.trim() !== "" && kind !== "" && payment !== "" && (!isManager || staffId !== "");
+  const complete = fieldsComplete(values) && (!isManager || staffId !== "");
+  const { name, accountId, kind, payment } = values;
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -279,8 +314,8 @@ function AddForm({
       await addAdAccount({
         name: name.trim(),
         accountId: accountId.trim(),
-        accountKind: kind,
-        paymentKind: payment,
+        accountKind: kind as AdAccountKind,
+        paymentKind: payment as AdPaymentKind,
         adsStaffId: isManager ? staffId : null,
       });
       await onSaved(name.trim());
@@ -290,13 +325,6 @@ function AddForm({
       setSaving(false);
     }
   }
-
-  const required = (
-    <span className="text-destructive" aria-hidden>
-      {" "}
-      *
-    </span>
-  );
 
   return (
     <form onSubmit={save} className="grid gap-4 rounded-xl border bg-card p-4" noValidate>
@@ -319,59 +347,7 @@ function AddForm({
             </Select>
           </div>
         )}
-        <div className="grid gap-1.5">
-          <Label htmlFor="new-account-name">Tên tài khoản{required}</Label>
-          <Input
-            id="new-account-name"
-            autoFocus
-            maxLength={120}
-            placeholder="vd THE DUONG 03"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="new-account-id">ID tài khoản{required}</Label>
-          <Input
-            id="new-account-id"
-            inputMode="numeric"
-            autoComplete="off"
-            maxLength={40}
-            placeholder="vd 123456789012345"
-            value={accountId}
-            onChange={(event) => setAccountId(event.target.value)}
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="new-account-kind">Loại tài khoản{required}</Label>
-          <Select value={kind} onValueChange={(value) => setKind(value as AdAccountKind)}>
-            <SelectTrigger id="new-account-kind" className="w-full">
-              <SelectValue placeholder="Chọn loại" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(ACCOUNT_KIND_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="new-account-payment">Thanh toán{required}</Label>
-          <Select value={payment} onValueChange={(value) => setPayment(value as AdPaymentKind)}>
-            <SelectTrigger id="new-account-payment" className="w-full">
-              <SelectValue placeholder="Chọn" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(PAYMENT_KIND_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <AccountFields idPrefix="new-account" autoFocus values={values} onChange={setValues} />
       </div>
 
       {error && (
@@ -390,6 +366,162 @@ function AddForm({
         </Button>
         {!complete && <span className="text-sm text-muted-foreground">Điền đủ các ô có dấu * để lưu.</span>}
       </div>
+    </form>
+  );
+}
+
+const required = (
+  <span className="text-destructive" aria-hidden>
+    {" "}
+    *
+  </span>
+);
+
+type FieldValues = { name: string; accountId: string; kind: AdAccountKind | ""; payment: AdPaymentKind | "" };
+const EMPTY_FIELDS: FieldValues = { name: "", accountId: "", kind: "", payment: "" };
+const fieldsComplete = (v: FieldValues) => v.name.trim() !== "" && v.accountId.trim() !== "" && v.kind !== "" && v.payment !== "";
+
+/** Bốn ô thông tin TKQC, dùng chung cho form Thêm và hộp Sửa. */
+function AccountFields({
+  idPrefix,
+  values,
+  onChange,
+  autoFocus = false,
+}: {
+  idPrefix: string;
+  values: FieldValues;
+  onChange: (next: FieldValues) => void;
+  autoFocus?: boolean;
+}) {
+  const set = (patch: Partial<FieldValues>) => onChange({ ...values, ...patch });
+  return (
+    <>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`${idPrefix}-name`}>Tên tài khoản{required}</Label>
+        <Input
+          id={`${idPrefix}-name`}
+          autoFocus={autoFocus}
+          maxLength={120}
+          placeholder="vd THE DUONG 03"
+          value={values.name}
+          onChange={(event) => set({ name: event.target.value })}
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`${idPrefix}-id`}>ID tài khoản{required}</Label>
+        <Input
+          id={`${idPrefix}-id`}
+          inputMode="numeric"
+          autoComplete="off"
+          maxLength={40}
+          placeholder="vd 123456789012345"
+          value={values.accountId}
+          onChange={(event) => set({ accountId: event.target.value })}
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`${idPrefix}-kind`}>Loại tài khoản{required}</Label>
+        <Select value={values.kind} onValueChange={(value) => set({ kind: value as AdAccountKind })}>
+          <SelectTrigger id={`${idPrefix}-kind`} className="w-full">
+            <SelectValue placeholder="Chọn loại" />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(ACCOUNT_KIND_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`${idPrefix}-payment`}>Thanh toán{required}</Label>
+        <Select value={values.payment} onValueChange={(value) => set({ payment: value as AdPaymentKind })}>
+          <SelectTrigger id={`${idPrefix}-payment`} className="w-full">
+            <SelectValue placeholder="Chọn" />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(PAYMENT_KIND_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </>
+  );
+}
+
+/** Hộp "Sửa TKQC" (nút bút): sửa tên, ID, loại, thanh toán. Người phụ trách đổi ở trang TKQC & Page. */
+function EditForm({
+  account,
+  ownerName,
+  onCancel,
+  onSaved,
+}: {
+  account: AdAccount;
+  /** Tên nhân viên đang giữ TKQC (chỉ hiện cho quản lý). */
+  ownerName: string | null;
+  onCancel: () => void;
+  onSaved: (name: string) => Promise<void>;
+}) {
+  const [values, setValues] = useState<FieldValues>({
+    name: account.name,
+    accountId: account.account_id ?? "",
+    kind: account.account_kind ?? "",
+    payment: account.payment_kind ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const complete = fieldsComplete(values);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (!complete) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await updateAdAccount(account.id, {
+        name: values.name.trim(),
+        accountId: values.accountId.trim(),
+        accountKind: values.kind as AdAccountKind,
+        paymentKind: values.payment as AdPaymentKind,
+      });
+      await onSaved(values.name.trim());
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={save} className="grid gap-4" noValidate>
+      <DialogHeader>
+        <DialogTitle>Sửa TKQC {account.name}</DialogTitle>
+        <DialogDescription>
+          {ownerName ? `Nhân viên phụ trách: ${ownerName}. ` : ""}Báo cáo đã gửi của TKQC này vẫn giữ nguyên.
+          {ownerName ? " Đổi người phụ trách ở trang TKQC & Page." : ""}
+        </DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <AccountFields idPrefix="edit-account" values={values} onChange={setValues} />
+      </div>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
+          Huỷ
+        </Button>
+        <Button type="submit" disabled={!complete || saving}>
+          <Save />
+          {saving ? "Đang lưu…" : "Lưu"}
+        </Button>
+      </DialogFooter>
     </form>
   );
 }

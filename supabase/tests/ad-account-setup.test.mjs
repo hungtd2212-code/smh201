@@ -1,5 +1,5 @@
-// Kiểm thử supabase/007_ad_account_setup.sql (nhân viên tự cài đặt TKQC) trên Postgres chạy trong
-// bộ nhớ. Không đụng tới cơ sở dữ liệu thật.
+// Kiểm thử supabase/007_ad_account_setup.sql (nhân viên tự cài đặt TKQC) và supabase/028_edit_ad_account.sql
+// (nút bút sửa TKQC) trên Postgres chạy trong bộ nhớ. Không đụng tới cơ sở dữ liệu thật.
 //
 // Chạy:  npm run test:db
 import { createTestDb } from "./harness.mjs";
@@ -132,5 +132,52 @@ r = (await as(U.mm, REMOVE, [m1]))[0].r;
 ok(r === "trashed", "quản lý xoá được TKQC của bất kỳ ai");
 e = await errOf(U.ads2, `delete from public.ad_accounts where id = $1`, [a1]);
 ok(/permission denied|row-level security/.test(e ?? "") || (await one(`select count(*)::int n from public.ad_accounts where id = $1`, [a1])).n === 1, "không ai xoá hẳn TKQC bằng lệnh xoá", e);
+
+// ---------------------------------------------------------------------------
+section("028: sửa thông tin TKQC (nút bút)");
+const before028 = JSON.stringify(await all(`select * from public.ad_accounts order by id`));
+await db.exec(read("028_edit_ad_account.sql"));
+ok(true, "028 chạy không lỗi");
+await db.exec(read("028_edit_ad_account.sql"));
+ok(true, "chạy lại 028 lần hai không lỗi");
+ok(JSON.stringify(await all(`select * from public.ad_accounts order by id`)) === before028, "chạy 028 không đổi TKQC nào");
+const EDIT = `select public.update_ad_account($1, $2, $3, $4, $5)`;
+const edit = (uid, id, name, ext, kind = "rented", pay = "personal") => as(uid, EDIT, [id, name, ext, kind, pay]);
+const editErr = (uid, id, name, ext, kind = "rented", pay = "personal") => errOf(uid, EDIT, [id, name, ext, kind, pay]);
+const auditN = async () => (await one(`select count(*)::int n from public.audit_log where table_name = 'ad_accounts' and record_id = $1`, [a1])).n;
+let n0 = await auditN();
+await edit(U.ads2, a1, "  Linh 01 (sửa) ", "act_9876 543 210", "rented", "company_card");
+acc = await one(`select name, account_id, account_kind, payment_kind, is_active from public.ad_accounts where id = $1`, [a1]);
+ok(acc.name === "Linh 01 (sửa)" && acc.account_id === "9876543210" && acc.account_kind === "rented" && acc.payment_kind === "company_card",
+  "nhân viên sửa được TKQC của mình: tên (bỏ khoảng trắng), ID (bỏ act_), loại, thanh toán", acc);
+ok(await auditN() === n0 + 1, "… lần sửa vào Nhật ký hệ thống");
+ok((await one(`select count(*)::int n from public.ad_daily_reports where ad_account_id = $1`, [a1])).n === 1, "… báo cáo cũ vẫn gắn với TKQC");
+ok((await one(`select ads_staff_id from public.ad_account_assignments where ad_account_id = $1 and deleted_at is null`, [a1])).ads_staff_id === linh, "… người phụ trách không đổi");
+n0 = await auditN();
+await edit(U.ads2, a1, "Linh 01 (sửa)", "9876543210", "rented", "company_card");
+ok(await auditN() === n0, "lưu y nguyên → không ghi nhật ký");
+const duongAcc = (await one(`select id from public.ad_accounts where name = 'THE DUONG 01'`)).id;
+e = await editErr(U.ads2, duongAcc, "Của Linh", "1111111119");
+ok(/chỉ sửa được TKQC của chính mình/.test(e ?? ""), "nhân viên sửa TKQC của người khác → bị từ chối", e);
+e = await editErr(U.sale1, a1, "Sale sửa", "1111111119");
+ok(/chỉ sửa được TKQC của chính mình/.test(e ?? ""), "telesale sửa TKQC → bị từ chối", e);
+e = await editErr(U.ads2, a1, "the duong 01", "9876543210");
+ok(/Đã có TKQC tên/.test(e ?? ""), "đổi sang tên TKQC khác đang dùng → bị từ chối", e);
+await edit(U.mm, duongAcc, "Dương_smh_001", "1033082599371537", "rented", "personal");
+acc = await one(`select name, account_id from public.ad_accounts where id = $1`, [duongAcc]);
+ok(acc.name === "Dương_smh_001" && acc.account_id === "1033082599371537", "Trưởng Marketing sửa được TKQC của bất kỳ ai", acc);
+e = await editErr(U.mm, a1, "Linh 01 (sửa)", "act_1033082599371537");
+ok(/ID tài khoản 1033082599371537 đã được khai báo \(TKQC "Dương_smh_001"\)/.test(e ?? ""), "đổi sang ID của TKQC khác → bị từ chối, nói rõ TKQC nào", e);
+for (const [args, msg] of [
+  [["", "9876543210"], "Nhập tên"],
+  [["Linh 01", "12ab"], "chỉ gồm chữ số"],
+  [["Linh 01", "9876543210", "lạ"], "Chọn loại tài khoản"],
+  [["Linh 01", "9876543210", "rented", "lạ"], "Chọn thanh toán"],
+]) {
+  e = await editErr(U.ads2, a1, ...args);
+  ok(new RegExp(msg).test(e ?? ""), `dữ liệu sai bị chặn: ${msg}`, e);
+}
+e = await editErr(U.mm, a2, "Đã xoá", "2222222229");
+ok(/Không tìm thấy TKQC/.test(e ?? ""), "TKQC trong thùng rác → không sửa được", e);
 
 finish();
