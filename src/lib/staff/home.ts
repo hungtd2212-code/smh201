@@ -7,6 +7,7 @@ import type { Position } from "./positions";
  *   • Lead Ads và Nhân viên quảng cáo → Marketing › Nhập liệu.
  *   • Admin (Quản trị cấp cao, Quản trị) và COO → Marketing › Tổng quan — "giai đoạn này", khi Dashboard chung
  *     của công ty (Tổng quan › Dashboard) chưa làm.
+ *   • Trưởng phòng HCNS và Nhân viên HCNS → Hành chính Nhân sự › Nhân viên (13/11/2026).
  *   • Còn lại (Trực page, Telesale…) giữ như cũ: Telesale › Leads.
  *
  * Không phụ thuộc React / Next để kiểm thử riêng được (tests/staff-home.test.mjs).
@@ -20,6 +21,8 @@ export const HOME_BY_POSITION: Partial<Record<Position, string>> = {
   lead_ads: "/marketing/nhap-lieu",
   ads_staff: "/marketing/nhap-lieu",
   coo: OVERVIEW,
+  hr_manager: "/nhan-su/nhan-vien",
+  hr_staff: "/nhan-su/nhan-vien",
 };
 
 /** Theo vai trò — cho tài khoản không có vị trí riêng ở trên (ví dụ tài khoản admin của chủ phòng khám). */

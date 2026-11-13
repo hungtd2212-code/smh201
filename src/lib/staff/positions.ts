@@ -12,7 +12,9 @@ export type Position =
   | "lead_telesale"
   | "telesale"
   | "chief_accountant"
-  | "accountant";
+  | "accountant"
+  | "hr_manager"
+  | "hr_staff";
 
 export const POSITION_ORDER: Position[] = [
   "coo",
@@ -23,6 +25,8 @@ export const POSITION_ORDER: Position[] = [
   "telesale",
   "chief_accountant",
   "accountant",
+  "hr_manager",
+  "hr_staff",
 ];
 
 export const POSITION_LABELS: Record<Position, string> = {
@@ -34,6 +38,8 @@ export const POSITION_LABELS: Record<Position, string> = {
   telesale: "Telesale",
   chief_accountant: "Kế toán trưởng",
   accountant: "Kế toán viên",
+  hr_manager: "Trưởng phòng HCNS",
+  hr_staff: "Nhân viên HCNS",
 };
 
 export const POSITION_ROLE: Record<Position, StaffRole> = {
@@ -45,6 +51,8 @@ export const POSITION_ROLE: Record<Position, StaffRole> = {
   telesale: "sale",
   chief_accountant: "chief_accountant",
   accountant: "accountant",
+  hr_manager: "hr_manager",
+  hr_staff: "hr_staff",
 };
 
 /**
@@ -56,6 +64,8 @@ export const POSITION_MIGRATION: Partial<Record<Position, string>> = {
   telesale: "015_telesale_positions.sql",
   chief_accountant: "021_accounting_positions.sql",
   accountant: "021_accounting_positions.sql",
+  hr_manager: "022_hr_positions.sql",
+  hr_staff: "022_hr_positions.sql",
 };
 
 /** Tên hiện ở cột "Vị trí": vị trí nếu có, không thì vai trò (tài khoản tạo trước khi có vị trí). */

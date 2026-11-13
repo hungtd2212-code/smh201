@@ -49,6 +49,9 @@ const TELESALE_MANAGERS: StaffRole[] = ["super_admin", "admin", "lead"];
  */
 const RENAMED_PAGES: Record<string, string> = { "/telesale/chia-lead": "/telesale/cai-dat" };
 
+/** Tên phân hệ của phòng Hành chính Nhân sự trên menu. */
+const HR_MODULE = "Hành chính Nhân sự";
+
 /** Người gửi và xem báo cáo ads hằng ngày: Quản trị, Trưởng Marketing và Nhân viên Ads. */
 const ADS_PEOPLE: StaffRole[] = ["super_admin", "admin", "marketing_manager", "ads_staff"];
 
@@ -203,13 +206,22 @@ export const NAV_SECTIONS: NavSection[] = [
         ],
       },
       {
-        title: "Nhân sự",
+        // Phòng Hành chính Nhân sự (chủ phòng khám, 13/11/2026) — trước đây tên "Nhân sự". Địa chỉ các trang
+        // giữ nguyên /nhan-su/… để tài khoản đã được tick trang không phải phân quyền lại.
+        title: HR_MODULE,
         icon: Users,
         pages: [
-          { title: "Nhân viên", href: "/nhan-su/nhan-vien", hint: "Bác sĩ, phụ tá, tư vấn, sale…" },
+          { title: "Nhân viên", href: "/nhan-su/nhan-vien", hint: "Hồ sơ, hợp đồng của bác sĩ, phụ tá, tư vấn, sale…" },
           { title: "Ca làm & Chấm công", href: "/nhan-su/cham-cong" },
+          { title: "Nghỉ phép & Đơn từ", href: "/nhan-su/nghi-phep", hint: "Xin nghỉ, đổi ca, duyệt đơn" },
           { title: "Lương", href: "/nhan-su/luong" },
           { title: "Hoa hồng & KPI", href: "/nhan-su/hoa-hong-kpi" },
+          { title: "Tuyển dụng", href: "/nhan-su/tuyen-dung", hint: "Vị trí đang tuyển, hồ sơ ứng viên" },
+          {
+            title: "Tài sản & Văn phòng phẩm",
+            href: "/nhan-su/tai-san",
+            hint: "Tài sản giao cho nhân viên, văn phòng phẩm, đồng phục",
+          },
         ],
       },
     ],
@@ -255,6 +267,8 @@ export const NAV_SECTIONS: NavSection[] = [
 /** Vai trò chỉ làm việc trong một vài phân hệ: menu của họ chỉ hiện các phân hệ này. */
 const ROLE_MODULES: Partial<Record<StaffRole, string[]>> = {
   ads_staff: ["Marketing"],
+  hr_manager: [HR_MODULE],
+  hr_staff: [HR_MODULE],
 };
 
 /** Bỏ các trang không thoả `keep`, rồi bỏ phân hệ / nhóm không còn trang nào. */

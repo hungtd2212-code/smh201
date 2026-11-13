@@ -66,5 +66,14 @@ ok(got === "/thu-chi/phieu-thu-chi", "Kế toán trưởng được tick Thu chi
 got = homeFor("accountant", "accountant", ["/thu-ngan/thu-tien"]);
 ok(got === "/thu-ngan/thu-tien", "Kế toán viên được tick Thu ngân → trang đó", got);
 
+console.log("Hành chính Nhân sự");
+const HR_PAGES = ["/nhan-su/nhan-vien", "/nhan-su/cham-cong", "/nhan-su/luong"];
+got = homeFor("hr_manager", "hr_manager", HR_PAGES);
+ok(got === "/nhan-su/nhan-vien", "Trưởng phòng HCNS → Hành chính Nhân sự › Nhân viên", got);
+got = homeFor("hr_staff", "hr_staff", HR_PAGES);
+ok(got === "/nhan-su/nhan-vien", "Nhân viên HCNS → Hành chính Nhân sự › Nhân viên", got);
+got = homeFor("hr_staff", "hr_staff", ["/nhan-su/cham-cong"]);
+ok(got === "/nhan-su/cham-cong", "Nhân viên HCNS chỉ được tick Chấm công → trang đó", got);
+
 console.log(`\n${passed} ok, ${failed} lỗi`);
 if (failed) process.exit(1);

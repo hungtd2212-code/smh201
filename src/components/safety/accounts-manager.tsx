@@ -399,7 +399,8 @@ function AccountsBody() {
           • Vị trí quyết định được đọc / sửa dữ liệu gì: COO = Quản trị, Lead Ads = quản lý Marketing, Nhân viên quảng cáo
           = chỉ TKQC của mình, Trực page = nhập lead, Trưởng Telesale = quản lý lead và chia lead, Telesale = gọi và
           cập nhật lead, Kế toán trưởng / Kế toán viên = chưa có dữ liệu riêng (phân hệ Kế toán chưa làm) và không xem
-          được lead. Thêm / sửa người ở vị trí COO chỉ Quản trị cấp cao làm được.
+          được lead, Trưởng phòng HCNS / Nhân viên HCNS = chưa có dữ liệu riêng (phân hệ Hành chính Nhân sự chưa làm),
+          không vào được dữ liệu khách hàng và Marketing. Thêm / sửa người ở vị trí COO chỉ Quản trị cấp cao làm được.
         </li>
         <li>
           • <Lock className="inline size-3.5" /> khoá đang đóng = cấm đăng nhập; <LockOpen className="inline size-3.5" />{" "}
