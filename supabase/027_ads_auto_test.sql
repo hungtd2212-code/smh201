@@ -437,7 +437,9 @@ begin
   on conflict (id) do update
     set token = excluded.token, token_hint = excluded.token_hint,
         token_set_at = excluded.token_set_at, token_set_by = excluded.token_set_by, last_auto_at = now();
-  update public.ads_auto_accounts set last_error = null, last_error_at = null, checked_at = null, updated_at = now();
+  -- Có WHERE: Supabase chặn UPDATE không WHERE khi gọi từ ứng dụng (sửa ở file 029).
+  update public.ads_auto_accounts set last_error = null, last_error_at = null, checked_at = null, updated_at = now()
+  where last_error is not null or last_error_at is not null or checked_at is not null;
   perform private.ads_auto_queue('account', null, null);
   v_n := private.ads_auto_queue('insights', v_today - 6, v_today);
   return jsonb_build_object('accounts', v_n);
