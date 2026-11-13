@@ -137,10 +137,23 @@ export function pancakeHealth(conn: PancakePage, now: Date = new Date()): Pancak
     return { tone: "error", label: since ? `${text} (lúc ${since.time})` : text };
   }
   const ok = vnClock(conn.last_ok_at);
-  if (!ok || !conn.last_ok_at) return { tone: "waiting", label: "Đang chờ lần hỏi Pancake đầu tiên (1–2 phút)" };
+  if (!ok || !conn.last_ok_at) {
+    // Kết nối hơn 5 phút mà chưa hỏi được lần nào = có vấn đề (lịch chạy dừng, hoặc page / token sai).
+    if (now.getTime() - new Date(conn.created_at).getTime() > 5 * 60000)
+      return { tone: "warn", label: "Chưa hỏi được Pancake lần nào — bấm Đồng bộ ngay; vẫn vậy thì kiểm tra ID page và token" };
+    return { tone: "waiting", label: "Đang chờ lần hỏi Pancake đầu tiên (1–2 phút)" };
+  }
   const minutes = (now.getTime() - new Date(conn.last_ok_at).getTime()) / 60000;
   if (minutes > 5) return { tone: "warn", label: `Lần hỏi được gần nhất ${ok.short} — lịch chạy có thể đang dừng` };
   return { tone: "ok", label: `Đang chạy · hỏi Pancake lần cuối lúc ${ok.time}` };
+}
+
+/** Các kết nối đang bật mà mất kết nối (báo lỗi, hoặc lâu không hỏi được Pancake) — để hiện cảnh báo. */
+export function pancakeProblems(conns: PancakePage[], now: Date = new Date()): { conn: PancakePage; health: PancakeHealth }[] {
+  return conns
+    .filter((c) => c.is_active)
+    .map((conn) => ({ conn, health: pancakeHealth(conn, now) }))
+    .filter((x) => x.health.tone === "error" || x.health.tone === "warn");
 }
 
 /** Link mở đúng hội thoại trong Pancake. */
@@ -177,7 +190,17 @@ export type PancakeChatMessage = {
 };
 
 export type PancakeChatResult =
-  | { state: "ok"; pancake_page_id: string; conversation_id: string; customer: string | null; count: number; messages: PancakeChatMessage[] }
+  | {
+      state: "ok";
+      pancake_page_id: string;
+      conversation_id: string;
+      customer: string | null;
+      count: number;
+      /** Khách đã đọc tin của page tới lúc này (file 026; Pancake: read_watermarks). */
+      customer_seen_at?: string | null;
+      customer_seen_message_id?: string | null;
+      messages: PancakeChatMessage[];
+    }
   | { state: "no_link" }
   | { state: "not_connected" }
   | { state: "error"; message: string };
@@ -300,4 +323,24 @@ export function outsideMessengerWindow(messages: PancakeChatMessage[], now: Date
   const last = lastCustomerMessage(messages);
   if (!last?.at || last.kind === "COMMENT") return false;
   return now.getTime() - Date.parse(last.at) > 24 * 3_600_000;
+}
+
+/**
+ * Dấu "Đã xem" như Messenger: tin của page cuối cùng mà khách đã đọc (theo mốc Pancake trả về), và tin mới nhất
+ * của page có đang chờ khách đọc không.
+ */
+export function chatSeenMarks(
+  messages: PancakeChatMessage[],
+  seenAt: string | null | undefined,
+): { seenIndex: number; latestPageIndex: number; latestPageUnseen: boolean } {
+  const mark = seenAt ? Date.parse(seenAt) : NaN;
+  let seenIndex = -1;
+  let latestPageIndex = -1;
+  messages.forEach((m, i) => {
+    if (!m.from_page) return;
+    latestPageIndex = i;
+    // Lệch đồng hồ vài giây giữa Facebook và Pancake: cho 2 giây.
+    if (!Number.isNaN(mark) && m.at && Date.parse(m.at) <= mark + 2000) seenIndex = i;
+  });
+  return { seenIndex, latestPageIndex, latestPageUnseen: latestPageIndex >= 0 && seenIndex < latestPageIndex };
 }

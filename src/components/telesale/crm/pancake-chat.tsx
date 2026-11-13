@@ -7,6 +7,7 @@ import {
   CHAT_MORE_THRESHOLD,
   chatDayLabel,
   chatDayTime,
+  chatSeenMarks,
   decodeChatText,
   explainChatError,
   hasPancakeConversation,
@@ -67,6 +68,8 @@ export function PancakeChat({ leadId, pancakeUrl, leadPhone, pageName, className
   const [messages, setMessages] = useState<PancakeChatMessage[]>([]);
   const [outbox, setOutbox] = useState<Outgoing[]>([]);
   const [hasMore, setHasMore] = useState(false);
+  /** Khách đã đọc tin của page tới lúc này (Pancake: read_watermarks). */
+  const [seenAt, setSeenAt] = useState<string | null>(null);
   const [busy, setBusy] = useState<"refresh" | "older" | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const alive = useRef(true);
@@ -102,6 +105,8 @@ export function PancakeChat({ leadId, pancakeUrl, leadPhone, pageName, className
           if (stick && (mode === "first" || merged.length !== messagesRef.current.length)) scrollPlan.current = { kind: "bottom" };
           if (mode === "first") setHasMore(result.count >= CHAT_MORE_THRESHOLD);
           setMessages(merged);
+          if (result.customer_seen_at)
+            setSeenAt((prev) => (prev && Date.parse(prev) > Date.parse(result.customer_seen_at!) ? prev : result.customer_seen_at!));
           // Tin đã gửi xong giờ đã nằm trong cuộc chat Pancake trả về.
           setOutbox((items) => items.filter((o) => o.status === "sending"));
           setView({ status: "ready", customer: result.customer });
@@ -193,6 +198,12 @@ export function PancakeChat({ leadId, pancakeUrl, leadPhone, pageName, className
   const customer = view.status === "ready" ? view.customer : null;
   const now = new Date();
   const lastCustomer = lastCustomerMessage(messages);
+  const seen = chatSeenMarks(messages, seenAt);
+  const seenWhen = chatDayTime(seenAt);
+  const seenDay = chatDayLabel(seenAt, now);
+  const seenLine = seenWhen
+    ? `Khách đã xem lúc ${seenWhen.time}${seenDay === "Hôm nay" ? "" : ` ${seenDay === "Hôm qua" ? "hôm qua" : seenDay}`}`
+    : null;
 
   return (
     <section className={cn("flex min-h-0 flex-col", UI.canvas, className)} aria-label="Cuộc chat Pancake">
@@ -200,7 +211,16 @@ export function PancakeChat({ leadId, pancakeUrl, leadPhone, pageName, className
         <Avatar name={customer} className="size-10 text-base" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-semibold">{customer ?? "Cuộc chat Pancake"}</p>
-          <p className="truncate text-xs text-muted-foreground">{pageName ? `Pancake · ${pageName}` : "Pancake"}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {seenLine && (
+              <span className={cn("font-medium", seen.latestPageUnseen ? "text-muted-foreground" : "text-[#2e7d32] dark:text-[#81c784]")}>
+                {seenLine}
+                {seen.latestPageUnseen && " · chưa xem tin mới nhất"}
+                {" · "}
+              </span>
+            )}
+            {pageName ? `Pancake · ${pageName}` : "Pancake"}
+          </p>
         </div>
         {linked && (
           <Button
@@ -283,6 +303,15 @@ export function PancakeChat({ leadId, pancakeUrl, leadPhone, pageName, className
                     customer={customer}
                     leadPhone={leadPhone}
                   />
+                  {i === seen.seenIndex && seenWhen && (
+                    <div className={cn("flex items-center justify-end gap-1 px-1 pt-0.5 text-[11px]", UI.meta)} title={`Khách đã xem lúc ${seenWhen.time} ${seenWhen.day}`}>
+                      <Avatar name={customer} className="size-3.5 text-[8px]" />
+                      Đã xem {seenWhen.time}
+                    </div>
+                  )}
+                  {i === seen.latestPageIndex && seen.latestPageUnseen && seenAt !== null && (
+                    <p className={cn("px-1 pt-0.5 text-right text-[11px]", UI.meta)}>Đã gửi · khách chưa xem</p>
+                  )}
                 </div>
               );
             })}

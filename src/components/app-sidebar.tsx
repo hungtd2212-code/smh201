@@ -91,7 +91,11 @@ export function AppSidebar() {
                       <SidebarMenuItem data-nav-module={mod.title} className="scroll-mb-2">
                         <CollapsibleTrigger asChild>
                           {/* Khi đang đóng mà chứa trang hiện tại thì tô sáng để biết mình đang ở đâu. */}
-                          <SidebarMenuButton isActive={hasCurrentPage && !open}>
+                          {/* Mục cha to và đậm hơn mục con một chút để nhìn ra nhóm. */}
+                          <SidebarMenuButton
+                            isActive={hasCurrentPage && !open}
+                            className="text-[0.9375rem] font-semibold [&>svg:first-child]:size-[1.125rem]"
+                          >
                             <mod.icon />
                             <span>{mod.title}</span>
                             <ChevronRight className="ml-auto text-sidebar-foreground/50 transition-transform group-data-[state=open]/collapsible:rotate-90" />

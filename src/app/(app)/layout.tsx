@@ -1,5 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { CatalogProvider } from "@/components/catalog-provider";
+import { NotificationBell } from "@/components/notification-bell";
 import { OnlineUsers } from "@/components/online-users";
 import { SecurityAlertBell } from "@/components/safety/security-alert-bell";
 import { PageAccessGate } from "@/components/staff/page-access-gate";
@@ -27,6 +28,7 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
           </span>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <SecurityAlertBell />
+            <NotificationBell />
             <OnlineUsers />
             <ThemeToggle />
           </div>

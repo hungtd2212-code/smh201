@@ -1,5 +1,6 @@
 // Kiểm thử supabase/024_pancake_chat.sql (xem cuộc chat Pancake trong cửa sổ chi tiết lead) và
-// supabase/025_pancake_reply.sql (trả lời khách ngay trong khung chat) trên Postgres chạy
+// supabase/025_pancake_reply.sql (trả lời khách ngay trong khung chat), supabase/026_pancake_seen_alerts.sql
+// (khách đã xem, thông báo mất kết nối) trên Postgres chạy
 // trong bộ nhớ. Không gọi Pancake thật: pg_net được thay bằng bản giả, "Pancake" trả lời bằng dữ liệu dựng sẵn
 // theo mẫu của tài liệu developer.pancake.biz (GET /pages/{id}/conversations/{conv}/messages).
 //
@@ -309,5 +310,91 @@ ok(/permission denied/.test(e ?? ""), "hàm kiểm tra quyền (có token) khôn
 await db.exec(`update public.leads set deleted_at = now() where id = '${leadSale2}'`);
 e = await errOf(U.page1, `select public.pancake_chat_send($1, 'Chào')`, [leadSale2]);
 ok(/không xem được số này/.test(e ?? ""), "số đã vào thùng rác → không gửi", e);
+
+// ===========================================================================
+section("026: chạy file; khách đã xem");
+await db.exec(`update public.leads set deleted_at = null where id = '${leadSale2}'; delete from private.pancake_chat_requests;`);
+const before026 = JSON.stringify(await all(`select * from public.leads order by id`));
+await db.exec(read("026_pancake_seen_alerts.sql"));
+ok(true, "026 chạy không lỗi");
+await db.exec(read("026_pancake_seen_alerts.sql"));
+ok(true, "chạy lại 026 lần hai không lỗi");
+ok(JSON.stringify(await all(`select * from public.leads order by id`)) === before026, "dữ liệu lead giữ nguyên");
+const watchJobs = await all(`select jobname, schedule, command from cron.job where jobname = 'smh-pancake-watch'`);
+ok(watchJobs.length === 1 && watchJobs[0].schedule === "* * * * *" && watchJobs[0].command === "select private.pancake_watch()", "lịch xem kết nối mỗi phút (không đặt trùng)", watchJobs);
+
+const chatBody = (extra) => ({ success: true, conv_from: { id: "psid555", name: "Văn Nguyễn" }, messages: [
+  { id: "m1", inserted_at: "2026-11-13T04:40:00", from: { id: "psid555", name: "Văn Nguyễn" }, original_message: "Ưu đãi?" },
+  { id: "m2", inserted_at: "2026-11-13T04:42:00", from: { id: "111222333", name: "Smile Hub" }, original_message: "Dạ" },
+], ...extra });
+id = await open(U.sale1, leadA);
+await answer(id, 200, chatBody({ read_watermarks: [
+  { psid: "111222333", watermark: 1794545999, message_id: "page" },
+  { psid: "psid555", watermark: 1794545077, message_id: "m2", is_group_conv: null },
+] }));
+r = await read1(U.sale1, id);
+ok(r.state === "ok" && +new Date(r.customer_seen_at) === 1794545077000 && r.customer_seen_message_id === "m2", "mốc khách đã xem (giây) → giờ; bỏ mốc của page", { at: r.customer_seen_at, mid: r.customer_seen_message_id });
+ok(r.messages.length === 2 && r.messages[1].from_page, "tin nhắn vẫn như cũ");
+id = await open(U.sale1, leadA);
+await answer(id, 200, chatBody({ read_watermarks: [{ psid: "psid555", watermark: 1794545077123 }] }));
+r = await read1(U.sale1, id);
+ok(+new Date(r.customer_seen_at) === 1794545077123, "mốc bằng mili giây cũng đọc đúng", r.customer_seen_at);
+id = await open(U.sale1, leadA);
+await answer(id, 200, chatBody({}));
+r = await read1(U.sale1, id);
+ok(r.state === "ok" && r.customer_seen_at === null, "Pancake không có dấu đã xem → để trống", r.customer_seen_at);
+id = await open(U.sale1, leadA);
+await answer(id, 200, chatBody({ read_watermarks: [{ psid: "psid555", watermark: "abc" }, "rác"] }));
+r = await read1(U.sale1, id);
+ok(r.state === "ok" && r.customer_seen_at === null, "dấu đã xem hỏng → bỏ qua, không lỗi", r.customer_seen_at);
+
+section("Thông báo mất kết nối / kết nối lại");
+const watch = async () => (await one(`select private.pancake_watch() n`)).n;
+const notes = () => all(`select kind, title, body, link, ref from public.notifications order by id`);
+await db.exec(`update public.pancake_pages set last_ok_at = now(), last_error = null`);
+ok((await watch()) === 0 && (await notes()).length === 0, "đang chạy tốt → không có thông báo");
+await db.exec(`update public.pancake_pages set last_error = 'Pancake không trả lời kịp, sẽ thử lại', last_error_at = now() where pancake_page_id = '111222333'`);
+ok((await watch()) === 0, "vừa lỗi → chưa báo ngay (chờ xem có tự hết không)");
+await db.exec(`update public.pancake_pages set last_error = null, last_ok_at = now() where pancake_page_id = '111222333'`);
+ok((await watch()) === 0 && (await notes()).length === 0, "lỗi thoáng qua rồi tự hết → không làm phiền");
+await db.exec(`update public.pancake_pages set last_error = 'Page Access Token sai hoặc đã bị đổi', last_error_at = now() where pancake_page_id = '111222333'`);
+await watch();
+await db.exec(`update private.pancake_alert_state set down_since = now() - interval '4 minutes' where pancake_page_id = '111222333'`);
+ok((await watch()) === 1, "lỗi kéo dài 3 phút → tạo 1 thông báo");
+let ns = await notes();
+ok(ns.length === 1 && ns[0].kind === "pancake_down" && ns[0].title === "Mất kết nối Pancake: Smile Hub" && /Token sai/.test(ns[0].body) && /KHÔNG tự về bảng Lead/.test(ns[0].body)
+  && ns[0].link === "/telesale/cai-dat" && ns[0].ref === "111222333", "thông báo ghi tên page, lý do, việc cần làm", ns[0]);
+ok((await watch()) === 0 && (await notes()).length === 1, "vẫn lỗi → không báo lặp lại mỗi phút");
+await db.exec(`update public.pancake_pages set last_error = null, last_ok_at = now() where pancake_page_id = '111222333'`);
+ok((await watch()) === 1, "nối lại được → báo \"Đã kết nối lại\"");
+ns = await notes();
+ok(ns[1].kind === "pancake_up" && ns[1].title === "Đã kết nối lại Pancake: Smile Hub" && /Mất kết nối từ \d\d:\d\d/.test(ns[1].body), "thông báo kết nối lại có khoảng thời gian mất", ns[1]);
+await db.exec(`update public.pancake_pages set last_ok_at = now() - interval '10 minutes' where pancake_page_id = '111222333'`);
+await watch();
+await db.exec(`update private.pancake_alert_state set down_since = now() - interval '4 minutes' where pancake_page_id = '111222333'`);
+await watch();
+ns = await notes();
+ok(ns.length === 3 && /lịch chạy tự động có thể đang dừng/.test(ns[2].body), "10 phút không hỏi được Pancake (dù không có lỗi) → cũng báo", ns[2]?.body);
+await as(U.tl, `select public.pancake_set_active(id, false) from public.pancake_pages where pancake_page_id = '111222333'`);
+ok((await watch()) === 0 && (await notes()).length === 3, "tạm dừng kết nối → không báo \"kết nối lại\", không báo lỗi");
+await as(U.tl, `select public.pancake_set_active(id, true) from public.pancake_pages where pancake_page_id = '111222333'`);
+
+section("Ai thấy thông báo, đánh dấu đã đọc");
+const seeN = async (uid) => (await as(uid, `select count(*)::int n from public.notifications`))[0].n;
+ok((await seeN(U.tl)) === 3 && (await seeN(U.owner)) === 3, "Trưởng Telesale, chủ thấy thông báo");
+ok((await seeN(U.sale1)) === 0 && (await seeN(U.page1)) === 0 && (await seeN(U.ads1)) === 0, "Telesale, trực page, Ads không thấy");
+const firstId = (await one(`select min(id) id from public.notifications`)).id;
+ok((await as(U.tl, `select public.notifications_mark_read(array[$1]::bigint[]) n`, [firstId]))[0].n === 1, "Trưởng Telesale đọc 1 thông báo");
+ok((await as(U.tl, `select count(*)::int n from public.notification_reads`))[0].n === 1 && (await as(U.owner, `select count(*)::int n from public.notification_reads`))[0].n === 0,
+  "đã đọc tính riêng từng người");
+ok((await as(U.owner, `select public.notifications_mark_read() n`))[0].n === 3, "chủ bấm \"Đọc hết\"");
+ok((await as(U.owner, `select public.notifications_mark_read() n`))[0].n === 0, "bấm lại không tạo trùng");
+ok((await as(U.sale1, `select public.notifications_mark_read() n`))[0].n === 0, "telesale gọi đọc hết → không có gì");
+e = await errOf(U.tl, `insert into public.notifications (kind, title) values ('pancake_down', 'giả')`);
+ok(/permission denied/.test(e ?? ""), "không ai tự tạo thông báo qua ứng dụng", e);
+e = await errOf(U.tl, `insert into public.notification_reads (notification_id, user_id) values (${firstId}, '${U.owner}')`);
+ok(/permission denied/.test(e ?? ""), "không đánh dấu đọc hộ người khác", e);
+e = await errOf(U.owner, `select private.pancake_watch()`);
+ok(/permission denied/.test(e ?? ""), "hàm xem kết nối chỉ lịch chạy gọi được", e);
 
 finish();

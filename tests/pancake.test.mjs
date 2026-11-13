@@ -3,6 +3,7 @@
 import {
   chatDayLabel,
   chatDayTime,
+  chatSeenMarks,
   decodeChatText,
   explainChatError,
   hasPancakeConversation,
@@ -11,6 +12,7 @@ import {
   outsideMessengerWindow,
   pancakeConversationUrl,
   pancakeHealth,
+  pancakeProblems,
   pancakeTokenProblem,
   parsePancakePageId,
   safeHttpUrl,
@@ -69,7 +71,8 @@ const err = pancakeHealth({ ...base, last_error: "Page Access Token sai", last_e
 ok(err.tone === "error" && err.label === "Page Access Token sai (lúc 11:58)", "báo lỗi kèm giờ Việt Nam", err);
 const bad = pancakeHealth({ ...base, last_error: "Pancake báo lỗi: Invalid access_token", last_error_at: "2026-11-13T07:58:00Z" }, now);
 ok(bad.tone === "error" && /Pancake không nhận token — bấm Sửa/.test(bad.label) && /14:58/.test(bad.label), "lỗi tiếng Anh \"Invalid access_token\" → nói rõ cần làm gì", bad);
-ok(pancakeHealth(base, now).tone === "waiting", "chưa hỏi được lần nào → đang chờ");
+ok(pancakeHealth({ ...base, created_at: "2026-11-13T04:58:00Z" }, now).tone === "waiting", "vừa kết nối, chưa hỏi được lần nào → đang chờ");
+ok(pancakeHealth(base, now).tone === "warn" && /Chưa hỏi được Pancake lần nào/.test(pancakeHealth(base, now).label), "kết nối hơn 5 phút mà chưa hỏi được lần nào → cảnh báo");
 const fine = pancakeHealth({ ...base, last_ok_at: "2026-11-13T04:59:00Z" }, now);
 ok(fine.tone === "ok" && /11:59/.test(fine.label), "vừa hỏi được → đang chạy", fine);
 ok(pancakeHealth({ ...base, last_ok_at: "2026-11-13T04:50:00Z" }, now).tone === "warn", "quá 5 phút không hỏi được → cảnh báo");
@@ -116,6 +119,26 @@ ok(outsideMessengerWindow(conv1, nowVN) === true && outsideMessengerWindow([cm("
   "khách nhắn quá 24 giờ → cảnh báo; trong 24 giờ → không");
 ok(outsideMessengerWindow([cm("c", "2026-11-01T01:00:00Z", false, "COMMENT")], nowVN) === false, "bình luận không tính giới hạn 24 giờ Messenger");
 ok(/24 giờ/.test(explainChatError("Pancake không gửi được: (#10) This message is sent outside of allowed window.")), "lỗi ngoài 24 giờ của Facebook → nói rõ");
+
+console.log("\n== Khách đã xem, cảnh báo mất kết nối");
+const sm = (id, at, from_page) => ({ id, at, from_page, sender: null, text: id, removed: false, kind: "INBOX", attachments: [] });
+const thread = [sm("k1", "2026-11-13T04:40:00Z", false), sm("p1", "2026-11-13T04:41:00Z", true), sm("p2", "2026-11-13T04:43:00Z", true), sm("p3", "2026-11-13T04:50:00Z", true)];
+let marks = chatSeenMarks(thread, "2026-11-13T04:44:37Z");
+ok(marks.seenIndex === 2 && marks.latestPageIndex === 3 && marks.latestPageUnseen, "khách đọc tới 11:44 → \"Đã xem\" dưới tin 11:43, tin 11:50 chưa xem", marks);
+marks = chatSeenMarks(thread, "2026-11-13T04:50:01Z");
+ok(marks.seenIndex === 3 && !marks.latestPageUnseen, "khách đã đọc hết", marks);
+marks = chatSeenMarks(thread, null);
+ok(marks.seenIndex === -1 && marks.latestPageIndex === 3, "không có mốc đã xem → không đánh dấu", marks);
+ok(chatSeenMarks([sm("k", "2026-11-13T04:40:00Z", false)], "2026-11-13T05:00:00Z").latestPageIndex === -1, "chưa có tin của page → không có gì để xem");
+const pc = (id, extra) => ({ ...base, id, created_at: "2026-11-13T03:00:00Z", last_ok_at: "2026-11-13T04:59:30Z", ...extra });
+const problems = pancakeProblems([
+  pc("ok"),
+  pc("err", { last_error: "Page Access Token sai", last_error_at: "2026-11-13T04:58:00Z" }),
+  pc("stale", { last_ok_at: "2026-11-13T04:40:00Z" }),
+  pc("paused", { is_active: false, last_error: "x" }),
+  pc("new", { created_at: "2026-11-13T04:59:00Z", last_ok_at: null }),
+], now);
+ok(problems.map((x) => x.conn.id).join(",") === "err,stale", "mất kết nối = báo lỗi hoặc quá 5 phút không hỏi được; bỏ page tạm dừng / vừa kết nối", problems.map((x) => x.conn.id));
 
 console.log(`\n${passed} ok, ${failed} lỗi`);
 if (failed > 0) process.exit(1);

@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Pause, Pencil, Play, Plug, RefreshCw } from "lucide-react";
+import { ExternalLink, Pause, Pencil, Play, Plug, RefreshCw, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -24,6 +24,7 @@ import {
   PANCAKE_ID_HINT,
   pancakeConversationUrl,
   pancakeHealth,
+  pancakeProblems,
   pancakeTokenProblem,
   parsePancakePageId,
   type PancakeImport,
@@ -164,6 +165,8 @@ export function PancakeSettings() {
         </div>
       </div>
 
+      {conns && <LostConnections conns={conns} pageName={pageName} />}
+
       {loadError ? (
         <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
           {loadError}
@@ -216,6 +219,37 @@ export function PancakeSettings() {
         }}
       />
     </section>
+  );
+}
+
+/** Cảnh báo đỏ khi có page mất kết nối: số mới của page đó đang không tự về bảng Lead. */
+function LostConnections({ conns, pageName }: { conns: PancakePage[]; pageName: (id: string) => string }) {
+  const problems = pancakeProblems(conns);
+  if (problems.length === 0) return null;
+  return (
+    <div
+      role="alert"
+      className="flex gap-2.5 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
+    >
+      <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+      <div className="grid gap-1">
+        <p className="font-semibold">
+          Mất kết nối Pancake ở {problems.length} page — số điện thoại mới của {problems.length > 1 ? "các page này" : "page này"} đang
+          KHÔNG tự về bảng Lead
+        </p>
+        <ul className="grid gap-0.5">
+          {problems.map(({ conn, health }) => (
+            <li key={conn.id}>
+              <span className="font-medium">{pageName(conn.page_id)}</span>: {health.label}
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs opacity-80">
+          Bấm “Đồng bộ ngay” để thử lại. Vẫn lỗi thì bấm Sửa ở page đó và dán lại Page Access Token (Pancake → page → Cài đặt
+          → Công cụ).
+        </p>
+      </div>
+    </div>
   );
 }
 
