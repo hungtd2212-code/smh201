@@ -14,6 +14,7 @@ import {
   spendVerdict,
   summarize,
 } from "../src/lib/ads-auto/compare.ts";
+import { cleanBotToken, lastBatch } from "../src/lib/ads-auto/telegram-logic.ts";
 
 let passed = 0;
 let failed = 0;
@@ -119,6 +120,16 @@ ok(defaultRange("2026-03-01", 30).from === "2026-01-30", "qua tháng / năm đú
 const good = "EAAG" + "aBcD1234".repeat(10);
 ok(cleanToken(`  ${good}\n`).ok && cleanToken(`  ${good}\n`).token === good, "token đúng (bỏ khoảng trắng 2 đầu)");
 ok(!cleanToken("EAA short").ok && !cleanToken(`EBB${good.slice(3)}`).ok && !cleanToken(`${good} x`).ok && !cleanToken("").ok, "token sai dạng");
+
+console.log("\n== Telegram");
+const bot = "7012345678:AAH" + "xYz_-9".repeat(6);
+ok(cleanBotToken(`  ${bot}\n`).ok && cleanBotToken(`  ${bot}\n`).token === bot, "token bot đúng (bỏ khoảng trắng 2 đầu)");
+ok(!cleanBotToken("123:abc").ok && !cleanBotToken(`EAA${"x".repeat(40)}`).ok && !cleanBotToken(`${bot} x`).ok, "token bot sai dạng");
+const item = (id, batch, seq, status, extra = {}) => ({ id, batch_id: batch, kind: "auto", report_date: "2026-11-13", seq, title: `NV${seq}`, status,
+  sent_at: status === "sent" ? `2026-11-14T03:0${seq}:00Z` : null, error: status === "failed" ? "Bot không còn trong nhóm" : null, created_at: "", ...extra });
+const lb = lastBatch([item(5, "b2", 3, "failed"), item(4, "b2", 2, "sent"), item(3, "b2", 1, "sent"), item(2, "b1", 1, "sent")]);
+ok(lb.total === 3 && lb.sent === 2 && lb.failed === 1 && lb.waiting === 0 && lb.error === "Bot không còn trong nhóm" && lb.lastSentAt === "2026-11-14T03:02:00Z", "lượt gửi gần nhất: đếm tin tới / lỗi", lb);
+ok(lastBatch([]) === null, "chưa gửi lần nào");
 
 console.log(`\n${passed} đạt, ${failed} lỗi`);
 process.exit(failed ? 1 : 0);
