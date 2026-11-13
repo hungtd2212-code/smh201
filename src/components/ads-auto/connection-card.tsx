@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { isAdminRole, useCurrentStaff } from "@/hooks/use-current-staff";
 import { formatDay } from "@/lib/ad-reports/dates";
 import {
   accountHealth,
@@ -49,9 +50,13 @@ const when = (iso: string | null) => {
 
 /**
  * Phần "Kết nối Facebook": dán / đổi / gỡ token, bật tắt tự kéo mỗi giờ, tình trạng từng TKQC.
+ * Nút token, nút tự kéo và hướng dẫn lấy token chỉ Quản trị thấy (chủ phòng khám, 13/11/2026);
+ * Trưởng Marketing chỉ xem tình trạng và số.
  * `onChanged` = tải lại tình trạng (và theo dõi các lượt hỏi Facebook vừa gửi).
  */
 export function ConnectionCard({ status, onChanged }: { status: AutoStatus; onChanged: () => void }) {
+  const staff = useCurrentStaff();
+  const isAdmin = staff.status === "ok" && isAdminRole(staff.role);
   const [tokenOpen, setTokenOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [toggling, setToggling] = useState(false);
@@ -94,27 +99,33 @@ export function ConnectionCard({ status, onChanged }: { status: AutoStatus; onCh
               )}
             </p>
           ) : (
-            <p className="text-sm text-muted-foreground">Chưa kết nối: dán token Facebook (chỉ quyền xem số) để hệ thống tự kéo.</p>
+            <p className="text-sm text-muted-foreground">
+              {isAdmin
+                ? "Chưa kết nối: dán token Facebook (chỉ quyền xem số) để hệ thống tự kéo."
+                : "Chưa kết nối: nhờ Quản trị dán token Facebook để hệ thống tự kéo."}
+            </p>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {status.has_token && (
-            <Button variant="outline" size="sm" disabled={toggling} onClick={() => void toggleAuto()} aria-pressed={status.auto_enabled}>
-              <RefreshCw className={cn(toggling && "animate-spin")} />
-              Tự kéo mỗi giờ: {status.auto_enabled ? "Bật" : "Tắt"}
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-2">
+            {status.has_token && (
+              <Button variant="outline" size="sm" disabled={toggling} onClick={() => void toggleAuto()} aria-pressed={status.auto_enabled}>
+                <RefreshCw className={cn(toggling && "animate-spin")} />
+                Tự kéo mỗi giờ: {status.auto_enabled ? "Bật" : "Tắt"}
+              </Button>
+            )}
+            <Button size="sm" variant={status.has_token ? "outline" : "default"} onClick={() => setTokenOpen(true)}>
+              <KeyRound />
+              {status.has_token ? "Đổi token" : "Dán token Facebook"}
             </Button>
-          )}
-          <Button size="sm" variant={status.has_token ? "outline" : "default"} onClick={() => setTokenOpen(true)}>
-            <KeyRound />
-            {status.has_token ? "Đổi token" : "Dán token Facebook"}
-          </Button>
-          {status.has_token && (
-            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setRemoveOpen(true)}>
-              <Unplug />
-              Gỡ token
-            </Button>
-          )}
-        </div>
+            {status.has_token && (
+              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setRemoveOpen(true)}>
+                <Unplug />
+                Gỡ token
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {status.pending > 0 && (
@@ -130,7 +141,7 @@ export function ConnectionCard({ status, onChanged }: { status: AutoStatus; onCh
         </p>
       )}
 
-      {!status.has_token && <TokenGuide defaultOpen />}
+      {isAdmin && !status.has_token && <TokenGuide defaultOpen />}
 
       <div className="grid gap-2">
         <p className="text-sm font-medium">
@@ -154,20 +165,24 @@ export function ConnectionCard({ status, onChanged }: { status: AutoStatus; onCh
         )}
       </div>
 
-      <TokenDialog open={tokenOpen} onOpenChange={setTokenOpen} replacing={status.has_token} onSaved={onChanged} />
-      <ConfirmActionDialog
-        open={removeOpen}
-        onOpenChange={setRemoveOpen}
-        title="Gỡ token Facebook?"
-        description="Hệ thống sẽ ngừng hỏi Facebook. Số đã kéo về vẫn giữ để xem lại; số nhân viên nhập tay không bị ảnh hưởng. Muốn kéo tiếp thì dán lại token."
-        confirmLabel="Gỡ token"
-        destructive
-        onConfirm={async () => {
-          await removeAutoToken();
-          toast.success("Đã gỡ token Facebook");
-          onChanged();
-        }}
-      />
+      {isAdmin && (
+        <>
+          <TokenDialog open={tokenOpen} onOpenChange={setTokenOpen} replacing={status.has_token} onSaved={onChanged} />
+          <ConfirmActionDialog
+            open={removeOpen}
+            onOpenChange={setRemoveOpen}
+            title="Gỡ token Facebook?"
+            description="Hệ thống sẽ ngừng hỏi Facebook. Số đã kéo về vẫn giữ để xem lại; số nhân viên nhập tay không bị ảnh hưởng. Muốn kéo tiếp thì dán lại token."
+            confirmLabel="Gỡ token"
+            destructive
+            onConfirm={async () => {
+              await removeAutoToken();
+              toast.success("Đã gỡ token Facebook");
+              onChanged();
+            }}
+          />
+        </>
+      )}
     </section>
   );
 }
@@ -235,6 +250,11 @@ function TokenGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
           <li>
             Chọn người dùng vừa tạo → <span className="font-medium text-foreground">Gán tài sản → Tài khoản quảng cáo</span>{" "}
             → tick các TKQC → chỉ bật quyền <span className="font-medium text-foreground">Xem hiệu quả</span> → Lưu.
+          </li>
+          <li>
+            Gán thêm <span className="font-medium text-foreground">Ứng dụng</span> của Business cho người dùng đó, quyền{" "}
+            <span className="font-medium text-foreground">Phát triển ứng dụng</span> (thiếu bước này thì lúc Tạo mã báo
+            “Không có quyền nào”).
           </li>
           <li>
             Bấm <span className="font-medium text-foreground">Tạo mã</span>: chọn ứng dụng của Business (chưa có thì tạo ở
