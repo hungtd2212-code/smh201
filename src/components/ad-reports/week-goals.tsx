@@ -185,19 +185,33 @@ function DataText({ r, compact = false }: { r: Result; compact?: boolean }) {
   );
 }
 
-/** Ô kết quả của một tuần / cả tháng. */
+/** Ô tổng nổi bật hơn ô thường: Cả tháng xanh ngọc (cùng màu "Tháng" ở phần mục tiêu), Cả tuần tím nhạt. */
+const ACCENT = {
+  month:
+    "border border-cyan-300/80 bg-linear-to-br from-cyan-100 to-sky-50 shadow-[0_6px_16px_-10px] shadow-cyan-600/40 dark:border-cyan-400/30 dark:from-cyan-500/25 dark:to-cyan-500/10",
+  week:
+    "border border-violet-300/80 bg-linear-to-br from-violet-100 to-fuchsia-50 shadow-[0_6px_16px_-10px] shadow-violet-600/40 dark:border-violet-400/30 dark:from-violet-500/25 dark:to-violet-500/10",
+} as const;
+const ACCENT_TEXT = {
+  month: "text-cyan-700 dark:text-cyan-300",
+  week: "text-violet-700 dark:text-violet-300",
+} as const;
+
+/** Ô kết quả của một tuần / cả tháng. `accent` = ô tổng (cả tháng, cả tuần): nền màu, số to hơn. */
 function ResultCell({
   r,
   title,
   selected,
   onClick,
   extra,
+  accent,
 }: {
   r: Result;
   title: string;
   selected?: boolean;
   onClick?: () => void;
   extra?: React.ReactNode;
+  accent?: keyof typeof ACCENT;
 }) {
   return (
     <button
@@ -205,13 +219,14 @@ function ResultCell({
       onClick={onClick}
       title={title}
       className={cn(
-        "glass-soft grid w-full min-w-[5.5rem] gap-1 rounded-xl px-2 py-1.5 text-left outline-1 -outline-offset-1 transition-transform hover:-translate-y-px",
+        "grid w-full min-w-[5.5rem] gap-1 rounded-xl px-2 py-1.5 text-left outline-1 -outline-offset-1 transition-transform hover:-translate-y-px",
+        accent ? ACCENT[accent] : "glass-soft",
         OUTLINE[r.tone],
         selected && "outline-2 outline-sky-500",
         r.phase === "future" && "opacity-60",
       )}
     >
-      <span className="flex items-center justify-between gap-1 text-xs">
+      <span className={cn("flex items-center justify-between gap-1", accent ? "text-sm" : "text-xs")}>
         <DataText r={r} />
         <StatusIcon tone={r.tone} phase={r.phase} />
       </span>
@@ -287,7 +302,7 @@ function DayCalendar({
               {d}
             </div>
           ))}
-          <div className="hidden text-center text-[11px] font-medium text-muted-foreground sm:block" style={{ gridRow: 1, gridColumn: 8 }}>
+          <div className={cn("hidden text-center text-[11px] font-semibold sm:block", ACCENT_TEXT.week)} style={{ gridRow: 1, gridColumn: 8 }}>
             Cả tuần
           </div>
           {dayResults.map(({ day, r }) => (
@@ -311,6 +326,7 @@ function DayCalendar({
                   title={describe(line.name, `tuần ${w.index} (${weekSpan(w)})`, r, plan)}
                   selected={sameRange(range, w.from, w.to)}
                   onClick={() => onPickRange(sameRange(range, w.from, w.to) ? null : { from: w.from, to: w.to })}
+                  accent="week"
                   extra={
                     <span className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground tabular-nums">
                       Tuần {w.index} · {weekSpan(w)}
@@ -332,6 +348,7 @@ function DayCalendar({
             title={describe(line.name, `tuần ${w.index} (${weekSpan(w)})`, r, plan)}
             selected={sameRange(range, w.from, w.to)}
             onClick={() => onPickRange(sameRange(range, w.from, w.to) ? null : { from: w.from, to: w.to })}
+            accent="week"
             extra={
               <span className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground tabular-nums">
                 Tuần {w.index} · {weekSpan(w)}
@@ -547,7 +564,7 @@ export function WeekGoals({
                     </button>
                   </th>
                 ))}
-                <th className="px-1 text-left text-[11px] font-medium text-muted-foreground">
+                <th className={cn("px-1 text-left text-[11px] font-medium", ACCENT_TEXT.month)}>
                   <span className="grid">
                     <span className="font-semibold">Cả tháng</span>
                     <span className="tabular-nums">{monthLabel(month).slice(6)}</span>
@@ -609,7 +626,7 @@ export function WeekGoals({
                       </td>
                     ))}
                     <td>
-                      <ResultCell r={whole} title={describe(line.name, monthLabel(month).toLowerCase(), whole)} />
+                      <ResultCell r={whole} title={describe(line.name, monthLabel(month).toLowerCase(), whole)} accent="month" />
                     </td>
                   </tr>
                 );
