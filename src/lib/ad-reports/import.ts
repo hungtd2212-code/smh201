@@ -6,8 +6,8 @@ import type { AdAccount, AdAccountAssignment, AdsStaff } from "../catalog/types"
  * File (xem "File mẫu" ở Marketing → Tổng quan → Nhập từ Excel):
  *   • Mỗi tab một nhân viên Ads: ô "Nhân viên Ads:" ghi tên (không có thì lấy tên tab); dòng "ID TKQC:" ghi ID tài
  *     khoản quảng cáo của từng cột; dòng tiêu đề bắt đầu bằng ô "Ngày", sau đó mỗi cột một TKQC (ghi chi tiêu, đồng),
- *     rồi các cột "Mess", "Data", "Doanh thu". Mỗi dòng một ngày — giống sheet báo cáo tháng đang dùng.
- *   • Tab "Doanh thu tháng": Tháng | Nhân viên Ads | Doanh thu.
+ *     rồi các cột "Mess", "Data", "Doanh số". Mỗi dòng một ngày — giống sheet báo cáo tháng đang dùng.
+ *   • Tab "Doanh số tháng": Tháng | Nhân viên Ads | Doanh số. (File cũ ghi "Doanh thu" thay cho "Doanh số" vẫn đọc được.)
  *   • Tab "Hướng dẫn" và các tab không có dòng tiêu đề như trên được bỏ qua.
  *
  * Khớp dữ liệu: TKQC khớp theo ID tài khoản quảng cáo (không có ID thì theo tên); nhân viên khớp theo tên (người
@@ -88,7 +88,7 @@ export type DayRow = {
   messages: number;
   /** Data xin được cả ngày (ô trống = 0). */
   data: number;
-  /** Doanh thu theo ngày (ô trống = không nhập). */
+  /** Doanh số theo ngày (ô trống = không nhập). */
   revenue: number | null;
 };
 
@@ -322,6 +322,12 @@ type Role = "day" | "messages" | "data" | "revenue" | "ignore" | "account";
 const MESSAGE_HEADERS = ["mess", "tong mess", "so mess", "tin nhan", "so tin nhan", "so luong tin nhan", "tong tin nhan"];
 const DATA_HEADERS = ["data", "data xin duoc", "so data", "tong data"];
 const REVENUE_HEADERS = ["doanh thu", "doanh thu theo ngay", "doanh thu ngay"];
+// Cột "Doanh thu theo ngày" đã đổi tên thành "Doanh số theo ngày" (file mẫu mới ghi "Doanh số"). Sheet cũ có cả cột
+// "Doanh số" tính sẵn bên cạnh cột "Doanh thu" → tab có cột "Doanh thu" thì vẫn đọc cột đó và bỏ qua "Doanh số" như
+// trước; tab không có cột "Doanh thu" thì đọc cột "Doanh số".
+const SALES_HEADERS = ["doanh so", "doanh so theo ngay", "doanh so ngay"];
+const MONTH_TABS = ["doanh so thang", "doanh thu thang"];
+const MONTH_AMOUNT_HEADERS = ["doanh so", "doanh so thang", "doanh thu", "doanh thu thang"];
 // Cột tính sẵn trong sheet cũ (tổng, giá, tỉ lệ…) → bỏ qua, phần mềm tự tính lại.
 const IGNORED = /^(tong |gia |ti le|ty le|doanh so|chi tieu|ghi chu|ho va ten|ho ten|ma nhan vien|nhan vien|ads ?\/)/;
 const ID_ROW_LABELS = ["id tkqc", "id tk qc", "id tai khoan", "id tai khoan quang cao", "id tk ads", "id"];
@@ -410,8 +416,8 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog, o
     const name = fold(sheet);
     if (name.startsWith("huong dan")) continue;
 
-    // ---- Tab "Doanh thu tháng" ----
-    if (name.includes("doanh thu thang")) {
+    // ---- Tab "Doanh số tháng" (file cũ: "Doanh thu tháng") ----
+    if (MONTH_TABS.some((tab) => name.includes(tab))) {
       const header = rowStartingWith(data, ["thang"]);
       if (header < 0) {
         notes.push(`Bỏ qua tab "${sheet}": không thấy dòng tiêu đề bắt đầu bằng ô "Tháng".`);
@@ -420,9 +426,9 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog, o
       const roles = (data[header] ?? []).map((cell) => fold(cellText(cell)));
       const monthCol = roles.indexOf("thang");
       const staffCol = roles.findIndex((h) => h === "nhan vien ads" || h === "nhan vien");
-      const amountCol = roles.findIndex((h) => h === "doanh thu" || h === "doanh thu thang");
+      const amountCol = roles.findIndex((h) => MONTH_AMOUNT_HEADERS.includes(h));
       if (staffCol < 0 || amountCol < 0) {
-        issues.push({ sheet, row: header + 1, message: 'Cần đủ 3 cột "Tháng", "Nhân viên Ads", "Doanh thu"' });
+        issues.push({ sheet, row: header + 1, message: 'Cần đủ 3 cột "Tháng", "Nhân viên Ads", "Doanh số"' });
         continue;
       }
       for (let r = header + 1; r < data.length; r++) {
@@ -431,9 +437,9 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog, o
         const amount = toNumber(row[amountCol]);
         const month = toMonth(row[monthCol]);
         const who = cellText(row[staffCol] ?? null);
-        if (amount === null || amount === 0) continue; // trống / 0 = dùng doanh thu theo ngày
+        if (amount === null || amount === 0) continue; // trống / 0 = dùng doanh số theo ngày
         if (amount === "bad" || amount < 0 || !Number.isInteger(amount) || amount > REVENUE_MAX) {
-          issues.push({ sheet, row: rowNo, message: `Doanh thu "${cellText(row[amountCol] ?? null)}" không phải số tiền hợp lệ` });
+          issues.push({ sheet, row: rowNo, message: `Doanh số "${cellText(row[amountCol] ?? null)}" không phải số tiền hợp lệ` });
           continue;
         }
         if (month === null || month === "bad") {
@@ -453,7 +459,7 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog, o
           issues.push({
             sheet,
             row: rowNo,
-            message: `Doanh thu tháng ${showMonth(month)} của ${person?.full_name ?? "Chưa rõ nhân viên"} bị ghi hai lần (tab "${before.sheet}" dòng ${before.row})`,
+            message: `Doanh số tháng ${showMonth(month)} của ${person?.full_name ?? "Chưa rõ nhân viên"} bị ghi hai lần (tab "${before.sheet}" dòng ${before.row})`,
           });
           continue;
         }
@@ -474,7 +480,9 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog, o
     const dayCol = roles.indexOf("day");
     const messagesCol = roles.indexOf("messages");
     const dataCol = roles.indexOf("data");
-    const revenueCol = roles.indexOf("revenue");
+    const revenueCol = roles.includes("revenue")
+      ? roles.indexOf("revenue")
+      : titles.findIndex((title) => SALES_HEADERS.includes(fold(cellText(title ?? null))));
     const accountCols = roles.flatMap((role, c) => (role === "account" ? [c] : []));
     const staff = findStaff(sheet, staffNameAbove(data, header) ?? sheet);
     if (!staff) continue; // khớp nhân viên trước, rồi mới kiểm tra được TKQC của người đó
@@ -646,7 +654,7 @@ export function parseWorkbook(sheets: WorkbookSheet[], catalog: ImportCatalog, o
       }
       const messages = number(messagesCol, "Mess", COUNT_MAX, true) ?? 0;
       const dataCount = number(dataCol, "Data", COUNT_MAX, true) ?? 0;
-      const revenue = number(revenueCol, "Doanh thu", REVENUE_MAX, false);
+      const revenue = number(revenueCol, "Doanh số", REVENUE_MAX, false);
       if (ok && messages > 0 && spends.length === 0) {
         issues.push({ sheet, row: rowNo, message: `Ngày ${showDay(day)} có mess nhưng không TKQC nào có chi tiêu` });
         ok = false;
@@ -771,7 +779,7 @@ const text = (value: string) => ({ value, type: String });
 
 /**
  * Nội dung file mẫu của một tháng (yyyy-MM): tab Hướng dẫn, mỗi nhân viên Ads một tab (dòng ID TKQC, dòng tiêu đề
- * Ngày | các TKQC | Mess | Data | Doanh thu, mỗi ngày đã qua một dòng), tab Doanh thu tháng. Ngày và ID ghi dạng
+ * Ngày | các TKQC | Mess | Data | Doanh số, mỗi ngày đã qua một dòng), tab Doanh số tháng. Ngày và ID ghi dạng
  * chữ để Excel / Google Sheet không tự đổi kiểu hay làm tròn số dài.
  */
 export function templateSheets(month: string, catalog: ImportCatalog): TemplateSheet[] {
@@ -789,17 +797,17 @@ export function templateSheets(month: string, catalog: ImportCatalog): TemplateS
     "2. Dòng \"ID TKQC\": ID tài khoản quảng cáo của từng cột. Phần mềm khớp TKQC theo ID này (ô ID trống thì khớp theo tên cột).",
     "   Thêm cột TKQC mới: ghi tên ở dòng tiêu đề và ID ở dòng ID TKQC. Ghi ID dạng chữ (gõ dấu ' phía trước) để Excel không làm tròn số dài.",
     "3. Mỗi dòng là một ngày. Cột TKQC: ghi số tiền đã chi của TKQC đó (đồng). Ô trống = TKQC không chạy hôm đó.",
-    "4. Mess: tổng mess cả ngày — phần mềm ghi vào TKQC chi nhiều nhất hôm đó. Data: data xin được cả ngày. Doanh thu: không bắt buộc.",
+    "4. Mess: tổng mess cả ngày — phần mềm ghi vào TKQC chi nhiều nhất hôm đó. Data: data xin được cả ngày. Doanh số: không bắt buộc.",
     "5. Dán số dạng 1.526.706 hay 1526706 đều được. Ngày ghi dạng ngày/tháng/năm, vd 01/10/2026.",
     "6. Ngày đã có số trong phần mềm được giữ nguyên, không bị ghi đè.",
-    '7. Tab "Doanh thu tháng": chỉ điền khi có doanh thu cả tháng của từng người. Để trống thì phần mềm cộng "Doanh thu theo ngày".',
+    '7. Tab "Doanh số tháng": chỉ điền khi có doanh số cả tháng của từng người. Để trống thì phần mềm cộng "Doanh số theo ngày".',
     "8. Thêm được tab cho tháng khác (giữ dòng ID TKQC và dòng tiêu đề bắt đầu bằng ô Ngày).",
     "9. Lưu dạng .xlsx (Google Sheet: Tệp → Tải xuống → Microsoft Excel). Ở phần mềm: chọn file → Khớp dữ liệu → Tải lên.",
   ];
   const sheets: TemplateSheet[] = [
     { sheet: "Hướng dẫn", data: guide.map((line, i) => [i === 0 ? bold(line) : line]), columns: [{ width: 130 }] },
   ];
-  const used = new Set(["hướng dẫn", "doanh thu tháng"]);
+  const used = new Set(["hướng dẫn", "doanh số tháng"]);
   const tabs = templateTabs(month, catalog);
   const head = (title: string) => ({ ...bold(title), backgroundColor: "#E8F1FB" });
   for (const { staff, accounts } of tabs) {
@@ -812,9 +820,9 @@ export function templateSheets(month: string, catalog: ImportCatalog): TemplateS
       data: [
         [bold("Nhân viên Ads:"), bold(staff.full_name)],
         ["Tháng:", text(label)],
-        [{ value: "Cột TKQC: số tiền đã chi (đồng). Mess, Data: cả ngày. Doanh thu: không bắt buộc. Ô trống = không có số.", textColor: "#666666" }],
+        [{ value: "Cột TKQC: số tiền đã chi (đồng). Mess, Data: cả ngày. Doanh số: không bắt buộc. Ô trống = không có số.", textColor: "#666666" }],
         [{ value: "ID TKQC:", textColor: "#666666" }, ...accounts.map((a) => ({ value: a.account_id ?? "", type: String, textColor: "#666666" }))],
-        [head("Ngày"), ...accounts.map((a) => head(a.name)), head("Mess"), head("Data"), head("Doanh thu")],
+        [head("Ngày"), ...accounts.map((a) => head(a.name)), head("Mess"), head("Data"), head("Doanh số")],
         ...days.map((day) => [text(day)]),
       ],
       columns: [{ width: 13 }, ...accounts.map(() => ({ width: 20 })), { width: 9 }, { width: 9 }, { width: 16 }],
@@ -822,9 +830,9 @@ export function templateSheets(month: string, catalog: ImportCatalog): TemplateS
     });
   }
   sheets.push({
-    sheet: "Doanh thu tháng",
+    sheet: "Doanh số tháng",
     data: [
-      ["Tháng", "Nhân viên Ads", "Doanh thu"].map(bold),
+      ["Tháng", "Nhân viên Ads", "Doanh số"].map(bold),
       ...tabs.map(({ staff }) => [text(label), staff.full_name, null]),
       [text(label), "Chưa rõ nhân viên", null],
     ],

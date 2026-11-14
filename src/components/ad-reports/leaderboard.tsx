@@ -145,7 +145,7 @@ export function Leaderboard({ month, elapsed, state }: { month: string; elapsed:
       .filter((s) => pick(s) !== null)
       .sort((a, b) => (lower ? (pick(a) ?? 0) - (pick(b) ?? 0) : (pick(b) ?? 0) - (pick(a) ?? 0)))[0];
   const awards = [
-    { title: "Tỉ lệ ads / doanh thu tốt nhất", s: best((x) => x.adRevenuePct, true), value: (x: BoardScore) => pct(x.adRevenuePct) },
+    { title: "Tỉ lệ ads / doanh số tốt nhất", s: best((x) => x.adRevenuePct, true), value: (x: BoardScore) => pct(x.adRevenuePct) },
     { title: "Giá số rẻ nhất", s: best((x) => x.costPerData, true), value: (x: BoardScore) => money(x.costPerData) },
     { title: "Vượt target số cao nhất", s: best((x) => x.targetPace, false), value: (x: BoardScore) => `${Math.round((x.targetPace ?? 0) * 100)}% nhịp` },
   ];
@@ -158,7 +158,7 @@ export function Leaderboard({ month, elapsed, state }: { month: string; elapsed:
           Vinh danh {monthLabel(month).toLowerCase()}
         </h2>
         <p className="text-sm text-muted-foreground">
-          Điểm 0–100: tỉ lệ ads / doanh thu · giá số · số điện thoại so với target (người tốt nhất mỗi tiêu chí = 100).
+          Điểm 0–100: tỉ lệ ads / doanh số · giá số · số điện thoại so với target (người tốt nhất mỗi tiêu chí = 100).
           Chỉ xếp hạng người chi tiêu từ {Math.round(BOARD_MIN_SHARE * 100)}% mức trung bình của nhóm trở lên.
         </p>
       </div>
@@ -208,7 +208,7 @@ export function Leaderboard({ month, elapsed, state }: { month: string; elapsed:
               </div>
             ) : (
               <div key={a.title} className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
-                {a.title}: chưa có số ({a.title.includes("doanh thu") ? "chưa nhập doanh thu" : "chưa đặt target"})
+                {a.title}: chưa có số ({a.title.includes("doanh số") ? "chưa nhập doanh số" : "chưa đặt target"})
               </div>
             ),
           )}

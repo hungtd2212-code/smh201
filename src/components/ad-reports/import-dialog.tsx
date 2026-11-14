@@ -167,7 +167,7 @@ export function ImportDialog({
       await runImport(plan, setProgress);
       const parts = [
         plan.data.length > 0 && `${count(plan.data.length)} ngày số liệu`,
-        plan.revenue.length > 0 && `${count(plan.revenue.length)} dòng doanh thu tháng`,
+        plan.revenue.length > 0 && `${count(plan.revenue.length)} dòng doanh số tháng`,
       ].filter(Boolean);
       toast.success(`Đã tải lên ${parts.join(" và ") || `${count(plan.reports.length)} dòng chi tiêu`}`);
       onImported();
@@ -189,7 +189,7 @@ export function ImportDialog({
         <DialogHeader>
           <DialogTitle>Nhập số liệu cũ từ Excel</DialogTitle>
           <DialogDescription>
-            Đưa số liệu quảng cáo các tháng trước (chi tiêu từng TKQC, mess, data, doanh thu) vào phần mềm. TKQC được
+            Đưa số liệu quảng cáo các tháng trước (chi tiêu từng TKQC, mess, data, doanh số) vào phần mềm. TKQC được
             khớp theo ID tài khoản quảng cáo. Ngày đã có số trong phần mềm được giữ nguyên, không bị ghi đè.
           </DialogDescription>
         </DialogHeader>
@@ -337,8 +337,8 @@ export function ImportDialog({
                       <b>
                         {[
                           plan.reports.length > 0 && `${count(plan.reports.length)} dòng chi tiêu TKQC`,
-                          plan.data.length > 0 && `${count(plan.data.length)} ngày Data / doanh thu`,
-                          plan.revenue.length > 0 && `${count(plan.revenue.length)} dòng doanh thu tháng`,
+                          plan.data.length > 0 && `${count(plan.data.length)} ngày Data / doanh số`,
+                          plan.revenue.length > 0 && `${count(plan.revenue.length)} dòng doanh số tháng`,
                         ]
                           .filter(Boolean)
                           .join(", ")}
@@ -348,7 +348,7 @@ export function ImportDialog({
                         ` Giữ nguyên số đã có: ${[
                           plan.skipped.reports > 0 && `${count(plan.skipped.reports)} dòng chi tiêu`,
                           plan.skipped.data > 0 && `${count(plan.skipped.data)} ngày Data`,
-                          plan.skipped.revenue > 0 && `${count(plan.skipped.revenue)} dòng doanh thu tháng`,
+                          plan.skipped.revenue > 0 && `${count(plan.skipped.revenue)} dòng doanh số tháng`,
                         ]
                           .filter(Boolean)
                           .join(", ")}.`}{" "}
@@ -397,7 +397,7 @@ function PeopleTable({ plan }: { plan: ImportPlan }) {
             <th className={th}>Chi tiêu</th>
             <th className={th}>Mess</th>
             <th className={th}>Data</th>
-            <th className={th}>Doanh thu ngày</th>
+            <th className={th}>Doanh số ngày</th>
             <th className={th}>Thêm mới</th>
           </tr>
         </thead>
@@ -442,9 +442,9 @@ function MonthsTable({ plan }: { plan: ImportPlan }) {
       <table className="w-full border-collapse text-sm">
         <thead className="bg-muted/60 text-muted-foreground">
           <tr>
-            <th className={cn(th, "text-left")}>Doanh thu tháng</th>
+            <th className={cn(th, "text-left")}>Doanh số tháng</th>
             <th className={cn(th, "text-left")}>Nhân viên</th>
-            <th className={th}>Doanh thu</th>
+            <th className={th}>Doanh số</th>
             <th className={th} />
           </tr>
         </thead>

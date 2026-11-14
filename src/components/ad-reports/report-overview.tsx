@@ -324,7 +324,7 @@ function OverviewBody() {
         {scope.managesMarketing && (
           <Button variant="outline" onClick={() => setRevenueOpen(true)}>
             <BadgeDollarSign />
-            Doanh thu
+            Doanh số
           </Button>
         )}
         {scope.managesMarketing && (

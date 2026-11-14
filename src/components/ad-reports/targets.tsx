@@ -188,8 +188,8 @@ const FIELDS: { key: keyof TargetValues; label: string; suffix?: string; digits:
   { key: "monthly_data", label: "Số điện thoại (data) / tháng", digits: 7, total: true },
   { key: "max_cost_per_data", label: "Giá số tối đa", suffix: "đ", digits: 9 },
   { key: "max_cost_per_message", label: "Giá mess tối đa", suffix: "đ", digits: 9 },
-  { key: "monthly_revenue", label: "Doanh thu / tháng", suffix: "đ", digits: 13, total: true },
-  { key: "max_ad_revenue_pct", label: "Ads / doanh thu tối đa", suffix: "%", digits: 3 },
+  { key: "monthly_revenue", label: "Doanh số / tháng", suffix: "đ", digits: 13, total: true },
+  { key: "max_ad_revenue_pct", label: "Ads / doanh số tối đa", suffix: "%", digits: 3 },
 ];
 const FIELD_LABEL = new Map(FIELDS.map((f) => [f.key as string, f]));
 const toDraft = (t: TargetValues | undefined): Draft =>
@@ -244,7 +244,7 @@ export function TargetsDialog({
           <DialogTitle>Mục tiêu quảng cáo</DialogTitle>
           <DialogDescription>
             Đặt từ đầu mỗi tháng: nhập dòng “Cả nhóm” (mục tiêu chung của công ty) rồi bấm “Tự động phân bổ” để chia xuống
-            từng nhân viên, sau đó sửa lại tuỳ ý. Ô trống = không đặt. Giá tối đa / tỉ lệ ads / doanh thu của nhân viên để
+            từng nhân viên, sau đó sửa lại tuỳ ý. Ô trống = không đặt. Giá tối đa / tỉ lệ ads / doanh số của nhân viên để
             trống thì dùng của cả nhóm. Chốt luôn cách dồn phần thiếu khi một tuần không đạt — cả công ty dùng chung một cách.
             Mọi lần đặt / sửa đều được ghi lại (ai, lúc nào, số cũ → số mới).
           </DialogDescription>
@@ -381,7 +381,7 @@ function TargetsForm({
   async function allocate() {
     const team = drafts.team;
     if (FIELDS.filter((f) => f.total).every((f) => team[f.key] === "")) {
-      toast.error("Hãy nhập dòng “Cả nhóm” trước (ngân sách, số điện thoại hoặc doanh thu).");
+      toast.error("Hãy nhập dòng “Cả nhóm” trước (ngân sách, số điện thoại hoặc doanh số).");
       return;
     }
     let weights = eligible.map(() => ({ spend: 1, data: 1, revenue: 1 }));

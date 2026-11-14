@@ -138,6 +138,18 @@ ok(duong.days[3].revenue === 0 && duong.days[3].data === 0, "ghi 0 rõ ràng v�
 ok(same(parsed.dayRange, { from: "2026-10-01", to: "2026-10-05" }), "khoảng ngày trong file");
 ok(parsed.months.length === 2 && parsed.months.some((m) => m.staffId === null && m.amount === 5000000), "doanh thu tháng: bỏ dòng trống / 0, nhận dòng chưa rõ nhân viên", parsed.months);
 ok(same(parsed.monthRange, { from: "2026-10", to: "2026-10" }), "khoảng tháng trong file");
+
+console.log("\n== Cột / tab Doanh số (tên mới) và Doanh thu (file cũ)");
+{
+  const salesOnly = { sheet: "An Ads", data: [["Ngày", "An 01", "Mess", "Data", "Doanh số"], ["01/10/2026", 100, 1, 1, "3.000.000"]] };
+  const both = { sheet: "An Ads", data: [["Ngày", "An 01", "Mess", "Data", "Doanh thu", "Doanh Số "], ["01/10/2026", 100, 1, 1, 2000000, 999]] };
+  const salesMonth = { sheet: "Doanh số tháng", data: [["Tháng", "Nhân viên Ads", "Doanh số"], ["10/2026", "An Ads", 7000000]] };
+  const a = parseWorkbook([salesOnly, salesMonth], catalog);
+  ok(a.issues.length === 0 && a.people[0].days[0].revenue === 3000000, "chỉ có cột Doanh số → đọc làm doanh số theo ngày", [a.issues, a.people[0]?.days]);
+  ok(same(a.months.map((m) => [m.month, m.staffId, m.amount]), [["2026-10", "an", 7000000]]), "tab Doanh số tháng đọc được", a.months);
+  const b = parseWorkbook([both], catalog);
+  ok(b.issues.length === 0 && b.people[0].days[0].revenue === 2000000, "sheet cũ có cả Doanh thu và Doanh Số tính sẵn → đọc Doanh thu như trước", b.people[0]?.days);
+}
 ok(parsed.notes.some((n) => n.includes("BÁO CÁO TUẦN.")) && !parsed.notes.some((n) => n.includes("Hướng dẫn")), "tab lạ được ghi chú bỏ qua, tab Hướng dẫn bỏ qua im lặng", parsed.notes);
 
 console.log("\n== Chưa khớp: nhân viên, TKQC, người phụ trách");
@@ -229,8 +241,8 @@ ok(has("thiếu ngày") && has('Ngày "32/10/2026" không đọc được'), "th
 ok(has('không phải số: "#DIV/0!"') && has("là số âm") && has("(Mess) phải là số nguyên"), "ô số sai / âm / số lẻ");
 ok(has("Ngày 08/10/2026 có mess nhưng không TKQC nào có chi tiêu"), "mess mà không có chi tiêu");
 ok(has('Cột B và cột C cùng là TKQC "An 01"'), "hai cột cùng một TKQC");
-ok(has("Tháng 12/2026 chưa tới") && has('Tháng "abc" không đọc được') && has('Doanh thu "5,5"'), "lỗi tab doanh thu tháng", show);
-ok(has("Doanh thu tháng 10/2026 của An Ads bị ghi hai lần"), "trùng doanh thu tháng");
+ok(has("Tháng 12/2026 chưa tới") && has('Tháng "abc" không đọc được') && has('Doanh số "5,5"'), "lỗi tab doanh thu tháng", show);
+ok(has("Doanh số tháng 10/2026 của An Ads bị ghi hai lần"), "trùng doanh số tháng");
 ok(errs.mismatches.length === 0 && !isMatched(errs), "chỉ lỗi số liệu (không có chỗ chưa khớp) → vẫn chưa được tải lên");
 
 console.log("\n== Thiếu cột, sai tiêu đề");
@@ -285,17 +297,17 @@ ok(templateTabs("2026-09", catalog).find((t) => t.staff.id === "an").accounts.le
 console.log("\n== File mẫu: ghi ra .xlsx thật, điền số, đọc lại");
 {
   const sheets = templateSheets("2026-10", catalog);
-  ok(same(sheets.map((s) => s.sheet), ["Hướng dẫn", "An Ads", "Dương Ads", "Lê Thành Nam Ads", "Doanh thu tháng"]), "các tab của file mẫu", sheets.map((s) => s.sheet));
+  ok(same(sheets.map((s) => s.sheet), ["Hướng dẫn", "An Ads", "Dương Ads", "Lê Thành Nam Ads", "Doanh số tháng"]), "các tab của file mẫu", sheets.map((s) => s.sheet));
   const tab = sheets.find((s) => s.sheet === "Dương Ads");
   ok(same(tab.data[3].map((c) => c.value), ["ID TKQC:", "1111111111", "2222222222"]), "dòng ID TKQC", tab.data[3]);
-  ok(same(tab.data[4].map((c) => c.value), ["Ngày", "THE DUONG 01", "Dương 01", "Mess", "Data", "Doanh thu"]), "dòng tiêu đề", tab.data[4]);
+  ok(same(tab.data[4].map((c) => c.value), ["Ngày", "THE DUONG 01", "Dương 01", "Mess", "Data", "Doanh số"]), "dòng tiêu đề", tab.data[4]);
   ok(tab.data.length === 5 + 31 && tab.data[5][0].value === "01/10/2026" && tab.data[35][0].value === "31/10/2026", "đủ 31 ngày tháng 10");
   ok(templateSheets("2026-11", catalog).find((s) => s.sheet === "Dương Ads").data.length === 5 + 13, "tháng này: chỉ tới hôm nay (13/11)");
   // Người dùng điền số: Dương ngày 1 và 2, An ngày 1, doanh thu tháng của Dương.
   tab.data[5].push(351547, 105422, 3, 1, null);
   tab.data[6].push("425.761", null, 0, 0, 1500000);
   sheets.find((s) => s.sheet === "An Ads").data[5].push(833941, 7, 2, null);
-  sheets.find((s) => s.sheet === "Doanh thu tháng").data.find((row) => row[1] === "Dương Ads")[2] = 29650000;
+  sheets.find((s) => s.sheet === "Doanh số tháng").data.find((row) => row[1] === "Dương Ads")[2] = 29650000;
 
   const dir = mkdtempSync(join(tmpdir(), "smh-import-"));
   try {

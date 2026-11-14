@@ -220,9 +220,9 @@ function FunnelChart({ title, ad, counts: fc }: { title: string; ad: Totals; cou
           </div>
         ))}
         <div className="mt-1 grid grid-cols-[9rem_1fr] items-center gap-3 sm:grid-cols-[11rem_1fr_7rem_9rem]">
-          <div className="text-sm font-medium text-muted-foreground">Doanh thu</div>
+          <div className="text-sm font-medium text-muted-foreground">Doanh số</div>
           <div className="rounded-md border border-dashed px-3 py-2 text-center text-xs text-muted-foreground">
-            Sẽ có khi xây phân hệ Thu ngân (tính được doanh thu / chi tiêu quảng cáo)
+            Sẽ có khi xây phân hệ Thu ngân (tính được doanh số / chi tiêu quảng cáo)
           </div>
         </div>
       </div>

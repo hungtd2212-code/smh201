@@ -398,7 +398,7 @@ function AnalysisBody() {
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setDialog("revenue")}>
                   <BadgeDollarSign />
-                  Doanh thu
+                  Doanh số
                 </Button>
               </>
             )}

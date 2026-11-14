@@ -183,7 +183,7 @@ export function GoalTrackingSection({
               mức cần đạt tới hôm nay
             </span>
             <span>Xanh = đúng / vượt kỳ vọng · vàng = hơi chậm · đỏ = chậm hoặc vượt mức cho phép</span>
-            {revenue.status === "not-migrated" && <span>Doanh thu cần chạy file 013 mới có số.</span>}
+            {revenue.status === "not-migrated" && <span>Doanh số cần chạy file 013 mới có số.</span>}
           </p>
         </div>
         {onEditTargets && (

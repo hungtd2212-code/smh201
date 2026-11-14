@@ -154,7 +154,7 @@ ok(tg.revenue.status === "bad" && /Kém hơn kỳ vọng 40%/.test(tg.revenue.no
 ok(tg.adRevenue.status === "warning" && tg.adRevenue.actual === 20, "ads / doanh thu 20% = đúng mức tối đa → chưa vượt nhưng sát mức", tg.adRevenue);
 tg = Object.fromEntries(trackGoals({ spend: 80, messages: 10, data: 10 }, 0, plan).map((i) => [i.key, i]));
 ok(tg.costPerData.status === "bad" && Math.abs(tg.costPerData.fill - 5 / 8) < 1e-9, "giá số 8 > 5 → vượt, thanh chỉ tô 5/8 (phần trắng = còn phải giảm)", tg.costPerData);
-ok(tg.adRevenue.status === "none" && tg.adRevenue.note === "Chưa có doanh thu", "chưa có doanh thu → chưa tính tỉ lệ");
+ok(tg.adRevenue.status === "none" && tg.adRevenue.note === "Chưa có doanh số", "chưa có doanh thu → chưa tính tỉ lệ");
 // Quý 4: tháng 10 mục tiêu 20 data, tháng 11 30, tháng 12 chưa đặt (dùng của tháng 11 — do targetOf quyết định).
 const byMonth = { "2026-10": { ...goals, monthly_data: 20 }, "2026-11": goals, "2026-12": goals };
 plan = planFor(trackPeriods("2026-11-15")[1], "2026-11-15", (m) => byMonth[m] ?? null);

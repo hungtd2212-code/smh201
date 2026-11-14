@@ -29,7 +29,7 @@ export async function fetchRevenue(fromMonth: string, toMonth: string): Promise<
 /** Lưu doanh thu một tháng của một nhân viên (hoặc dòng chưa rõ nhân viên). */
 export async function saveRevenue(existingId: string | null, month: string, staffId: string | null, amount: number) {
   const supabase = getSupabaseBrowserClient();
-  const denied = "Không lưu được: chỉ Quản trị và Trưởng Marketing nhập được doanh thu.";
+  const denied = "Không lưu được: chỉ Quản trị và Trưởng Marketing nhập được doanh số.";
   if (existingId) {
     const { data, error } = await supabase.from("ad_revenue").update({ amount }).eq("id", existingId).select("id");
     if (error) throw new Error(error.message);

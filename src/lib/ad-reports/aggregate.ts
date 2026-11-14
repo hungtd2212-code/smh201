@@ -642,9 +642,9 @@ export function trackGoals(actual: Totals, revenue: number, plan: Plan): TrackIt
   items.push(progress("data", "Số điện thoại", "count", actual.data, plan.data));
   items.push(cap("costPerData", "Giá số", "money", ratio(actual.spend, actual.data), plan.maxCostPerData, "Chưa có data"));
   items.push(cap("costPerMessage", "Giá mess", "money", ratio(actual.spend, actual.messages), plan.maxCostPerMessage, "Chưa có mess"));
-  items.push(progress("revenue", "Doanh thu", "money", revenue, plan.revenue));
+  items.push(progress("revenue", "Doanh số", "money", revenue, plan.revenue));
   items.push(
-    cap("adRevenue", "Ads / doanh thu", "percent", revenue > 0 ? (actual.spend / revenue) * 100 : null, plan.maxAdRevenuePct, "Chưa có doanh thu"),
+    cap("adRevenue", "Ads / doanh số", "percent", revenue > 0 ? (actual.spend / revenue) * 100 : null, plan.maxAdRevenuePct, "Chưa có doanh số"),
   );
   return items;
 }

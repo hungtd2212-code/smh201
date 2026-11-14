@@ -84,11 +84,11 @@ export function RevenueDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Doanh thu từ quảng cáo</DialogTitle>
+          <DialogTitle>Doanh số từ quảng cáo</DialogTitle>
           <DialogDescription>
-            Doanh thu tháng do khách đến từ quảng cáo mang về, ghi cho nhân viên Ads phụ trách. Dùng để tính tỉ lệ chi phí
-            ads / doanh thu, so mục tiêu doanh thu và xếp hạng vinh danh. Số bạn nhập ở đây là chính; để trống thì dùng
-            tổng “Doanh thu theo ngày” nhân viên đã nhập. (Khi có phân hệ Thu ngân sẽ tự tính.)
+            Doanh số tháng do khách đến từ quảng cáo mang về, ghi cho nhân viên Ads phụ trách. Dùng để tính tỉ lệ chi phí
+            ads / doanh số, so mục tiêu doanh số và xếp hạng vinh danh. Số bạn nhập ở đây là chính; để trống thì dùng
+            tổng “Doanh số theo ngày” nhân viên đã nhập. (Khi có phân hệ Thu ngân sẽ tự tính.)
           </DialogDescription>
         </DialogHeader>
         <Select value={month} onValueChange={setMonth}>
@@ -174,7 +174,7 @@ function RevenueForm({
       for (const l of changed) {
         await saveRevenue(l.existing?.id ?? null, month, l.staffId, Number(drafts[l.key] || 0));
       }
-      toast.success(`Đã lưu doanh thu ${monthLabel(month).toLowerCase()}`);
+      toast.success(`Đã lưu doanh số ${monthLabel(month).toLowerCase()}`);
       await onSaved();
       onClose();
     } catch (error) {
@@ -214,7 +214,7 @@ function RevenueForm({
                     onValueChange={(digits) => setDrafts((prev) => ({ ...prev, [l.key]: digits }))}
                     maxDigits={13}
                     suffix="đ"
-                    label={`Doanh thu ${l.name}`}
+                    label={`Doanh số ${l.name}`}
                   />
                 </td>
               </tr>
