@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentStaff } from "@/hooks/use-current-staff";
-import { formatClock, formatDay } from "@/lib/ad-reports/dates";
+import { addDays, formatClock, formatDay } from "@/lib/ad-reports/dates";
 import { submitDailyData, submitReports } from "@/lib/ad-reports/repo";
 import {
   EMPTY_VALUES,
@@ -90,8 +90,9 @@ function EntryBody() {
   const [picked, setPicked] = useState<string | null>(dayParam && ISO_DAY.test(dayParam) ? dayParam : null);
   const [pickedStaff, setPickedStaff] = useState<string | null>(params.get("nv"));
 
-  // Không cho ngày chưa tới, kể cả khi gõ thẳng vào địa chỉ trang.
-  const day = picked && today && picked <= today ? picked : today;
+  // Mặc định là HÔM QUA (nhân viên báo số của ngày đã chạy xong — tránh điền nhầm sang hôm nay). Không cho ngày chưa
+  // tới, kể cả khi gõ thẳng vào địa chỉ trang.
+  const day = picked && today && picked <= today ? picked : today && addDays(today, -1);
   const { state, reload } = useAdReports(day, day);
   const reportsOfDay = state.status === "ready" ? state.reports : [];
 
