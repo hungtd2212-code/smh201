@@ -18,12 +18,14 @@ type Column = {
 /**
  * Bảng Lead kẻ ô như Google Sheet, đúng thứ tự cột chủ phòng khám gửi. Bấm vào bất kỳ đâu trên dòng để mở số đó;
  * riêng ô Tình trạng bấm vào là đổi trạng thái ngay. Hai cột Tên KH và Data đứng yên khi kéo ngang (màn hình rộng).
+ * Chữ dài tự xuống dòng trong ô (không bị cắt); dòng chẵn / lẻ khác màu cho dễ dò theo hàng.
  */
 export function LeadsGrid({
   leads,
   offset,
   statuses,
   names,
+  adsStaffOf,
   canChangeStatus,
   onOpen,
   onPickStatus,
@@ -37,6 +39,8 @@ export function LeadsGrid({
   offset: number;
   statuses: LeadStatusRow[];
   names: CatalogNames;
+  /** Nhân viên Ads của số (cột NV ADS). */
+  adsStaffOf: (lead: Lead) => string | null;
   canChangeStatus: boolean;
   onOpen: (lead: Lead) => void;
   onPickStatus: (lead: Lead, statusId: string) => void;
@@ -54,7 +58,7 @@ export function LeadsGrid({
       key: "name",
       title: "TÊN KH",
       className: "w-44 max-w-44 font-medium md:sticky md:left-0 md:z-[1]",
-      cell: (l) => <span className="block truncate" title={l.full_name}>{l.full_name}</span>,
+      cell: (l) => <Wrap text={l.full_name} className="w-40" />,
     },
     {
       key: "phone",
@@ -62,11 +66,19 @@ export function LeadsGrid({
       className: "w-28 tabular-nums md:sticky md:left-44 md:z-[1] md:shadow-[inset_-1px_0_0_var(--border)]",
       cell: (l) => l.phone,
     },
-    { key: "note", title: "Lưu ý", className: "max-w-56", cell: (l) => <Clamp text={l.note} /> },
-    { key: "post", title: "BÀI CHẠY", className: "max-w-48", cell: (l) => <Clamp text={names.adPost(l.ad_post_id)} /> },
-    { key: "service", title: "DỊCH VỤ", cell: (l) => names.service(l.service_id) ?? l.service },
-    { key: "page", title: "PAGE", className: "max-w-40", cell: (l) => <Clamp text={names.page(l.page_id)} /> },
-    { key: "source", title: "NGUỒN", cell: (l) => names.channel(l.channel_id) ?? l.source },
+    { key: "note", title: "Lưu ý", cell: (l) => <Wrap text={l.note} className="w-60" lines={4} /> },
+    { key: "post", title: "BÀI CHẠY", cell: (l) => <Wrap text={names.adPost(l.ad_post_id)} className="w-56" /> },
+    {
+      key: "ads",
+      title: "NV ADS",
+      cell: (l) => {
+        const id = adsStaffOf(l);
+        return <Wrap text={id ? names.adsStaff(id) ?? "Nhân viên đã xoá" : null} className="w-36" />;
+      },
+    },
+    { key: "service", title: "DỊCH VỤ", cell: (l) => <Wrap text={names.service(l.service_id) ?? l.service} className="w-36" /> },
+    { key: "page", title: "PAGE", cell: (l) => <Wrap text={names.page(l.page_id)} className="w-48" /> },
+    { key: "source", title: "NGUỒN", cell: (l) => <Wrap text={names.channel(l.channel_id) ?? l.source} className="w-28" /> },
     {
       key: "dup",
       title: "TRÙNG",
@@ -135,11 +147,11 @@ export function LeadsGrid({
     },
     { key: "deal", title: "DOANH SỐ", className: "text-right tabular-nums", cell: (l) => money(l.deal_amount) },
     { key: "paid", title: "DOANH THU", className: "text-right tabular-nums", cell: (l) => money(l.paid_amount) },
-    { key: "area", title: "KHU VỰC", cell: (l) => l.area },
+    { key: "area", title: "KHU VỰC", cell: (l) => <Wrap text={l.area} className="w-32" /> },
     { key: "gender", title: "Giới Tính", cell: (l) => (l.gender ? GENDER_LABELS[l.gender] : null) },
     { key: "age", title: "TUỔI", className: "text-right tabular-nums", cell: (l) => l.age },
-    { key: "budget", title: "NGÂN SÁCH", cell: (l) => l.budget },
-    { key: "consult", title: "NHẬT KÝ TƯ VẤN", className: "max-w-80", cell: (l) => <Clamp text={l.consult_info} /> },
+    { key: "budget", title: "NGÂN SÁCH", cell: (l) => <Wrap text={l.budget} className="w-32" /> },
+    { key: "consult", title: "NHẬT KÝ TƯ VẤN", cell: (l) => <Wrap text={l.consult_info} className="w-80" lines={4} /> },
   ];
 
   const pageChosen = leads.length > 0 && leads.every((l) => selected.has(l.id));
@@ -185,7 +197,7 @@ export function LeadsGrid({
               aria-label={`Mở ${lead.full_name} ${lead.phone}`}
             >
               {selectable && (
-                <td className={cn(cellBase, "bg-card group-hover:bg-muted")} onClick={(event) => event.stopPropagation()}>
+                <td className={cn(cellBase, rowBg(index))} onClick={(event) => event.stopPropagation()}>
                   <input
                     type="checkbox"
                     className="size-4 accent-primary"
@@ -198,7 +210,7 @@ export function LeadsGrid({
               {columns.map((c) => (
                 <td
                   key={c.key}
-                  className={cn(cellBase, "bg-card group-hover:bg-muted group-focus-visible:bg-muted", c.className)}
+                  className={cn(cellBase, rowBg(index), c.className)}
                   onClick={c.key === "status" ? (event) => event.stopPropagation() : undefined}
                 >
                   {c.cell(lead, index)}
@@ -219,12 +231,25 @@ export function LeadsGrid({
   );
 }
 
-/** Ô chữ dài: một dòng, cắt bớt; rê chuột để xem đủ. */
-function Clamp({ text }: { text: string | null | undefined }) {
+/**
+ * Nền của một dòng: dòng lẻ (1, 3, 5…) trắng, dòng chẵn xanh nhạt cho dễ dò theo hàng; rê chuột / chọn bằng bàn phím
+ * thì vàng nhạt. Màu đặc (không trong suốt) vì hai cột Tên KH và Data đứng yên đè lên các cột khác khi kéo ngang.
+ */
+const rowBg = (index: number) =>
+  cn(
+    index % 2 === 0 ? "bg-card" : "bg-[oklch(0.955_0.025_236)] dark:bg-[oklch(0.265_0.035_250)]",
+    "group-hover:bg-amber-50 group-focus-visible:bg-amber-50 dark:group-hover:bg-[oklch(0.3_0.035_80)] dark:group-focus-visible:bg-[oklch(0.3_0.035_80)]",
+  );
+
+/**
+ * Ô chữ: tự xuống dòng trong độ rộng `className` để đọc đủ, không bị cắt. `lines`: ô có thể rất dài (Lưu ý, Nhật ký tư
+ * vấn) thì chỉ hiện tối đa ngần ấy dòng — rê chuột hoặc mở số để xem đủ.
+ */
+function Wrap({ text, className, lines }: { text: string | null | undefined; className: string; lines?: 4 }) {
   if (!text) return null;
   return (
-    <span className="block truncate" title={text}>
+    <div className={cn("break-words whitespace-pre-line", lines === 4 && "line-clamp-4", className)} title={lines ? text : undefined}>
       {text}
-    </span>
+    </div>
   );
 }

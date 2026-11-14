@@ -17,7 +17,7 @@ import { useCurrentStaff } from "@/hooks/use-current-staff";
 import { APP } from "@/lib/config";
 import { filterLeads, hasRole, missingForStatus, SEES_ALL_ROLES, TRANSFER_ROLES, type LeadFilter } from "@/lib/leads/crm";
 import { exportLeadsToExcel } from "@/lib/leads/export";
-import { fetchAssignMode, fetchLead, fetchLeads, updateLead } from "@/lib/leads/repo";
+import { fetchAssignMode, fetchLead, fetchLeads, fetchLeadsAdsStaff, updateLead } from "@/lib/leads/repo";
 import type { AddLeadResult, AssignMode, Lead } from "@/lib/leads/types";
 import { logExport, softDeleteRecords } from "@/lib/safety/repo";
 import { cn } from "@/lib/utils";
@@ -65,6 +65,21 @@ export function LeadsPage() {
     // requestKey đã bao gồm windowFrom, windowTo và reloadCount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestKey]);
+
+  // Cột NV ADS: nhân viên Ads của từng số (lỗi thì thôi, cột dùng số đã lưu sẵn trên lead).
+  const [adsStaff, setAdsStaff] = useState<{ key: string; map: Map<string, string> } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchLeadsAdsStaff(windowFrom, windowTo)
+      .then((map) => !cancelled && setAdsStaff({ key: requestKey, map: map ?? new Map() }))
+      .catch(() => !cancelled && setAdsStaff({ key: requestKey, map: new Map() }));
+    return () => {
+      cancelled = true;
+    };
+    // requestKey đã bao gồm windowFrom, windowTo và reloadCount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestKey]);
+  const adsStaffMap = adsStaff?.key === requestKey ? adsStaff.map : null;
 
   const [assignMode, setAssignMode] = useState<AssignMode>("auto");
   useEffect(() => {
@@ -290,6 +305,7 @@ export function LeadsPage() {
           offset={currentPage * PAGE_SIZE}
           statuses={statuses}
           names={names}
+          adsStaffOf={(lead) => adsStaffMap?.get(lead.id) ?? lead.ads_staff_id}
           canChangeStatus={me !== null && me.role !== "ads_staff"}
           onOpen={(lead) => setOpen({ lead, pendingStatusId: null })}
           onPickStatus={pickStatus}

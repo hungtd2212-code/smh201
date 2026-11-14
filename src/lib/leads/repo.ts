@@ -54,6 +54,21 @@ export async function fetchLeads(from: Date, to: Date): Promise<Lead[]> {
   return all;
 }
 
+/**
+ * Nhân viên Ads của từng số tạo trong khoảng [from, to] (cột "NV ADS" của bảng Lead, supabase/035_lead_ads_staff.sql):
+ * số Pancake kéo về tính theo quảng cáo khách bấm sau cùng → TKQC → nhân viên phụ trách hôm đó (như mục "SĐT theo nhân
+ * viên"). Số không tìm ra nhân viên thì không có trong kết quả. null = chưa chạy file 035 → dùng cột ads_staff_id có sẵn.
+ */
+export async function fetchLeadsAdsStaff(from: Date, to: Date): Promise<Map<string, string> | null> {
+  const { data, error } = await getSupabaseBrowserClient().rpc("leads_ads_staff", {
+    p_from: from.toISOString(),
+    p_to: to.toISOString(),
+  });
+  if (isNotMigrated(error)) return null;
+  if (error) throw crmError(error);
+  return new Map((data as { lead_id: string; ads_staff_id: string }[]).map((r) => [r.lead_id, r.ads_staff_id]));
+}
+
 export async function fetchLead(id: string): Promise<Lead | null> {
   const { data, error } = await getSupabaseBrowserClient()
     .from("leads")
