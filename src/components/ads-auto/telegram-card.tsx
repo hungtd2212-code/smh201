@@ -409,7 +409,7 @@ function Preview({
 }
 
 /** Chọn ngày báo cáo: Hôm qua / Hôm kia / lịch; hiện ngày/tháng/năm. Không chọn được hôm nay trở đi. */
-function DayPicker({ value, lastDay, onChange }: { value: string; lastDay: string; onChange: (day: string) => void }) {
+export function DayPicker({ value, lastDay, onChange }: { value: string; lastDay: string; onChange: (day: string) => void }) {
   const [open, setOpen] = useState(false);
   const dayBefore = addDays(lastDay, -1);
   const custom = value !== lastDay && value !== dayBefore;

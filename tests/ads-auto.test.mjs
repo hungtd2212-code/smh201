@@ -19,6 +19,7 @@ import {
   summarize,
 } from "../src/lib/ads-auto/compare.ts";
 import { cleanBotToken, lastBatch } from "../src/lib/ads-auto/telegram-logic.ts";
+import { countsAsData, groupPhones, verdictText } from "../src/lib/ads-auto/phones.ts";
 
 let passed = 0;
 let failed = 0;
@@ -141,6 +142,27 @@ ok(defaultRange("2026-03-01", 30).from === "2026-01-30", "qua tháng / năm đú
 const good = "EAAG" + "aBcD1234".repeat(10);
 ok(cleanToken(`  ${good}\n`).ok && cleanToken(`  ${good}\n`).token === good, "token đúng (bỏ khoảng trắng 2 đầu)");
 ok(!cleanToken("EAA short").ok && !cleanToken(`EBB${good.slice(3)}`).ok && !cleanToken(`${good} x`).ok && !cleanToken("").ok, "token sai dạng");
+
+console.log("\n== SĐT theo nhân viên");
+const P = (id, staff, phone, extra = {}) => ({ id, report_date: "2026-11-13", at: `2026-11-13T0${id}:00:00Z`, phone, full_name: "Khách", outcome: "new",
+  ad_id: "1", ad_name: null, ad_goal: null, ad_account_id: "acc", ads_staff_id: staff, gap: staff ? null : "unmapped", page_name: null, pancake_url: "", ...extra });
+const groups = groupPhones("2026-11-13", {
+  phones: [P(3, "s2", "0903"), P(1, "s2", "0901"), P(2, "s2", "0901", { outcome: "duplicate" }), P(4, "s2", "12", { outcome: "invalid" }),
+    P(5, null, "0905"), P(6, null, "0906", { gap: "no_ad" }), P(7, "s1", "0907", { report_date: "2026-11-12" })],
+  forms: [{ report_date: "2026-11-13", ad_account_id: "acc", ads_staff_id: "s1", leads: 2 }, { report_date: "2026-11-13", ad_account_id: "x", ads_staff_id: "s2", leads: 0 },
+    { report_date: "2026-11-13", ad_account_id: "y", ads_staff_id: null, leads: 1 }],
+}, new Map([["s1", 2], ["s2", 3], ["s3", 4]]), (id) => ({ s1: "Sang", s2: "An", s3: "Dương" })[id]);
+ok(JSON.stringify(groups.map((g) => g.key)) === JSON.stringify(["s2", "s3", "s1", "gap:unmapped", "gap:no_staff", "gap:no_ad"]),
+  "nhóm nhân viên theo tên, nhóm chưa gắn nhân viên xuống cuối; nhân viên có báo mà không có số vẫn hiện", groups.map((g) => g.key));
+const an = groups[0];
+ok(an.phones.map((p) => p.id).join() === "1,2,3,4" && an.pancake === 2 && an.form === 0 && an.total === 2 && an.reported === 3,
+  "xếp theo giờ; một số kéo 2 lần chỉ tính 1; số sai không tính", { ids: an.phones.map((p) => p.id), pancake: an.pancake });
+ok(groups[2].form === 2 && groups[2].phones.length === 0 && groups[2].total === 2 && groups[2].reported === 2, "chỉ có form lead (số ngày khác không vào)", groups[2]);
+ok(groups[1].total === 0 && groups[1].reported === 4, "nhân viên báo mà hệ thống không thấy số nào");
+ok(groups[4].form === 1 && groups[4].reported === null, "form của TKQC chưa giao nhân viên");
+ok(!countsAsData({ outcome: "invalid" }) && countsAsData({ outcome: "duplicate" }), "khách cũ vẫn tính, số sai không");
+ok(verdictText({ reported: 2, total: 2 }).tone === "match" && verdictText({ reported: 3, total: 2 }).text === "NV báo nhiều hơn 1"
+  && verdictText({ reported: 0, total: 2 }).text === "NV báo ít hơn 2" && verdictText({ reported: null, total: 1 }).text === "Chưa báo", "câu so số");
 
 console.log("\n== Telegram");
 const bot = "7012345678:AAH" + "xYz_-9".repeat(6);

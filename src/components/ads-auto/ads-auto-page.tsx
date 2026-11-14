@@ -8,6 +8,7 @@ import { useCurrentStaff } from "@/hooks/use-current-staff";
 import type { AutoStatus } from "@/lib/ads-auto/compare";
 import { ADS_AUTO_NOT_READY, collectAutoNow, fetchAutoStatus } from "@/lib/ads-auto/repo";
 import { CompareSection } from "./compare-section";
+import { PhonesSection } from "./phones-section";
 import { ConnectionCard } from "./connection-card";
 import { TelegramCard } from "./telegram-card";
 
@@ -114,6 +115,7 @@ function Body() {
     <div className="grid gap-5">
       <ConnectionCard status={status} onChanged={() => void load()} />
       <CompareSection status={status} today={today} version={version} onPulled={() => void load()} />
+      <PhonesSection status={status} today={today} version={version} />
       <TelegramCard today={today} />
     </div>
   );

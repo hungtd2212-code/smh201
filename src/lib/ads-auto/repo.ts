@@ -7,6 +7,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { fetchDailyData } from "@/lib/ad-reports/repo";
 import { isNotMigrated } from "@/lib/supabase/errors";
 import { staffDataMap, type AutoStatus, type CompareRow, type PancakeUnassigned } from "./compare";
+import type { StaffPhonesResult } from "./phones";
 
 export const ADS_AUTO_NOT_READY =
   "Cơ sở dữ liệu chưa được cập nhật cho phần này (file supabase/027_ads_auto_test.sql chưa chạy).";
@@ -87,4 +88,22 @@ export async function fetchCompare(
     });
   }
   return { rows, unassigned, staffData: staffDataMap(daily?.rows ?? []) };
+}
+
+/**
+ * Danh sách SĐT theo nhân viên từ ngày `from` tới hết ngày `to` (supabase/034_ads_staff_phones.sql). null = chưa chạy
+ * file 034.
+ */
+export async function fetchStaffPhones(from: string, to: string): Promise<StaffPhonesResult | null> {
+  const { data, error } = await getSupabaseBrowserClient().rpc("ads_staff_phones", { p_from: from, p_to: to });
+  if (error) {
+    if (isNotMigrated(error)) return null;
+    throw rpcError(error);
+  }
+  const r = data as StaffPhonesResult;
+  return {
+    since: r.since ?? null,
+    phones: (r.phones ?? []).map((p) => ({ ...p, id: Number(p.id) })),
+    forms: (r.forms ?? []).map((f) => ({ ...f, leads: Number(f.leads) })),
+  };
 }
