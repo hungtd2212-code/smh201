@@ -135,7 +135,7 @@ async function fetchMarketing(): Promise<MarketingRows | null> {
       .order("created_at", { ascending: false }),
     supabase
       .from("ads_staff")
-      .select("id, full_name, staff_code, user_id, is_active, note, deleted_at")
+      .select("id, full_name, staff_code, user_id, is_active, note, deleted_at, created_at")
       .is("deleted_at", null)
       .order("full_name"),
     supabase

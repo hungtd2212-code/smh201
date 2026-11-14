@@ -10,6 +10,9 @@ import {
   moveStatus,
   SEES_ALL_ROLES,
   selectableStatuses,
+  STAFF_HUES,
+  staffHue,
+  staffHues,
   TRANSFER_ROLES,
   vnDateTime,
 } from "../src/lib/leads/crm.ts";
@@ -77,6 +80,21 @@ ok(money(45000000) === "45.000.000" && money(null) === "", "tiền có dấu ch�
 const t = vnDateTime("2026-11-12T17:30:00Z");
 ok(t.day === "13/11/2026" && t.time === "00:30" && t.short === "13/11 00:30", "giờ Việt Nam", t);
 ok(vnDateTime(null) === null && vnDateTime("hỏng") === null, "trống / hỏng → null");
+
+console.log("\n== Màu khung tên nhân viên Ads");
+{
+  const ids = ["b2c1", "a9f0", "77d3", "e4aa", "0c5b", "f1f1", "9e02", "5d6c"];
+  const hues = staffHues(ids);
+  ok(hues.size === 8 && new Set(hues.values()).size === 8, "8 người → 8 màu khác nhau", [...hues]);
+  ok([...hues.values()].every((h) => STAFF_HUES.includes(h)), "màu lấy trong bảng màu");
+  const more = staffHues([...ids, "3b3b", "c0de"]);
+  ok(ids.every((id) => more.get(id) === hues.get(id)), "thêm người mới (cuối danh sách): người cũ giữ nguyên màu", [...more]);
+  ok(new Set(more.values()).size === 10, "người mới nhận màu chưa ai dùng");
+  ok(same([...staffHues([...ids, ids[0]])], [...hues]), "id lặp lại chỉ tính một lần");
+  const many = staffHues(Array.from({ length: 15 }, (_, i) => `id${i}`));
+  ok(many.size === 15 && new Set(many.values()).size === 12, "đông hơn 12 người: dùng đủ 12 màu rồi mới lặp lại");
+  ok(staffHue(hues, "a9f0") === hues.get("a9f0") && STAFF_HUES.includes(staffHue(hues, "đã-xoá")), "người không có trong danh sách vẫn có màu");
+}
 
 console.log(`\n${passed} ok, ${failed} lỗi`);
 if (failed > 0) process.exit(1);

@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCatalogs } from "@/components/catalog-provider";
 import { useCurrentStaff } from "@/hooks/use-current-staff";
 import { APP } from "@/lib/config";
-import { filterLeads, hasRole, missingForStatus, SEES_ALL_ROLES, TRANSFER_ROLES, type LeadFilter } from "@/lib/leads/crm";
+import { filterLeads, hasRole, missingForStatus, SEES_ALL_ROLES, staffHues, TRANSFER_ROLES, type LeadFilter } from "@/lib/leads/crm";
 import { exportLeadsToExcel } from "@/lib/leads/export";
 import { fetchAssignMode, fetchLead, fetchLeads, fetchLeadsAdsStaff, updateLead } from "@/lib/leads/repo";
 import type { AddLeadResult, AssignMode, Lead } from "@/lib/leads/types";
@@ -80,6 +80,15 @@ export function LeadsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestKey]);
   const adsStaffMap = adsStaff?.key === requestKey ? adsStaff.map : null;
+  const adsStaffHues = useMemo(
+    () =>
+      staffHues(
+        [...catalogs.adsStaff]
+          .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id))
+          .map((a) => a.id),
+      ),
+    [catalogs.adsStaff],
+  );
 
   const [assignMode, setAssignMode] = useState<AssignMode>("auto");
   useEffect(() => {
@@ -306,6 +315,7 @@ export function LeadsPage() {
           statuses={statuses}
           names={names}
           adsStaffOf={(lead) => adsStaffMap?.get(lead.id) ?? lead.ads_staff_id}
+          adsStaffHues={adsStaffHues}
           canChangeStatus={me !== null && me.role !== "ads_staff"}
           onOpen={(lead) => setOpen({ lead, pendingStatusId: null })}
           onPickStatus={pickStatus}

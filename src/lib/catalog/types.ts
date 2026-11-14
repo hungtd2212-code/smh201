@@ -51,6 +51,8 @@ export type AdsStaff = {
   is_active: boolean;
   note: string | null;
   deleted_at: string | null;
+  /** Lúc thêm vào phần mềm (để chia màu khung tên: người thêm trước chọn màu trước). */
+  created_at?: string;
 };
 
 /** Loại TKQC: thuê hay tự build. */

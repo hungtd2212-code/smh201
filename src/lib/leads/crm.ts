@@ -136,3 +136,36 @@ export function vnDateTime(iso: string | null | undefined) {
   );
   return { day: `${p.day}/${p.month}/${p.year}`, time: `${p.hour}:${p.minute}`, short: `${p.day}/${p.month} ${p.hour}:${p.minute}` };
 }
+
+/* ------------------------------------------------------------------------------------------------------------ */
+/* Màu khung tên nhân viên Ads (cột NV ADS)                                                                     */
+/* ------------------------------------------------------------------------------------------------------------ */
+
+/** 12 sắc màu cách đều nhau (độ, thang OKLCH) — khung tên dùng bản nhạt của các sắc này. */
+export const STAFF_HUES = [250, 145, 25, 300, 75, 195, 340, 110, 225, 50, 170, 275];
+
+const hashId = (id: string) => {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return h >>> 0;
+};
+
+/**
+ * Tự chia màu cho nhân viên Ads: mỗi người một màu riêng (tới 12 người; đông hơn thì bắt đầu dùng lại). `ids` xếp theo
+ * thứ tự thêm vào phần mềm (cũ trước): người thêm trước chọn màu trước, nên thêm người mới không làm ai đổi màu.
+ */
+export function staffHues(ids: string[]): Map<string, number> {
+  const out = new Map<string, number>();
+  let used = new Set<number>();
+  for (const id of new Set(ids)) {
+    if (used.size === STAFF_HUES.length) used = new Set();
+    let slot = hashId(id) % STAFF_HUES.length;
+    while (used.has(slot)) slot = (slot + 1) % STAFF_HUES.length;
+    used.add(slot);
+    out.set(id, STAFF_HUES[slot]);
+  }
+  return out;
+}
+
+/** Màu của một người (người đã xoá / chưa có trong danh sách: theo id). */
+export const staffHue = (hues: Map<string, number>, id: string) => hues.get(id) ?? STAFF_HUES[hashId(id) % STAFF_HUES.length];

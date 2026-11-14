@@ -2,7 +2,7 @@
 
 import { BellRing } from "lucide-react";
 import type { CatalogNames } from "@/components/catalog-provider";
-import { duplicateCount, GENDER_LABELS, money, vnDateTime } from "@/lib/leads/crm";
+import { duplicateCount, GENDER_LABELS, money, staffHue, vnDateTime } from "@/lib/leads/crm";
 import type { Lead, LeadStatusRow } from "@/lib/leads/types";
 import { cn } from "@/lib/utils";
 import { StatusPicker } from "./status-chip";
@@ -26,6 +26,7 @@ export function LeadsGrid({
   statuses,
   names,
   adsStaffOf,
+  adsStaffHues,
   canChangeStatus,
   onOpen,
   onPickStatus,
@@ -39,8 +40,9 @@ export function LeadsGrid({
   offset: number;
   statuses: LeadStatusRow[];
   names: CatalogNames;
-  /** Nhân viên Ads của số (cột NV ADS). */
+  /** Nhân viên Ads của số (cột NV ADS) và màu khung của từng người (staffHues). */
   adsStaffOf: (lead: Lead) => string | null;
+  adsStaffHues: Map<string, number>;
   canChangeStatus: boolean;
   onOpen: (lead: Lead) => void;
   onPickStatus: (lead: Lead, statusId: string) => void;
@@ -73,7 +75,7 @@ export function LeadsGrid({
       title: "NV ADS",
       cell: (l) => {
         const id = adsStaffOf(l);
-        return <Wrap text={id ? names.adsStaff(id) ?? "Nhân viên đã xoá" : null} className="w-36" />;
+        return id ? <StaffChip name={names.adsStaff(id) ?? "Nhân viên đã xoá"} hue={staffHue(adsStaffHues, id)} /> : null;
       },
     },
     { key: "service", title: "DỊCH VỤ", cell: (l) => <Wrap text={names.service(l.service_id) ?? l.service} className="w-36" /> },
@@ -240,6 +242,29 @@ const rowBg = (index: number) =>
     index % 2 === 0 ? "bg-card" : "bg-[oklch(0.955_0.025_236)] dark:bg-[oklch(0.265_0.035_250)]",
     "group-hover:bg-amber-50 group-focus-visible:bg-amber-50 dark:group-hover:bg-[oklch(0.3_0.035_80)] dark:group-focus-visible:bg-[oklch(0.3_0.035_80)]",
   );
+
+/**
+ * Khung tên nhân viên Ads: chữ nhỏ, nền nhạt theo màu riêng của từng người (như nhãn Tình trạng nhưng mờ hơn); viền
+ * cùng màu để khung vẫn rõ trên dòng nền xanh.
+ */
+function StaffChip({ name, hue }: { name: string; hue: number }) {
+  const colors = {
+    "--chip-bg": `oklch(0.95 0.035 ${hue})`,
+    "--chip-line": `oklch(0.85 0.06 ${hue})`,
+    "--chip-fg": `oklch(0.45 0.08 ${hue})`,
+    "--chip-bg-dark": `oklch(0.33 0.045 ${hue})`,
+    "--chip-line-dark": `oklch(0.45 0.06 ${hue})`,
+    "--chip-fg-dark": `oklch(0.86 0.06 ${hue})`,
+  } as React.CSSProperties;
+  return (
+    <span
+      className="inline-flex items-center rounded-full border border-(--chip-line) bg-(--chip-bg) px-2 py-px text-[11px] leading-4 font-medium whitespace-nowrap text-(--chip-fg) dark:border-(--chip-line-dark) dark:bg-(--chip-bg-dark) dark:text-(--chip-fg-dark)"
+      style={colors}
+    >
+      {name}
+    </span>
+  );
+}
 
 /**
  * Ô chữ: tự xuống dòng trong độ rộng `className` để đọc đủ, không bị cắt. `lines`: ô có thể rất dài (Lưu ý, Nhật ký tư
