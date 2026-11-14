@@ -68,7 +68,7 @@ import { targetFor } from "@/lib/ad-reports/targets";
 import type { AdDailyData, AdDailyReport, ReportValues } from "@/lib/ad-reports/types";
 import type { AdAccount, AdAccountAssignment, AdsStaff } from "@/lib/catalog/types";
 import { cn } from "@/lib/utils";
-import { ChartCard, MetricTabs, StaffChart, TrendChart } from "./charts";
+import { ChartCard, MetricTabs, SpendRevenueChart, StaffChart, TrendChart } from "./charts";
 import { useAdReports, useNow } from "./hooks";
 import { KpiCards } from "./kpi-cards";
 import { MonthsPicker, monthsLabel, yearOptions, type DayRange } from "./period-picker";
@@ -472,6 +472,7 @@ function OverviewBody() {
               people={catalogs.adsStaff}
               byStaff={totalsByStaff(entries, keep)}
               assignments={catalogs.assignments}
+              revenueReady={state.revenueReady}
               metricTabs={metricTabs}
               metricKey={metricKey}
               onPick={setStaffFilter}
@@ -492,7 +493,14 @@ const shortMonth = (month: string, withYear: boolean) =>
 
 /** Giá tối đa của mục tiêu ứng với chỉ số đang vẽ (để kẻ đường đỏ trên biểu đồ). */
 const targetLine = (key: MetricKey, target: TargetValues | null) => {
-  const cap = key === "costPerMessage" ? target?.max_cost_per_message : key === "costPerData" ? target?.max_cost_per_data : null;
+  const cap =
+    key === "costPerMessage"
+      ? target?.max_cost_per_message
+      : key === "costPerData"
+        ? target?.max_cost_per_data
+        : key === "adRevenue" && target?.max_ad_revenue_pct
+          ? target.max_ad_revenue_pct / 100 // mục tiêu ghi 30 (%) → trục biểu đồ là 0,3
+          : null;
   return cap ? { value: cap, label: "Mục tiêu tối đa" } : null;
 };
 
@@ -662,6 +670,7 @@ function StaffSection({
   people,
   byStaff,
   assignments,
+  revenueReady,
   metricTabs,
   metricKey,
   onPick,
@@ -673,6 +682,8 @@ function StaffSection({
   people: AdsStaff[];
   byStaff: Map<string | null, Totals>;
   assignments: AdAccountAssignment[];
+  /** false = chưa chạy file 018 (chưa có "Doanh số theo ngày") → ẩn hai cột doanh số. */
+  revenueReady: boolean;
   metricTabs: React.ReactNode;
   metricKey: MetricKey;
   onPick: (staffId: string) => void;
@@ -708,6 +719,12 @@ function StaffSection({
                 <th className={cn(TH, "bg-muted")}>Số TKQC</th>
                 <th className={cn(TH, ORANGE)}>{oneMonth ? "Tổng chi tiêu tháng" : "Tổng chi tiêu"}</th>
                 <MetricHeads />
+                {revenueReady && (
+                  <>
+                    <th className={cn(TH, REVENUE)}>{oneMonth ? "Doanh số tháng" : "Doanh số"}</th>
+                    <th className={cn(TH, REVENUE)}>Tỉ lệ ads/doanh số</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -716,10 +733,11 @@ function StaffSection({
                 <td className={TD}>{formatNumber(rows.reduce((s, r) => s + r.accounts, 0))}</td>
                 <td className={TD}>{formatNumber(total.spend)}</td>
                 <MetricCells totals={total} />
+                {revenueReady && <RevenueCells totals={total} />}
               </tr>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="h-20 text-center text-muted-foreground">
+                  <td colSpan={revenueReady ? 10 : 8} className="h-20 text-center text-muted-foreground">
                     Khoảng thời gian này chưa có nhân viên nào có TKQC.
                   </td>
                 </tr>
@@ -739,6 +757,7 @@ function StaffSection({
                     <td className={TD}>{formatNumber(accounts)}</td>
                     <td className={cn(TD, "font-medium")}>{formatNumber(totals.spend)}</td>
                     <MetricCells totals={totals} />
+                    {revenueReady && <RevenueCells totals={totals} />}
                   </tr>
                 ))
               )}
@@ -750,12 +769,21 @@ function StaffSection({
                   <td className={TD} />
                   <td className={TD}>{formatNumber(unowned.spend)}</td>
                   <MetricCells totals={unowned} />
+                  {revenueReady && <RevenueCells totals={unowned} />}
                 </tr>
               )}
             </tbody>
           </table>
         </div>
       </section>
+      {revenueReady && rows.length > 0 && (
+        <ChartCard
+          title={`Chi tiêu và doanh số theo nhân viên — ${lowerFirst(periodName)}`}
+          note="Doanh số = cộng “Doanh số theo ngày” nhân viên nhập ở Nhập liệu."
+        >
+          <SpendRevenueChart rows={rows.map(({ person, totals }) => ({ key: person.id, name: person.full_name, totals }))} />
+        </ChartCard>
+      )}
       {rows.length > 1 && (
         <ChartCard title={`${metric.label} theo nhân viên`} actions={metricTabs}>
           <StaffChart
@@ -772,6 +800,16 @@ const dash = <span className="text-muted-foreground/60">–</span>;
 /** Cột "Doanh số ngày" và "Tỉ lệ ads/doanh số" — cùng màu xanh với dòng "Data xin được / Doanh số" ở Nhập liệu. */
 const REVENUE = "bg-sky-100 text-sky-950 dark:bg-sky-900/40 dark:text-sky-50";
 const num = (value: number | null) => (value === null ? dash : formatNumber(value));
+
+/** 2 ô Doanh số và Tỉ lệ ads/doanh số (chi tiêu ÷ doanh số) của một dòng; chưa nhập doanh số → "–". */
+function RevenueCells({ totals }: { totals: Totals }) {
+  return (
+    <>
+      <td className={TD}>{totals.revenue > 0 ? formatNumber(totals.revenue) : dash}</td>
+      <td className={TD}>{totals.revenue > 0 ? formatPercent(ratio(totals.spend, totals.revenue)) : dash}</td>
+    </>
+  );
+}
 
 /** 5 ô chỉ số (Tổng mess, Giá mess, Data, Giá data, Tỉ lệ xin số) của một dòng. */
 function MetricCells({ totals, empty = false }: { totals: Totals; empty?: boolean }) {
@@ -843,11 +881,15 @@ type Group = { person: AdsStaff; accounts: AdAccount[]; rows: Row[] };
 /** Những thứ đã gửi của một dòng (báo cáo TKQC + dòng Data chung) — để tính giờ gửi, hạn sửa. */
 const sentOf = (row: Row) => [...row.reports, ...(row.data ? [row.data] : [])];
 
-/** Tổng của một dòng: chi tiêu, mess cộng từ các TKQC; data lấy dòng chung (hoặc cộng từ báo cáo cũ). */
+/**
+ * Tổng của một dòng: chi tiêu, mess cộng từ các TKQC; data lấy dòng chung (hoặc cộng từ báo cáo cũ); doanh số lấy
+ * dòng chung.
+ */
 const rowTotals = (row: Row): Totals => ({
   spend: row.reports.reduce((s, r) => s + r.spend, 0),
   messages: row.reports.reduce((s, r) => s + r.messages, 0),
   data: row.data?.data_count ?? row.legacyData,
+  revenue: Number(row.data?.revenue ?? 0),
 });
 
 function buildGroup(

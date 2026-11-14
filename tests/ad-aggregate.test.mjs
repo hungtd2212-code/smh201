@@ -46,23 +46,23 @@ const reports = [
   report("2026-11-11", "C", 1000, 1),
 ];
 const dailyData = [
-  { report_date: "2026-11-01", ads_staff_id: "duong", data_count: 6 },
-  { report_date: "2026-11-01", ads_staff_id: "an", data_count: 2 },
-  { report_date: "2026-11-11", ads_staff_id: "duong", data_count: 4 },
+  { report_date: "2026-11-01", ads_staff_id: "duong", data_count: 6, revenue: 5000000 },
+  { report_date: "2026-11-01", ads_staff_id: "an", data_count: 2, revenue: null }, // chưa nhập doanh số
+  { report_date: "2026-11-11", ads_staff_id: "duong", data_count: 4 }, // chưa chạy file 018: không có cột doanh số
 ];
 const entries = entriesOf(reports, dailyData, assignments);
 const duong = totalsByDay(entries, "duong");
-ok(same(duong.get("2026-10-31"), { spend: 100000, messages: 10, data: 3 }), "data riêng ở báo cáo cũ được tính khi chưa có dòng chung", duong.get("2026-10-31"));
-ok(same(duong.get("2026-11-01"), { spend: 200000, messages: 20, data: 6 }), "ngày có dòng Data chung: chỉ tính dòng chung", duong.get("2026-11-01"));
-ok(same(duong.get("2026-11-11"), { spend: 70000, messages: 7, data: 4 }), "TKQC đổi người: số tính cho người cầm vào ngày đó", duong.get("2026-11-11"));
-ok(same(totalsByDay(entries, "an").get("2026-11-01"), { spend: 50000, messages: 5, data: 2 }), "An: TKQC B trước khi đổi người");
+ok(same(duong.get("2026-10-31"), { spend: 100000, messages: 10, data: 3, revenue: 0 }), "data riêng ở báo cáo cũ được tính khi chưa có dòng chung", duong.get("2026-10-31"));
+ok(same(duong.get("2026-11-01"), { spend: 200000, messages: 20, data: 6, revenue: 5000000 }), "ngày có dòng Data chung: chỉ tính dòng chung; doanh số theo ngày đi theo dòng chung", duong.get("2026-11-01"));
+ok(same(duong.get("2026-11-11"), { spend: 70000, messages: 7, data: 4, revenue: 0 }), "TKQC đổi người: số tính cho người cầm vào ngày đó", duong.get("2026-11-11"));
+ok(same(totalsByDay(entries, "an").get("2026-11-01"), { spend: 50000, messages: 5, data: 2, revenue: 0 }), "An: TKQC B trước khi đổi người; chưa nhập doanh số = 0");
 const all = totalsByDay(entries, null);
 ok(all.get("2026-11-11").spend === 71000, "tất cả nhân viên: gồm cả TKQC không ai cầm");
 const byStaff = totalsByStaff(entries, (day) => day.startsWith("2026-11"));
 ok(byStaff.get(null).spend === 1000 && byStaff.get("duong").spend === 270000 && byStaff.get("an").data === 2, "theo nhân viên trong tháng 11 (khoá null = không ai cầm)");
 const months = totalsByMonth(all);
 ok(months.get("2026-10").spend === 100000 && months.get("2026-11").spend === 321000, "gộp theo tháng", [...months]);
-ok(same(sumDays(duong, daysBetween("2026-11-01", "2026-11-30")), { spend: 270000, messages: 27, data: 10 }), "cộng một khoảng ngày");
+ok(same(sumDays(duong, daysBetween("2026-11-01", "2026-11-30")), { spend: 270000, messages: 27, data: 10, revenue: 5000000 }), "cộng một khoảng ngày");
 ok(totalsByDay(entries, null, (day) => day >= "2026-11-11").size === 1, "lọc ngày");
 
 console.log("\n== Chỉ số và hiển thị");
@@ -74,7 +74,14 @@ ok(formatMetric(metricOf("dataRate"), metricOf("dataRate").value(t)) === "44,12%
 ok(formatMetric(metricOf("costPerData"), metricOf("costPerData").value({ spend: 5, messages: 0, data: 0 })) === "–", "chia cho 0 → –");
 ok(compactMetric(metricOf("spend"), 7938367) === "7,9 tr" && compactMetric(metricOf("spend"), 1250000000) === "1,25 tỷ", "số gọn trên trục", [compactMetric(metricOf("spend"), 7938367)]);
 ok(compactMetric(metricOf("dataRate"), 0.4412) === "44%", "tỉ lệ gọn trên trục");
-ok(METRICS.length === 6, "6 chỉ số");
+ok(METRICS.length === 8, "8 chỉ số (thêm Doanh số, Ads/doanh số)");
+{
+  const t2 = { spend: 1200000, messages: 10, data: 4, revenue: 8000000 };
+  ok(formatMetric(metricOf("revenue"), metricOf("revenue").value(t2), true) === "8.000.000đ", "doanh số", formatMetric(metricOf("revenue"), metricOf("revenue").value(t2), true));
+  ok(formatMetric(metricOf("adRevenue"), metricOf("adRevenue").value(t2)) === "15,00%", "ads/doanh số = chi tiêu ÷ doanh số");
+  ok(metricOf("adRevenue").value({ ...t2, revenue: 0 }) === null, "chưa có doanh số → –");
+  ok(metricOf("adRevenue").better === "down" && metricOf("revenue").better === "up", "doanh số tăng là tốt, tỉ lệ ads/doanh số giảm là tốt");
+}
 
 console.log("\n== Tăng / giảm");
 let c = change(metricOf("costPerMessage"), 50000, 40000);

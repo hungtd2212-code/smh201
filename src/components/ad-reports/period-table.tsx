@@ -11,6 +11,8 @@ export const FIRST_TH = "bg-muted px-3 py-2 text-left text-xs font-medium whites
 export const YELLOW = "bg-yellow-100 text-yellow-950 dark:bg-yellow-900/40 dark:text-yellow-50";
 export const LIME = "bg-lime-100 text-lime-950 dark:bg-lime-900/40 dark:text-lime-50";
 export const ORANGE = "bg-orange-100 text-orange-950 dark:bg-orange-900/40 dark:text-orange-50";
+/** Doanh số, tỉ lệ ads / doanh số — cùng màu xanh với ô "Doanh số theo ngày" ở Nhập liệu. */
+export const SKY = "bg-sky-100 text-sky-950 dark:bg-sky-900/40 dark:text-sky-50";
 
 /** Màu tiêu đề cột của từng chỉ số (giống sheet: chi tiêu cam, các chỉ số vàng / xanh nõn chuối xen kẽ). */
 export const METRIC_HEAD: Record<Metric["key"], string> = {
@@ -20,6 +22,8 @@ export const METRIC_HEAD: Record<Metric["key"], string> = {
   data: YELLOW,
   costPerData: LIME,
   dataRate: YELLOW,
+  revenue: SKY,
+  adRevenue: SKY,
 };
 
 /** "▲ 12,5%" xanh khi tốt, đỏ khi xấu, xám khi chỉ số không có chiều tốt / xấu (chi tiêu). */

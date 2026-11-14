@@ -7,20 +7,30 @@ import type { AdDailyData, AdDailyReport } from "./types";
  */
 
 /** Các số cộng dồn được: chi tiêu, mess, data. */
-export type Totals = { spend: number; messages: number; data: number };
+/** `revenue`: "Doanh số theo ngày" nhân viên tự nhập ở Nhập liệu (chưa nhập = 0). */
+export type Totals = { spend: number; messages: number; data: number; revenue: number };
 
-export const zero = (): Totals => ({ spend: 0, messages: 0, data: 0 });
+export const zero = (): Totals => ({ spend: 0, messages: 0, data: 0, revenue: 0 });
 export const add = (a: Totals, b: Totals): Totals => ({
   spend: a.spend + b.spend,
   messages: a.messages + b.messages,
   data: a.data + b.data,
+  revenue: a.revenue + b.revenue,
 });
-export const isEmpty = (t: Totals) => t.spend === 0 && t.messages === 0 && t.data === 0;
+export const isEmpty = (t: Totals) => t.spend === 0 && t.messages === 0 && t.data === 0 && t.revenue === 0;
 
 /** a / b, mẫu số bằng 0 thì null (màn hình hiện "–"). */
 const ratio = (a: number, b: number) => (b > 0 ? a / b : null);
 
-export type MetricKey = "spend" | "messages" | "costPerMessage" | "data" | "costPerData" | "dataRate";
+export type MetricKey =
+  | "spend"
+  | "messages"
+  | "costPerMessage"
+  | "data"
+  | "costPerData"
+  | "dataRate"
+  | "revenue"
+  | "adRevenue";
 
 export type Metric = {
   key: MetricKey;
@@ -33,7 +43,10 @@ export type Metric = {
   value: (t: Totals) => number | null;
 };
 
-/** Giá mess = chi tiêu / mess; giá data = chi tiêu / data; tỉ lệ xin số = data / mess. */
+/**
+ * Giá mess = chi tiêu / mess; giá data = chi tiêu / data; tỉ lệ xin số = data / mess; doanh số = cộng "Doanh số theo
+ * ngày" nhân viên nhập; ads / doanh số = chi tiêu / doanh số (thấp là tốt).
+ */
 export const METRICS: Metric[] = [
   { key: "spend", label: "Chi tiêu", kind: "sum", unit: "đ", better: null, value: (t) => t.spend },
   { key: "messages", label: "Mess", kind: "sum", unit: "", better: "up", value: (t) => t.messages },
@@ -41,6 +54,8 @@ export const METRICS: Metric[] = [
   { key: "data", label: "Data", kind: "sum", unit: "", better: "up", value: (t) => t.data },
   { key: "costPerData", label: "Giá data", kind: "ratio", unit: "đ", better: "down", value: (t) => ratio(t.spend, t.data) },
   { key: "dataRate", label: "Tỉ lệ xin số", kind: "ratio", unit: "%", better: "up", value: (t) => ratio(t.data, t.messages) },
+  { key: "revenue", label: "Doanh số", kind: "sum", unit: "đ", better: "up", value: (t) => t.revenue },
+  { key: "adRevenue", label: "Ads/doanh số", kind: "ratio", unit: "%", better: "down", value: (t) => ratio(t.spend, t.revenue) },
 ];
 
 export const metricOf = (key: MetricKey) => METRICS.find((m) => m.key === key) ?? METRICS[0];
@@ -146,10 +161,14 @@ export function entriesOf(
   const entries: Entry[] = reports.map((r) => {
     const staffId = ownerOf(assignments, r.ad_account_id, r.report_date);
     const legacy = staffId !== null && dataDays.has(`${r.report_date}:${staffId}`) ? 0 : r.data_count;
-    return { day: r.report_date, staffId, totals: { spend: r.spend, messages: r.messages, data: legacy } };
+    return { day: r.report_date, staffId, totals: { spend: r.spend, messages: r.messages, data: legacy, revenue: 0 } };
   });
   for (const d of dailyData) {
-    entries.push({ day: d.report_date, staffId: d.ads_staff_id, totals: { spend: 0, messages: 0, data: d.data_count } });
+    entries.push({
+      day: d.report_date,
+      staffId: d.ads_staff_id,
+      totals: { spend: 0, messages: 0, data: d.data_count, revenue: Number(d.revenue ?? 0) },
+    });
   }
   return entries;
 }
@@ -454,7 +473,7 @@ export function totalsByAccount(
     const owner = ownerOf(assignments, r.ad_account_id, r.report_date);
     if (staffId !== null && owner !== staffId) continue;
     const row = result.get(r.ad_account_id) ?? { totals: zero(), activeDays: 0, owners: new Set() };
-    row.totals = add(row.totals, { spend: r.spend, messages: r.messages, data: 0 });
+    row.totals = add(row.totals, { spend: r.spend, messages: r.messages, data: 0, revenue: 0 });
     if (r.spend > 0) row.activeDays += 1;
     row.owners.add(owner);
     result.set(r.ad_account_id, row);

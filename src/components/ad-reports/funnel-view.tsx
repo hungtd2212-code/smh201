@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  add,
   funnelCounts,
   ownerOf,
   totalsByStaff,
@@ -96,7 +97,7 @@ export function FunnelView({
   const keep = (day: string) => day >= range.from && day <= range.to;
   const byStaff = totalsByStaff(entries, keep);
   const adTotals: Totals =
-    staffId === null ? [...byStaff.values()].reduce((a, b) => ({ spend: a.spend + b.spend, messages: a.messages + b.messages, data: a.data + b.data }), zero()) : (byStaff.get(staffId) ?? zero());
+    staffId === null ? [...byStaff.values()].reduce(add, zero()) : (byStaff.get(staffId) ?? zero());
 
   if (leadsState.status === "error") return <StatsError message={leadsState.message} />;
   if (leadsState.status === "loading") return <Skeleton className="h-80 w-full rounded-xl" />;

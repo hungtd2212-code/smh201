@@ -70,6 +70,8 @@ const LABELS: Record<Metric["key"], { one: string; many: string }> = {
   data: { one: "Data", many: "Data" },
   costPerData: { one: "Giá data", many: "Giá data" },
   dataRate: { one: "Tỉ lệ xin số", many: "Tỉ lệ xin số" },
+  revenue: { one: "Doanh số tháng", many: "Doanh số" },
+  adRevenue: { one: "Tỉ lệ ads/doanh số", many: "Tỉ lệ ads/doanh số" },
 };
 
 export function KpiCards({
@@ -98,7 +100,7 @@ export function KpiCards({
           {previous && compareLabel && <p className="text-sm text-muted-foreground">Mũi tên: so với {compareLabel}</p>}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {METRICS.map((m) => {
           const value = m.value(current);
           return (

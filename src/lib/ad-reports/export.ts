@@ -60,11 +60,12 @@ const date = (day: string): XCell => ({ value: new Date(`${day}T00:00:00Z`), typ
 /** Chia cho 0 → "–" (như trên màn hình). */
 const ratio = (a: number, b: number, format: string): XCell => (b > 0 ? { value: a / b, format } : "–");
 
-const zero = (): Totals => ({ spend: 0, messages: 0, data: 0 });
+const zero = (): Totals => ({ spend: 0, messages: 0, data: 0, revenue: 0 });
 const addTo = (t: Totals, x: Totals) => {
   t.spend += x.spend;
   t.messages += x.messages;
   t.data += x.data;
+  t.revenue += x.revenue;
 };
 
 const METRIC_HEAD = ["Chi tiêu", "Mess", "Giá mess", "Data", "Giá data", "Tỉ lệ xin số", "Doanh số ngày"];

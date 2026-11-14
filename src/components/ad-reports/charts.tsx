@@ -431,6 +431,79 @@ export function StaffChart({ rows, metric }: { rows: { key: string; name: string
   );
 }
 
+/**
+ * Chi tiêu và doanh số của từng người: mỗi người hai thanh nằm ngang cùng một trục tiền (cam = chi tiêu, xanh = doanh
+ * số), số cuối thanh doanh số là tỉ lệ ads / doanh số. Xếp theo doanh số, cao nhất trên cùng.
+ */
+export function SpendRevenueChart({ rows }: { rows: { key: string; name: string; totals: Totals }[] }) {
+  const money = METRICS.find((m) => m.key === "revenue") ?? METRICS[0];
+  const share = METRICS.find((m) => m.key === "adRevenue") ?? METRICS[0];
+  const data = rows
+    .filter((r) => r.totals.spend > 0 || r.totals.revenue > 0)
+    .map((r) => {
+      const pct = share.value(r.totals);
+      return { ...r, spend: r.totals.spend, revenue: r.totals.revenue, pct, pctLabel: pct === null ? "" : formatMetric(share, pct) };
+    })
+    .sort((a, b) => b.revenue - a.revenue || b.spend - a.spend);
+  if (!data.some((d) => d.revenue > 0)) return <Empty height="h-32" />;
+  const config: ChartConfig = {
+    spend: { label: "Chi tiêu", theme: PALETTE[1] },
+    revenue: { label: "Doanh số", theme: PALETTE[0] },
+  };
+  const height = Math.max(140, data.length * 46 + 30);
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <Swatch slot={1} />
+          Chi tiêu
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Swatch slot={0} />
+          Doanh số
+        </span>
+        <span>Số cuối thanh xanh: tỉ lệ ads/doanh số (càng thấp càng tốt)</span>
+      </div>
+      <ChartContainer config={config} className="aspect-auto w-full" style={{ height }}>
+        <BarChart
+          accessibilityLayer
+          data={data}
+          layout="vertical"
+          margin={{ top: 0, right: 56, bottom: 0, left: 0 }}
+          barGap={2}
+          barCategoryGap="22%"
+        >
+          <CartesianGrid horizontal={false} />
+          <XAxis type="number" tickLine={false} axisLine={false} tick={axisTick} tickFormatter={(v: number) => compactMetric(money, v)} />
+          <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={130} tick={{ fontSize: 12 }} />
+          <ChartTooltip
+            cursor={{ fill: "var(--muted)", opacity: 0.6 }}
+            content={({ active, payload }) => {
+              const p = active ? payload?.[0]?.payload : null;
+              if (!p) return null;
+              return (
+                <TipBox
+                  title={p.name}
+                  rows={[
+                    { color: "var(--color-spend)", name: "Chi tiêu", value: formatMetric(money, p.spend, true) },
+                    { color: "var(--color-revenue)", name: "Doanh số", value: p.revenue > 0 ? formatMetric(money, p.revenue, true) : "Chưa nhập" },
+                    { name: "Ads/doanh số", value: formatMetric(share, p.pct) },
+                  ]}
+                />
+              );
+            }}
+          />
+          <Bar dataKey="spend" fill="var(--color-spend)" radius={[0, 4, 4, 0]} maxBarSize={14} isAnimationActive={false} />
+          <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[0, 4, 4, 0]} maxBarSize={14} isAnimationActive={false}>
+            <LabelList dataKey="pctLabel" position="right" offset={6} className="fill-foreground" fontSize={11} />
+          </Bar>
+        </BarChart>
+      </ChartContainer>
+    </div>
+  );
+}
+
 export type EntityValue = { key: string; name: string; slot: number; totals: Totals };
 
 /** Cột dọc: một chỉ số của từng người (mỗi người một màu cố định), đường nét đứt = cả nhóm. */
