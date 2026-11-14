@@ -11,7 +11,11 @@ import {
   hasPancake,
   isHiddenIdle,
   needsLook,
+  pancakePhonesByStaff,
   spendVerdict,
+  staffBlocks,
+  staffDataMap,
+  staffDayKey,
   summarize,
 } from "../src/lib/ads-auto/compare.ts";
 import { cleanBotToken, lastBatch } from "../src/lib/ads-auto/telegram-logic.ts";
@@ -94,6 +98,23 @@ const late = compareRow({ ...base, manual_spend: null, manual_messages: null, au
 ok(late.status === "idle" && !isHiddenIdle(late) && hasPancake(late), "không chạy nhưng Pancake có khách để lại số → vẫn hiện");
 ok(!hasPancake({ ...base, pancake_messages: null, pancake_phones: null }), "chưa có số Pancake");
 ok(compareRow({ ...base, pancake_messages: 50 }, "conversations", true).status === "match", "số Pancake không tính vào kết quả khớp / lệch");
+
+console.log("\n== SĐT nhân viên báo");
+const sd = staffDataMap([
+  { report_date: "2026-11-12", ads_staff_id: "s1", data_count: 3 },
+  { report_date: "2026-11-12", ads_staff_id: "s2", data_count: 0 },
+  { report_date: "2026-11-13", ads_staff_id: "s1", data_count: "2" },
+]);
+ok(sd.get(staffDayKey("2026-11-12", "s1")) === 3 && sd.get(staffDayKey("2026-11-12", "s2")) === 0 && sd.get(staffDayKey("2026-11-13", "s1")) === 2, "số nhân viên báo theo ngày + nhân viên (báo 0 vẫn có)", [...sd]);
+ok(!sd.has(staffDayKey("2026-11-13", "s2")), "nhân viên chưa báo → không có số");
+const day = (acc, staff, phones) => ({ ...base, report_date: "2026-11-12", ad_account_id: acc, ads_staff_id: staff, pancake_phones: phones });
+const pb = pancakePhonesByStaff([day("a1", "s1", 2), day("a2", "s1", 3), day("a3", "s2", null), day("a4", "s3", null), day("a5", "s3", 0), day("a6", null, 4)]);
+ok(pb.get(staffDayKey("2026-11-12", "s1")) === 5 && pb.get(staffDayKey("2026-11-12", "s3")) === 0 && pb.get(staffDayKey("2026-11-12", null)) === 4, "tổng SĐT Pancake các TKQC của mỗi nhân viên", [...pb]);
+ok(pb.get(staffDayKey("2026-11-12", "s2")) === null, "Pancake chưa có số TKQC nào của nhân viên → chưa có tổng");
+const staffNames = { s1: "Sang", s2: "An", s3: undefined };
+const accNames = { a1: "TK B", a2: "TK A", a3: "TK C", a4: "TK D", a5: "TK E", a6: "TK F" };
+const blocks = staffBlocks([day("a6", null, 4), day("a1", "s1", 2), day("a3", "s2", null), day("a2", "s1", 3)], (id) => staffNames[id], (id) => accNames[id]);
+ok(JSON.stringify(blocks.map((b) => b.map((r) => r.ad_account_id))) === JSON.stringify([["a3"], ["a2", "a1"], ["a6"]]), "gom theo nhân viên (theo tên), trong nhóm theo tên TKQC, dòng không ai phụ trách xuống cuối", blocks.map((b) => b.map((r) => r.ad_account_id)));
 
 console.log("\n== TKQC");
 const acc = {

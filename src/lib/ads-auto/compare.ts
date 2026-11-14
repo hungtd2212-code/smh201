@@ -223,6 +223,58 @@ export function summarize(rows: ComparedRow[]): CompareSummary {
   return { counts, ...sum };
 }
 
+/**
+ * Số "Data" (SĐT) nhân viên tự báo ở Nhập liệu: MỘT số cho cả ngày của mỗi nhân viên, gộp mọi TKQC người đó chạy —
+ * không chia theo TKQC. Khoá của một (ngày, nhân viên).
+ */
+export const staffDayKey = (day: string, staffId: string | null) => `${day}|${staffId ?? ""}`;
+
+/** Số nhân viên báo theo (ngày, nhân viên). Không có khoá = nhân viên chưa báo ngày đó. */
+export function staffDataMap(rows: { report_date: string; ads_staff_id: string; data_count: number }[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    const key = staffDayKey(r.report_date, r.ads_staff_id);
+    out.set(key, (out.get(key) ?? 0) + Number(r.data_count));
+  }
+  return out;
+}
+
+/**
+ * Tổng SĐT Pancake theo (ngày, nhân viên) trên MỌI dòng — kể cả dòng bộ lọc đang ẩn — để so với số nhân viên báo.
+ * null = Pancake chưa có số ngày đó cho TKQC nào của nhân viên.
+ */
+export function pancakePhonesByStaff(rows: CompareRow[]): Map<string, number | null> {
+  const out = new Map<string, number | null>();
+  for (const r of rows) {
+    const key = staffDayKey(r.report_date, r.ads_staff_id);
+    const prev = out.get(key) ?? null;
+    out.set(key, r.pancake_phones === null ? prev : (prev ?? 0) + r.pancake_phones);
+  }
+  return out;
+}
+
+/**
+ * Chia các dòng của MỘT ngày thành từng khối theo nhân viên Ads: khối xếp theo tên nhân viên (dòng không ai phụ
+ * trách xuống cuối), trong khối xếp theo tên TKQC.
+ */
+export function staffBlocks<T extends CompareRow>(
+  rows: T[],
+  staffName: (id: string | null) => string | null | undefined,
+  accountName: (id: string) => string,
+): T[][] {
+  const blocks = new Map<string, T[]>();
+  for (const r of rows) blocks.set(r.ads_staff_id ?? "", [...(blocks.get(r.ads_staff_id ?? "") ?? []), r]);
+  const byAccount = (a: T, b: T) => accountName(a.ad_account_id).localeCompare(accountName(b.ad_account_id), "vi");
+  return [...blocks.values()]
+    .map((list) => list.sort(byAccount))
+    .sort((a, b) => {
+      const na = a[0].ads_staff_id ? staffName(a[0].ads_staff_id) ?? "" : null;
+      const nb = b[0].ads_staff_id ? staffName(b[0].ads_staff_id) ?? "" : null;
+      if (na === null || nb === null) return na === nb ? 0 : na === null ? 1 : -1;
+      return na.localeCompare(nb, "vi");
+    });
+}
+
 /** Dòng cần xem lại (lọc "Chỉ hiện dòng lệch"). */
 export const needsLook = (status: MatchStatus) => status === "off" || status === "near" || status === "no_manual" || status === "no_auto";
 

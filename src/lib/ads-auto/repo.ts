@@ -4,8 +4,9 @@
  * đọc lại được.
  */
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { fetchDailyData } from "@/lib/ad-reports/repo";
 import { isNotMigrated } from "@/lib/supabase/errors";
-import type { AutoStatus, CompareRow, PancakeUnassigned } from "./compare";
+import { staffDataMap, type AutoStatus, type CompareRow, type PancakeUnassigned } from "./compare";
 
 export const ADS_AUTO_NOT_READY =
   "Cơ sở dữ liệu chưa được cập nhật cho phần này (file supabase/027_ads_auto_test.sql chưa chạy).";
@@ -53,13 +54,17 @@ export const collectAutoNow = () =>
 
 /**
  * Đối chiếu từ ngày `from` tới hết ngày `to` (tối đa 93 ngày). Dòng không có TKQC (số Pancake của quảng cáo chưa
- * gắn được vào TKQC nào) không vào bảng mà cộng vào `unassigned`.
+ * gắn được vào TKQC nào) không vào bảng mà cộng vào `unassigned`. `staffData` = số Data (SĐT) nhân viên tự báo ở
+ * Nhập liệu theo (ngày, nhân viên) — xem staffDayKey.
  */
-export async function fetchCompare(from: string, to: string): Promise<{ rows: CompareRow[]; unassigned: PancakeUnassigned }> {
-  const raw = await call<(Omit<CompareRow, "ad_account_id"> & { ad_account_id: string | null })[]>("ads_auto_compare", {
-    p_from: from,
-    p_to: to,
-  });
+export async function fetchCompare(
+  from: string,
+  to: string,
+): Promise<{ rows: CompareRow[]; unassigned: PancakeUnassigned; staffData: Map<string, number> }> {
+  const [raw, daily] = await Promise.all([
+    call<(Omit<CompareRow, "ad_account_id"> & { ad_account_id: string | null })[]>("ads_auto_compare", { p_from: from, p_to: to }),
+    fetchDailyData(from, to),
+  ]);
   const rows: CompareRow[] = [];
   const unassigned: PancakeUnassigned = { messages: 0, phones: 0 };
   for (const r of raw ?? []) {
@@ -81,5 +86,5 @@ export async function fetchCompare(from: string, to: string): Promise<{ rows: Co
       pancake_phones: num(r.pancake_phones),
     });
   }
-  return { rows, unassigned };
+  return { rows, unassigned, staffData: staffDataMap(daily?.rows ?? []) };
 }

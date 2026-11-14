@@ -21,6 +21,9 @@ import {
   defaultRange,
   isHiddenIdle,
   needsLook,
+  pancakePhonesByStaff,
+  staffBlocks,
+  staffDayKey,
   summarize,
   type AutoStatus,
   type CompareRow,
@@ -80,6 +83,7 @@ export function CompareSection({
   const [filter, setFilter] = useState<Filter>("all");
   const [rows, setRows] = useState<CompareRow[] | null>(null);
   const [unassigned, setUnassigned] = useState<PancakeUnassigned>({ messages: 0, phones: 0 });
+  const [staffData, setStaffData] = useState<Map<string, number>>(() => new Map());
   const [error, setError] = useState<string | null>(null);
   const [pulling, setPulling] = useState(false);
 
@@ -87,7 +91,7 @@ export function CompareSection({
     let alive = true;
     const timer = setTimeout(() => {
       fetchCompare(range.from, range.to)
-        .then((data) => alive && (setRows(data.rows), setUnassigned(data.unassigned), setError(null)))
+        .then((data) => alive && (setRows(data.rows), setUnassigned(data.unassigned), setStaffData(data.staffData), setError(null)))
         .catch((err) => alive && setError(err instanceof Error ? err.message : String(err)));
     }, 0);
     return () => {
@@ -102,16 +106,17 @@ export function CompareSection({
     [rows, metric, accounts],
   );
   const summary = useMemo(() => summarize(compared), [compared]);
+  const pancakeByStaff = useMemo(() => pancakePhonesByStaff(rows ?? []), [rows]);
+  const staffTotal = useMemo(() => [...staffData.values()].reduce((a, b) => a + b, 0), [staffData]);
   const shown = compared.filter((r) =>
     filter === "all" ? !isHiddenIdle(r) : filter === "look" ? needsLook(r.status) : r.status === filter,
   );
   const accountName = (id: string) => accounts.get(id)?.name ?? names.adAccount(id) ?? "TKQC đã xoá";
-  // Nhóm theo ngày (ngày mới nhất trước, như thứ tự cơ sở dữ liệu trả về), trong ngày xếp theo tên TKQC.
+  // Nhóm theo ngày (ngày mới nhất trước, như thứ tự cơ sở dữ liệu trả về); trong ngày gom theo nhân viên Ads (ô "NV
+  // báo" là một số cho cả ngày của nhân viên), rồi theo tên TKQC.
   const groups = new Map<string, ComparedRow[]>();
   for (const r of shown) groups.set(r.report_date, [...(groups.get(r.report_date) ?? []), r]);
-  const byDay = [...groups.entries()].map(
-    ([day, list]) => [day, list.sort((a, b) => accountName(a.ad_account_id).localeCompare(accountName(b.ad_account_id), "vi"))] as const,
-  );
+  const byDay = [...groups.entries()].map(([day, list]) => [day, staffBlocks(list, names.adsStaff, accountName)] as const);
 
   async function pull() {
     setPulling(true);
@@ -192,8 +197,8 @@ export function CompareSection({
             ))}
           </div>
 
-          {(summary.compared > 0 || summary.pancakeMessages + summary.pancakePhones > 0) && (
-            <dl className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {(summary.compared > 0 || summary.pancakeMessages + summary.pancakePhones + staffTotal > 0) && (
+            <dl className="grid gap-2 sm:grid-cols-2">
               {summary.compared > 0 && (
                 <>
                   <Totals label="Chi tiêu" unit="đ" manual={summary.manualSpend} fb={summary.fbSpend} gap={spendGap} />
@@ -201,10 +206,17 @@ export function CompareSection({
                 </>
               )}
               <PancakeTotals messages={summary.pancakeMessages} phones={summary.pancakePhones} />
-              <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-3">
+              <Totals
+                label="SĐT"
+                names={["NV báo", "Pancake"]}
+                manual={staffTotal}
+                fb={summary.pancakePhones}
+                gap={summary.pancakePhones - staffTotal}
+              />
+              <p className="text-xs text-muted-foreground sm:col-span-2">
                 {summary.compared > 0 &&
                   `Chi tiêu, tin nhắn: tổng trên ${summary.compared} dòng có cả số nhân viên và số Facebook (tính bằng đồng). `}
-                Pancake: tổng mọi TKQC trong khoảng ngày.
+                Pancake: tổng mọi TKQC trong khoảng ngày. SĐT NV báo: tổng số Data nhân viên báo ở Nhập liệu trong khoảng ngày.
                 {unassigned.messages + unassigned.phones > 0 &&
                   ` Ngoài ra ${formatNumber(unassigned.messages)} tin nhắn, ${formatNumber(unassigned.phones)} SĐT Pancake đến từ quảng cáo chưa gắn được TKQC nào trong hệ thống (TKQC chưa thêm vào ERP, hoặc đang tra).`}
               </p>
@@ -222,14 +234,14 @@ export function CompareSection({
             </p>
           ) : (
             <div className="overflow-x-auto rounded-lg border">
-              <table className="w-full min-w-[54rem] text-sm">
+              <table className="w-full min-w-[60rem] text-sm">
                 <thead className="bg-muted/50 text-xs text-muted-foreground">
                   <tr>
                     <th rowSpan={2} className="px-3 py-2 text-left font-medium">TKQC</th>
                     <th rowSpan={2} className="px-3 py-2 text-left font-medium">NV Ads</th>
                     <th colSpan={3} className="border-l px-3 pt-2 pb-0.5 text-center font-medium">Chi tiêu (đ)</th>
                     <th colSpan={4} className="border-l px-3 pt-2 pb-0.5 text-center font-medium">Tin nhắn</th>
-                    <th className="border-l px-3 pt-2 pb-0.5 text-center font-medium">SĐT</th>
+                    <th colSpan={2} className="border-l px-3 pt-2 pb-0.5 text-center font-medium">SĐT</th>
                     <th rowSpan={2} className="border-l px-3 py-2 text-left font-medium">Kết quả</th>
                   </tr>
                   <tr>
@@ -241,37 +253,51 @@ export function CompareSection({
                     <th className="px-3 pb-2 text-right font-normal">Lệch</th>
                     <th className="border-l border-dashed px-3 pb-2 text-right font-normal">Pancake</th>
                     <th className="border-l px-3 pb-2 text-right font-normal">Pancake</th>
+                    <th className="border-l border-dashed px-3 pb-2 text-right font-normal">NV báo</th>
                   </tr>
                 </thead>
-                {byDay.map(([day, list]) => (
+                {byDay.map(([day, blocks]) => (
                   <tbody key={day} className="border-t">
                     <tr>
-                      <th colSpan={11} className="bg-muted/25 px-3 py-1.5 text-left text-xs font-semibold tabular-nums">
+                      <th colSpan={12} className="bg-muted/25 px-3 py-1.5 text-left text-xs font-semibold tabular-nums">
                         {dayLabel(day)}
                       </th>
                     </tr>
-                    {list.map((r) => (
-                      <tr key={r.ad_account_id} className="border-t border-border/60 tabular-nums">
-                        <td className="max-w-48 truncate px-3 py-2 font-medium">{accountName(r.ad_account_id)}</td>
-                        <td className="max-w-36 truncate px-3 py-2 text-muted-foreground">{names.adsStaff(r.ads_staff_id) ?? "—"}</td>
-                        <td className="border-l px-3 py-2 text-right">{money(r.manual_spend)}</td>
-                        <td className="px-3 py-2 text-right">{money(r.auto_spend, r.auto_currency)}</td>
-                        <td className={cn("px-3 py-2 text-right", r.spend_verdict && VERDICT_TEXT[r.spend_verdict])}>{signed(r.spend_diff)}</td>
-                        <td className="border-l px-3 py-2 text-right">{r.manual_messages ?? "—"}</td>
-                        <td className="px-3 py-2 text-right">{r.fb_messages ?? "—"}</td>
-                        <td className={cn("px-3 py-2 text-right", r.messages_verdict && VERDICT_TEXT[r.messages_verdict])}>
-                          {signed(r.messages_diff, String)}
-                        </td>
-                        <td className="border-l border-dashed px-3 py-2 text-right">{r.pancake_messages ?? "—"}</td>
-                        <td className="border-l px-3 py-2 text-right">{r.pancake_phones ?? "—"}</td>
-                        <td className="border-l px-3 py-2">
-                          <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap", STATUS_STYLE[r.status].chip)}>
-                            <span className={cn("size-2 rounded-full", STATUS_STYLE[r.status].dot)} aria-hidden />
-                            {STATUS_LABELS[r.status]}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {blocks.flatMap((block) =>
+                      block.map((r, i) => (
+                        <tr key={r.ad_account_id} className="border-t border-border/60 tabular-nums">
+                          <td className="max-w-48 truncate px-3 py-2 font-medium">{accountName(r.ad_account_id)}</td>
+                          {i === 0 && (
+                            <td rowSpan={block.length} className="max-w-36 truncate px-3 py-2 text-muted-foreground">
+                              {names.adsStaff(r.ads_staff_id) ?? "—"}
+                            </td>
+                          )}
+                          <td className="border-l px-3 py-2 text-right">{money(r.manual_spend)}</td>
+                          <td className="px-3 py-2 text-right">{money(r.auto_spend, r.auto_currency)}</td>
+                          <td className={cn("px-3 py-2 text-right", r.spend_verdict && VERDICT_TEXT[r.spend_verdict])}>{signed(r.spend_diff)}</td>
+                          <td className="border-l px-3 py-2 text-right">{r.manual_messages ?? "—"}</td>
+                          <td className="px-3 py-2 text-right">{r.fb_messages ?? "—"}</td>
+                          <td className={cn("px-3 py-2 text-right", r.messages_verdict && VERDICT_TEXT[r.messages_verdict])}>
+                            {signed(r.messages_diff, String)}
+                          </td>
+                          <td className="border-l border-dashed px-3 py-2 text-right">{r.pancake_messages ?? "—"}</td>
+                          <td className="border-l px-3 py-2 text-right">{r.pancake_phones ?? "—"}</td>
+                          {i === 0 && (
+                            <StaffDataCell
+                              block={block}
+                              reported={r.ads_staff_id ? (staffData.get(staffDayKey(day, r.ads_staff_id)) ?? null) : null}
+                              pancake={pancakeByStaff.get(staffDayKey(day, r.ads_staff_id)) ?? null}
+                            />
+                          )}
+                          <td className="border-l px-3 py-2">
+                            <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap", STATUS_STYLE[r.status].chip)}>
+                              <span className={cn("size-2 rounded-full", STATUS_STYLE[r.status].dot)} aria-hidden />
+                              {STATUS_LABELS[r.status]}
+                            </span>
+                          </td>
+                        </tr>
+                      )),
+                    )}
                   </tbody>
                 ))}
               </table>
@@ -282,7 +308,9 @@ export function CompareSection({
             ≤ 5% (thường do Facebook cập nhật số sau khi nhân viên đã nhập). “Lệch” = Facebook trừ số nhân viên. Ẩn các ngày
             TKQC không chạy (0đ, nhân viên không nhập, Pancake không có khách). Cột Pancake: số khách nhắn tin và số khách để
             lại số điện thoại từ quảng cáo của TKQC đó, theo thống kê quảng cáo của Pancake; chỉ để tham khảo, không tính vào
-            Kết quả. “—” = chưa có số Pancake ngày đó.
+            Kết quả. “—” = chưa có số Pancake ngày đó. Cột SĐT · NV báo: số Data nhân viên tự báo ở Nhập liệu — mỗi nhân viên
+            một số cho cả ngày, gộp mọi TKQC người đó chạy, nên ô gộp qua các dòng của nhân viên; khi nhân viên chạy nhiều
+            TKQC, “Σ Pancake” là tổng SĐT Pancake các TKQC đó để so. Số tô vàng = khác số Pancake; “—” = nhân viên chưa báo.
           </p>
         </>
       )}
@@ -363,18 +391,50 @@ function PancakeNote({ status }: { status: AutoStatus }) {
   );
 }
 
-function Totals({ label, unit = "", manual, fb, gap }: { label: string; unit?: string; manual: number; fb: number; gap: number }) {
+/** Ô "SĐT · NV báo": một số cho cả ngày của nhân viên, gộp qua các dòng TKQC của người đó. */
+function StaffDataCell({ block, reported, pancake }: { block: ComparedRow[]; reported: number | null; pancake: number | null }) {
+  const staffless = !block[0].ads_staff_id;
+  // Một dòng và số Pancake của dòng đó đúng bằng tổng → nhìn ô bên cạnh là so được, khỏi ghi tổng.
+  const single = block.length === 1 && block[0].pancake_phones === pancake;
+  const differs = reported !== null && pancake !== null && reported !== pancake;
+  return (
+    <td rowSpan={block.length} className="border-l border-dashed px-3 py-2 text-right">
+      <span className={cn(differs && "font-semibold text-amber-700 dark:text-amber-300")}>{reported ?? "—"}</span>
+      {!staffless && !single && pancake !== null && (
+        <span className="block text-[11px] leading-tight whitespace-nowrap text-muted-foreground">Σ Pancake {pancake}</span>
+      )}
+    </td>
+  );
+}
+
+function Totals({
+  label,
+  names = ["NV nhập", "Facebook"],
+  unit = "",
+  manual,
+  fb,
+  gap,
+}: {
+  label: string;
+  names?: [string, string];
+  unit?: string;
+  manual: number;
+  fb: number;
+  gap: number;
+}) {
   return (
     <div className="grid grid-cols-3 gap-2 rounded-lg border px-3 py-2">
       <div>
-        <dt className="text-xs text-muted-foreground">{label} · NV nhập</dt>
+        <dt className="text-xs text-muted-foreground">
+          {label} · {names[0]}
+        </dt>
         <dd className="font-semibold tabular-nums">
           {formatNumber(manual)}
           {unit}
         </dd>
       </div>
       <div>
-        <dt className="text-xs text-muted-foreground">Facebook</dt>
+        <dt className="text-xs text-muted-foreground">{names[1]}</dt>
         <dd className="font-semibold tabular-nums">
           {formatNumber(fb)}
           {unit}
