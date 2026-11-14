@@ -262,7 +262,7 @@ function EntryForm({
   reports: AdDailyReport[];
   /** null = chưa chạy file 010 (chưa có dòng "Data xin được" chung). */
   dailyData: AdDailyData[] | null;
-  /** false = chưa chạy file 018 → không có ô "Doanh thu theo ngày". */
+  /** false = chưa chạy file 018 → không có ô "Doanh số theo ngày". */
   revenueReady: boolean;
   overviewHref: string;
   onSubmitted: () => Promise<void>;
@@ -271,7 +271,7 @@ function EntryForm({
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [dataValue, setDataValue] = useState("");
   const [dataTouched, setDataTouched] = useState(false);
-  // Doanh thu theo ngày: không bắt buộc, "" = để trống.
+  // Doanh số theo ngày: không bắt buộc, "" = để trống.
   const [revenueValue, setRevenueValue] = useState("");
   const [saving, setSaving] = useState(false);
 

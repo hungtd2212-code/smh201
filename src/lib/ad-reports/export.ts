@@ -67,7 +67,7 @@ const addTo = (t: Totals, x: Totals) => {
   t.data += x.data;
 };
 
-const METRIC_HEAD = ["Chi tiêu", "Mess", "Giá mess", "Data", "Giá data", "Tỉ lệ xin số", "Doanh thu ngày"];
+const METRIC_HEAD = ["Chi tiêu", "Mess", "Giá mess", "Data", "Giá data", "Tỉ lệ xin số", "Doanh số ngày"];
 const METRIC_WIDTHS = [16, 9, 12, 9, 13, 12, 16];
 const metricCells = (t: Totals, revenue: number): XCell[] => [
   money(t.spend),
@@ -276,7 +276,7 @@ export function buildAdsExport(input: ExportInput): XSheet[] {
   sheets.push({
     sheet: "Chi tiết Data",
     data: [
-      [head("Ngày"), head("Nhân viên"), head("Data"), head("Doanh thu ngày")],
+      [head("Ngày"), head("Nhân viên"), head("Data"), head("Doanh số ngày")],
       ...[...dataRows]
         .sort((a, b) => a.report_date.localeCompare(b.report_date) || staffName(a.ads_staff_id).localeCompare(staffName(b.ads_staff_id), "vi"))
         .map((d) => [date(d.report_date), staffName(d.ads_staff_id), whole(d.data_count), d.revenue === null ? "" : money(d.revenue)] as XCell[]),

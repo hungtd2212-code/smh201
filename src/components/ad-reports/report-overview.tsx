@@ -769,7 +769,7 @@ function StaffSection({
 }
 
 const dash = <span className="text-muted-foreground/60">–</span>;
-/** Cột "Doanh thu ngày" — cùng màu xanh với dòng "Data xin được / Doanh thu" ở Nhập liệu. */
+/** Cột "Doanh số ngày" và "Tỉ lệ ads/doanh số" — cùng màu xanh với dòng "Data xin được / Doanh số" ở Nhập liệu. */
 const REVENUE = "bg-sky-100 text-sky-950 dark:bg-sky-900/40 dark:text-sky-50";
 const num = (value: number | null) => (value === null ? dash : formatNumber(value));
 
@@ -982,7 +982,7 @@ function MonthTable({
   today: string;
   /** false = chưa chạy file 010: không nhắc "thiếu Data". */
   dataReady: boolean;
-  /** Có cột "Doanh thu ngày" (đã chạy file 018). */
+  /** Có cột "Doanh số ngày" và "Tỉ lệ ads/doanh số" (đã chạy file 018). */
   revenueReady: boolean;
   canAlwaysEdit: boolean;
   focusDay: string | null;
@@ -1016,13 +1016,22 @@ function MonthTable({
             </th>
             <MetricHeads rowSpan={2} />
             {revenueReady && (
-              <th
-                rowSpan={2}
-                className={cn(TH, "border-b align-bottom", REVENUE)}
-                title="Doanh thu nhân viên tự nhập theo ngày (không bắt buộc)"
-              >
-                Doanh thu ngày
-              </th>
+              <>
+                <th
+                  rowSpan={2}
+                  className={cn(TH, "border-b align-bottom", REVENUE)}
+                  title="Doanh số nhân viên tự nhập theo ngày (không bắt buộc)"
+                >
+                  Doanh số ngày
+                </th>
+                <th
+                  rowSpan={2}
+                  className={cn(TH, "border-b align-bottom", REVENUE)}
+                  title="Chi tiêu quảng cáo chia doanh số (càng thấp càng tốt). Ngày chưa nhập doanh số: –"
+                >
+                  Tỉ lệ ads/doanh số
+                </th>
+              </>
             )}
             <th rowSpan={2} className="border-b border-l bg-muted px-3 py-2 text-left align-bottom text-xs font-medium">
               Gửi lúc
@@ -1052,7 +1061,12 @@ function MonthTable({
             ))}
             <td className={TD}>{formatNumber(total.spend)}</td>
             <MetricCells totals={total} />
-            {revenueReady && <td className={TD}>{revenueTotal > 0 ? formatNumber(revenueTotal) : dash}</td>}
+            {revenueReady && (
+              <>
+                <td className={TD}>{revenueTotal > 0 ? formatNumber(revenueTotal) : dash}</td>
+                <td className={TD}>{revenueTotal > 0 ? formatPercent(ratio(total.spend, revenueTotal)) : dash}</td>
+              </>
+            )}
             <td className="border-l" />
             <td className="border-l" />
           </tr>
@@ -1098,7 +1112,12 @@ function MonthTable({
                 <td className={cn(TD, "font-medium")}>{sent.length > 0 ? formatNumber(totals.spend) : dash}</td>
                 <MetricCells totals={totals} empty={sent.length === 0} />
                 {revenueReady && (
-                  <td className={TD}>{!row.data ? "" : row.data.revenue === null ? dash : formatNumber(row.data.revenue)}</td>
+                  <>
+                    <td className={TD}>{!row.data ? "" : row.data.revenue === null ? dash : formatNumber(row.data.revenue)}</td>
+                    <td className={TD}>
+                      {!row.data ? "" : !row.data.revenue || sent.length === 0 ? dash : formatPercent(ratio(totals.spend, row.data.revenue))}
+                    </td>
+                  </>
                 )}
                 <td className="border-l px-3 py-2 align-top text-xs whitespace-nowrap">
                   {firstSent ? (

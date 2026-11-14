@@ -37,11 +37,11 @@ export type DataRow = {
   touched: boolean;
   onChange: (digits: string) => void;
   onTouch: () => void;
-  /** Ô "Doanh thu theo ngày" bên cạnh (không bắt buộc). Bỏ trống = không hiện (chưa chạy file 018). */
+  /** Ô "Doanh số theo ngày" bên cạnh (không bắt buộc). Bỏ trống = không hiện (chưa chạy file 018). */
   revenue?: RevenueCell;
 };
 
-/** Ô "Doanh thu theo ngày": không bắt buộc, để trống được. */
+/** Ô "Doanh số theo ngày": không bắt buộc, để trống được. */
 export type RevenueCell = {
   value: string;
   /** Có = chỉ xem (đã gửi / đã khoá); null = đã gửi nhưng để trống. */
@@ -51,7 +51,7 @@ export type RevenueCell = {
 
 const DATA_LABEL = "Data xin được";
 const DATA_HINT = "Tổng số điện thoại xin được trong ngày của tất cả TKQC (lấy từ trực page).";
-const REVENUE_LABEL = "Doanh thu theo ngày";
+const REVENUE_LABEL = "Doanh số theo ngày";
 const REVENUE_HINT = "Không bắt buộc — chưa biết thì để trống, vào Tổng quan bổ sung trong 24 giờ.";
 
 const fieldKey = (accountId: string, field: ReportField) => `${accountId}:${field}`;
@@ -108,7 +108,7 @@ function ShownValue({ value, suffix }: { value: number | null; suffix?: string }
 
 /**
  * Bảng / thẻ nhập: mỗi TK ADS hai ô (Chi tiêu, Số lượng tin nhắn), bên dưới một dòng chung cho cả ngày:
- * "Data xin được" (bắt buộc) và bên cạnh là "Doanh thu theo ngày" (không bắt buộc).
+ * "Data xin được" (bắt buộc) và bên cạnh là "Doanh số theo ngày" (không bắt buộc).
  */
 export function ReportFields({ items, values, touched, onChange, onTouch, layout, dayLabel, data }: Props) {
   // Mã riêng cho từng bảng nhập: trên cùng một trang có thể có hai bảng (vd hộp Sửa mở trên trang).
@@ -210,7 +210,7 @@ export function ReportFields({ items, values, touched, onChange, onTouch, layout
             <div className="text-xs opacity-80">{data.note ?? "Chung cho tất cả TKQC"}</div>
           </div>
           {revenue ? (
-            // Hai ô cạnh nhau: Data xin được | Doanh thu theo ngày.
+            // Hai ô cạnh nhau: Data xin được | Doanh số theo ngày.
             <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 p-3 sm:max-w-xl">
               <div className="grid content-start gap-1.5">
                 <Label htmlFor={`${uid}c-data`}>
