@@ -32,6 +32,7 @@ import {
 import { clearAvatar, uploadAvatar } from "@/lib/staff/avatar";
 import { useCurrentStaff } from "@/hooks/use-current-staff";
 import { loginName, positionLabel } from "@/lib/staff/positions";
+import { stopAutoSignIn } from "@/lib/staff/remember-login";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /** Lấy 2 chữ cái đầu để làm ảnh đại diện: "Thu Hà" → "TH". */
@@ -70,6 +71,8 @@ export function UserMenu() {
       toast.error("Không đăng xuất được", { description: error.message });
       return;
     }
+    // Trình duyệt đã lưu tài khoản ("Nhớ đăng nhập") không được tự đăng nhập lại khi chưa hỏi.
+    await stopAutoSignIn();
     // Tải lại toàn trang để xoá sạch dữ liệu của phiên vừa đăng xuất khỏi bộ nhớ.
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- cố ý tải lại toàn trang
     window.location.assign("/login");
