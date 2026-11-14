@@ -19,7 +19,7 @@ import {
   summarize,
 } from "../src/lib/ads-auto/compare.ts";
 import { cleanBotToken, lastBatch } from "../src/lib/ads-auto/telegram-logic.ts";
-import { countsAsData, groupPhones, verdictText } from "../src/lib/ads-auto/phones.ts";
+import { countCustomers, countsAsData, groupPhones, verdictText } from "../src/lib/ads-auto/phones.ts";
 
 let passed = 0;
 let failed = 0;
@@ -145,7 +145,8 @@ ok(!cleanToken("EAA short").ok && !cleanToken(`EBB${good.slice(3)}`).ok && !clea
 
 console.log("\n== SĐT theo nhân viên");
 const P = (id, staff, phone, extra = {}) => ({ id, report_date: "2026-11-13", at: `2026-11-13T0${id}:00:00Z`, phone, full_name: "Khách", outcome: "new",
-  ad_id: "1", ad_name: null, ad_goal: null, ad_account_id: "acc", ads_staff_id: staff, gap: staff ? null : "unmapped", page_name: null, pancake_url: "", ...extra });
+  ad_id: "1", ad_name: null, ad_goal: null, ad_account_id: "acc", ads_staff_id: staff, gap: staff ? null : "unmapped", page_name: null,
+  pancake_url: `https://pancake.vn/pg?c_id=conv${id}`, ...extra });
 const groups = groupPhones("2026-11-13", {
   phones: [P(3, "s2", "0903"), P(1, "s2", "0901"), P(2, "s2", "0901", { outcome: "duplicate" }), P(4, "s2", "12", { outcome: "invalid" }),
     P(5, null, "0905"), P(6, null, "0906", { gap: "no_ad" }), P(7, "s1", "0907", { report_date: "2026-11-12" })],
@@ -161,6 +162,11 @@ ok(groups[2].form === 2 && groups[2].phones.length === 0 && groups[2].total === 
 ok(groups[1].total === 0 && groups[1].reported === 4, "nhân viên báo mà hệ thống không thấy số nào");
 ok(groups[4].form === 1 && groups[4].reported === null, "form của TKQC chưa giao nhân viên");
 ok(!countsAsData({ outcome: "invalid" }) && countsAsData({ outcome: "duplicate" }), "khách cũ vẫn tính, số sai không");
+const conv = (id, phone, c, extra = {}) => P(id, "s1", phone, { pancake_url: `https://pancake.vn/pg?c_id=${c}`, ...extra });
+ok(countCustomers([conv(1, "0901", "A"), conv(2, "0902", "A")]) === 1, "một khách để lại 2 số trong một hội thoại → 1 khách");
+ok(countCustomers([conv(1, "0901", "A"), conv(2, "0901", "B"), conv(3, "0903", "C")]) === 2, "cùng một số ở 2 hội thoại (2 page) → 1 khách");
+ok(countCustomers([conv(1, "0901", "A"), conv(2, "0902", "B"), conv(3, "0902", "C"), conv(4, "0904", "C")]) === 2, "nối nhiều bước: B–C chung số, C có thêm số → 1 khách");
+ok(countCustomers([conv(1, "12", "A", { outcome: "invalid" })]) === 0 && countCustomers([]) === 0, "chỉ có số sai / không có số → 0");
 ok(verdictText({ reported: 2, total: 2 }).tone === "match" && verdictText({ reported: 3, total: 2 }).text === "NV báo nhiều hơn 1"
   && verdictText({ reported: 0, total: 2 }).text === "NV báo ít hơn 2" && verdictText({ reported: null, total: 1 }).text === "Chưa báo", "câu so số");
 

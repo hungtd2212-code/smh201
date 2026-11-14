@@ -55,6 +55,29 @@ export const OUTCOME_LABELS: Record<PhoneOutcome, string> = {
 /** Số được tính là Data: đúng dạng số điện thoại (số sai vẫn hiện để biết nhưng không tính). */
 export const countsAsData = (p: StaffPhone) => p.outcome !== "invalid";
 
+/** Hội thoại Pancake của một số (lấy từ đường mở hội thoại "…?c_id=<hội thoại>"). */
+const conversationOf = (p: StaffPhone) => p.pancake_url.split("c_id=")[1] || `#${p.id}`;
+
+/**
+ * Đếm KHÁCH (không đếm số): các số cùng một hội thoại là một khách; hai hội thoại có chung một số (khách nhắn qua 2
+ * page) cũng là một khách. Số sai không tính.
+ */
+export function countCustomers(phones: StaffPhone[]): number {
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let root = x;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    parent.set(x, root);
+    return root;
+  };
+  const union = (a: string, b: string) => {
+    for (const x of [a, b]) if (!parent.has(x)) parent.set(x, x);
+    parent.set(find(a), find(b));
+  };
+  for (const p of phones.filter(countsAsData)) union(`c:${conversationOf(p)}`, `p:${p.phone}`);
+  return new Set([...parent.keys()].map(find)).size;
+}
+
 export type PhoneGroup = {
   /** id nhân viên, hoặc "gap:<lý do>". */
   key: string;
@@ -62,7 +85,7 @@ export type PhoneGroup = {
   gap: PhoneGap | null;
   phones: StaffPhone[];
   forms: FormLeads[];
-  /** Số điện thoại khác nhau (đúng dạng) theo Pancake. */
+  /** Số khách để lại số (đúng dạng) theo Pancake: một khách để lại nhiều số chỉ tính 1. */
   pancake: number;
   /** Khách điền form theo Facebook. */
   form: number;
@@ -97,7 +120,7 @@ export function groupPhones(
 
   for (const g of groups.values()) {
     g.phones.sort((a, b) => a.at.localeCompare(b.at) || a.id - b.id);
-    g.pancake = new Set(g.phones.filter(countsAsData).map((p) => p.phone)).size;
+    g.pancake = countCustomers(g.phones);
     g.form = g.forms.reduce((sum, f) => sum + f.leads, 0);
     g.total = g.pancake + g.form;
   }

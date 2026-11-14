@@ -111,7 +111,8 @@ export function PhonesSection({ status, today, version }: { status: AutoStatus; 
             </div>
           )}
           <p className="text-xs text-muted-foreground">
-            Pancake: mỗi số tính một lần, giờ là lúc máy kéo số về (thường 1–2 phút sau khi khách để lại số). Khách bấm nhiều
+            Pancake: tính theo khách — một khách để lại nhiều số chỉ tính 1; giờ là lúc máy kéo số về (thường 1–2 phút sau khi
+            khách để lại số). Khách bấm nhiều
             quảng cáo thì tính cho quảng cáo bấm sau cùng (số kéo về trước bản cập nhật này tính theo quảng cáo đầu tiên). “Đã có
             trong Lead” = số đã có sẵn trong bảng Lead (khách cũ) — vẫn tính. Số sai không tính. Form: số khách điền form tức
             thì theo Facebook, chưa có tên và số điện thoại. Nhân viên được tính theo người phụ trách TKQC hôm đó.
