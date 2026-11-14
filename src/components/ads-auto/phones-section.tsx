@@ -94,11 +94,13 @@ export function PhonesSection({ status, today, version }: { status: AutoStatus; 
         </p>
       ) : (
         <>
-          {(!sinceDay || day < sinceDay) && (
-            <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-              {sinceDay
-                ? `Từng số Pancake có từ ngày ${formatDay(sinceDay)}. Ngày trước đó chỉ có số đếm ở bảng đối chiếu bên trên.`
-                : "Chưa kéo được số Pancake nào."}
+          {(!sinceDay || day <= sinceDay) && (
+            <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+              {!sinceDay || !data.since
+                ? "Chưa kéo được số Pancake nào."
+                : day === sinceDay
+                  ? `Ngày này chỉ có số Pancake từ ${clock.format(new Date(data.since))} (lúc bắt đầu kéo từng số) — khách để lại số trước giờ đó không có trong danh sách.`
+                  : `Từng số Pancake có từ ngày ${formatDay(sinceDay)}. Ngày trước đó chỉ có số đếm ở bảng đối chiếu bên trên.`}
             </p>
           )}
           {groups.length === 0 ? (
